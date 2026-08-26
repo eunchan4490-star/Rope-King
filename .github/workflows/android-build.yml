@@ -37,7 +37,7 @@ jobs:
       - name: Configure Godot Android paths
         run: |
           mkdir -p "$HOME/.config/godot"
-          SETTINGS='[gd_resource type="EditorSettings" format=3]\\n\\n[resource]\\n\\nexport/android/android_sdk_path = "'"$ANDROID_SDK_ROOT"'"\\nexport/android/java_sdk_path = "'"$JAVA_HOME"'"\\nexport/android/debug_keystore = "'"$HOME/.android/debug.keystore"'"\\nexport/android/debug_keystore_user = "androiddebugkey"\\nexport/android/debug_keystore_pass = "android"\\n'
+          SETTINGS='[gd_resource type="EditorSettings" format=3]\n\n[resource]\n\nexport/android/android_sdk_path = "'"$ANDROID_SDK_ROOT"'"\nexport/android/java_sdk_path = "'"$JAVA_HOME"'"\nexport/android/debug_keystore = "'"$HOME/.android/debug.keystore"'"\nexport/android/debug_keystore_user = "androiddebugkey"\nexport/android/debug_keystore_pass = "android"\n'
           printf "%b" "$SETTINGS" > "$HOME/.config/godot/editor_settings-4.tres"
           printf "%b" "$SETTINGS" > "$HOME/.config/godot/editor_settings-4.6.tres"
 
