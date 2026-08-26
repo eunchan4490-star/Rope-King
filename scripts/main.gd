@@ -3,6 +3,10 @@ extends Node2D
 const DESIGN_SIZE := Vector2(720.0, 1280.0)
 const PLAYER_X := 360.0
 const PLAYER_GROUND_Y := 890.0
+const TURNER_GROUND_Y := 910.0
+const LEFT_HAND := Vector2(145.0, 690.0)
+const RIGHT_HAND := Vector2(575.0, 690.0)
+const ROPE_SWING_RADIUS := 300.0
 const BASE_ROPE_SPEED := 2.35
 const MAX_ROPE_SPEED := 4.8
 const HIT_WINDOW := 0.38
@@ -80,55 +84,77 @@ func _draw() -> void:
 	draw_set_transform(offset, 0.0, Vector2.ONE * scale_factor)
 
 	_draw_background()
-	_draw_steps()
-	_draw_rope()
+	_draw_ground()
+	# The upper half of the rope passes behind everyone.
+	if _rope_is_behind():
+		_draw_rope()
+	_draw_turner(Vector2(85.0, TURNER_GROUND_Y), false)
+	_draw_turner(Vector2(635.0, TURNER_GROUND_Y), true)
 	_draw_player()
+	# The lower half passes in front of the player, like a real long rope.
+	if not _rope_is_behind():
+		_draw_rope()
 	_draw_hud()
 
 
 func _draw_background() -> void:
-	draw_rect(Rect2(Vector2.ZERO, DESIGN_SIZE), Color("11182a"))
-	for i in range(9):
-		var y := float(i * 160)
-		draw_circle(Vector2(90.0 + (i % 3) * 280.0, y + 55.0), 2.5, Color("6a7ca5"))
+	# Sky, distant clouds, and a simple park backdrop.
+	draw_rect(Rect2(Vector2.ZERO, DESIGN_SIZE), Color("9edcff"))
+	draw_circle(Vector2(610.0, 150.0), 66.0, Color("fff0a6"))
+	for cloud_x in [105.0, 420.0]:
+		draw_circle(Vector2(cloud_x, 210.0), 34.0, Color(1, 1, 1, 0.85))
+		draw_circle(Vector2(cloud_x + 38.0, 195.0), 43.0, Color(1, 1, 1, 0.85))
+		draw_circle(Vector2(cloud_x + 82.0, 214.0), 31.0, Color(1, 1, 1, 0.85))
+	draw_colored_polygon(PackedVector2Array([
+		Vector2(0, 590), Vector2(135, 440), Vector2(260, 590),
+		Vector2(410, 405), Vector2(590, 590), Vector2(720, 475), Vector2(720, 760), Vector2(0, 760)
+	]), Color("78bd83"))
 	if flash_time > 0.0:
 		draw_rect(Rect2(Vector2.ZERO, DESIGN_SIZE), Color(1, 1, 1, flash_time * 0.32))
 
 
-func _draw_steps() -> void:
-	var scroll := float(score % 4) * 28.0
-	for i in range(8):
-		var step_y := 1030.0 - i * 112.0 + scroll
-		var step_x := 78.0 + i * 54.0
-		var width := 564.0 - i * 40.0
-		var color := Color("293655") if i % 2 == 0 else Color("334363")
-		draw_style_box(_step_box(color), Rect2(step_x, step_y, width, 72.0))
-
-
-func _step_box(color: Color) -> StyleBoxFlat:
-	var box := StyleBoxFlat.new()
-	box.bg_color = color
-	box.corner_radius_top_left = 15
-	box.corner_radius_top_right = 15
-	box.corner_radius_bottom_left = 15
-	box.corner_radius_bottom_right = 15
-	return box
+func _draw_ground() -> void:
+	draw_rect(Rect2(0, 650, 720, 630), Color("75c86b"))
+	draw_colored_polygon(PackedVector2Array([
+		Vector2(130, 1280), Vector2(255, 650), Vector2(465, 650), Vector2(590, 1280)
+	]), Color("e6c98c"))
+	for x in range(35, 720, 95):
+		draw_line(Vector2(x, 1010), Vector2(x + 18, 990), Color("5eae58"), 5.0, true)
 
 
 func _draw_rope() -> void:
-	var center := Vector2(PLAYER_X, PLAYER_GROUND_Y - 118.0)
-	var horizontal_radius := 215.0
-	var vertical_radius := 250.0
+	var midpoint_y := LEFT_HAND.y + sin(rope_angle) * ROPE_SWING_RADIUS
 	var points := PackedVector2Array()
-	for i in range(41):
-		var t := float(i) / 40.0 * TAU
-		var x := center.x + cos(t) * horizontal_radius
-		var depth := sin(t + rope_angle)
-		var y := center.y + depth * vertical_radius
+	for i in range(49):
+		var t := float(i) / 48.0
+		var x := lerpf(LEFT_HAND.x, RIGHT_HAND.x, t)
+		# 4t(1-t) is zero at both hands and one at the middle.
+		var y := lerpf(LEFT_HAND.y, RIGHT_HAND.y, t) + 4.0 * t * (1.0 - t) * (midpoint_y - LEFT_HAND.y)
 		points.append(Vector2(x, y))
-	var rope_color := Color("ffd166")
-	draw_polyline(points, rope_color, 9.0, true)
-	draw_circle(points[0], 12.0, Color("ff9f43"))
+	var rope_color := Color("f6b73c") if not _rope_is_behind() else Color("d9982d")
+	draw_polyline(points, Color(0, 0, 0, 0.16), 13.0, true)
+	draw_polyline(points, rope_color, 8.0, true)
+	draw_circle(LEFT_HAND, 7.0, Color("f6b73c"))
+	draw_circle(RIGHT_HAND, 7.0, Color("f6b73c"))
+
+
+func _rope_is_behind() -> bool:
+	return sin(rope_angle) < 0.0
+
+
+func _draw_turner(feet: Vector2, faces_left: bool) -> void:
+	var direction := -1.0 if faces_left else 1.0
+	_draw_shadow_ellipse(feet + Vector2(0, 13), Vector2(45, 13), Color(0, 0, 0, 0.2))
+	# Legs, torso, head, and the arm holding the rope.
+	draw_line(feet + Vector2(-10, -5), feet + Vector2(-18, -63), Color("334b73"), 15.0, true)
+	draw_line(feet + Vector2(10, -5), feet + Vector2(18, -63), Color("334b73"), 15.0, true)
+	draw_line(feet + Vector2(0, -62), feet + Vector2(0, -150), Color("ff7a68"), 39.0, true)
+	draw_circle(feet + Vector2(0, -190), 30.0, Color("ffe0bd"))
+	draw_arc(feet + Vector2(0, -195), 28.0, PI, TAU, 18, Color("49382f"), 12.0, true)
+	var hand := LEFT_HAND if not faces_left else RIGHT_HAND
+	draw_line(feet + Vector2(direction * 6, -135), hand, Color("ff7a68"), 13.0, true)
+	draw_circle(hand, 9.0, Color("ffe0bd"))
+	draw_line(feet + Vector2(-direction * 5, -132), feet + Vector2(-direction * 36, -105), Color("ff7a68"), 13.0, true)
 
 
 func _draw_player() -> void:
