@@ -9,7 +9,8 @@ const RIGHT_HAND := Vector2(575.0, 690.0)
 const ROPE_SWING_RADIUS := 300.0
 const BASE_ROPE_SPEED := 2.35
 const MAX_ROPE_SPEED := 4.8
-const HIT_WINDOW := 0.38
+const JUMP_TARGET_ANGLE := 0.82
+const HIT_WINDOW := 0.62
 
 var score := 0
 var best_score := 0
@@ -60,9 +61,8 @@ func attempt_jump() -> void:
 	is_jumping = true
 	jump_velocity = -820.0
 
-	# The rope is dangerous while its lower half crosses the player's feet.
-	var timing_error := absf(wrapf(rope_angle - PI * 0.5, -PI, PI))
-	if timing_error <= HIT_WINDOW:
+	# Score against the same visible timing window used by the rope color.
+	if _is_jump_timing():
 		score += 1
 		best_score = maxi(best_score, score)
 		rope_speed = minf(BASE_ROPE_SPEED + score * 0.075, MAX_ROPE_SPEED)
@@ -131,7 +131,9 @@ func _draw_rope() -> void:
 		# 4t(1-t) is zero at both hands and one at the middle.
 		var y := lerpf(LEFT_HAND.y, RIGHT_HAND.y, t) + 4.0 * t * (1.0 - t) * (midpoint_y - LEFT_HAND.y)
 		points.append(Vector2(x, y))
-	var rope_color := Color("f6b73c") if not _rope_is_behind() else Color("d9982d")
+	var rope_color := Color("ff334f") if _is_jump_timing() else Color("f6b73c")
+	if _rope_is_behind():
+		rope_color = Color("d9982d")
 	draw_polyline(points, Color(0, 0, 0, 0.16), 13.0, true)
 	draw_polyline(points, rope_color, 8.0, true)
 	draw_circle(LEFT_HAND, 7.0, Color("f6b73c"))
@@ -140,6 +142,11 @@ func _draw_rope() -> void:
 
 func _rope_is_behind() -> bool:
 	return sin(rope_angle) < 0.0
+
+
+func _is_jump_timing() -> bool:
+	var timing_error := absf(wrapf(rope_angle - JUMP_TARGET_ANGLE, -PI, PI))
+	return timing_error <= HIT_WINDOW
 
 
 func _draw_turner(feet: Vector2, faces_left: bool) -> void:
