@@ -4,13 +4,14 @@ const DESIGN_SIZE := Vector2(720.0, 1280.0)
 const PLAYER_X := 360.0
 const PLAYER_GROUND_Y := 890.0
 const TURNER_GROUND_Y := 910.0
-const LEFT_HAND := Vector2(145.0, 690.0)
-const RIGHT_HAND := Vector2(575.0, 690.0)
-const ROPE_SWING_RADIUS := 300.0
+const LEFT_HAND := Vector2(165.0, 690.0)
+const RIGHT_HAND := Vector2(555.0, 690.0)
+const ROPE_SWING_RADIUS := 270.0
 const BASE_ROPE_SPEED := 2.35
 const MAX_ROPE_SPEED := 4.8
-const JUMP_TARGET_ANGLE := 0.82
-const HIT_WINDOW := 0.62
+const JUMP_TARGET_ANGLE := 0.84
+# The rope is red only in this narrow window, and only that same window is safe.
+const HIT_WINDOW := 0.18
 
 var score := 0
 var best_score := 0
