@@ -1,0 +1,13 @@
+# Godot 4 generated files
+.godot/
+android/
+builds/
+*.apk
+*.aab
+
+# Editor / OS files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
