@@ -157,7 +157,7 @@ func _draw_shadow_ellipse(center: Vector2, radii: Vector2, color: Color) -> void
 
 func _draw_hud() -> void:
 	var font := ThemeDB.fallback_font
-	draw_string(font, Vector2(42, 82), "JUMP ROPE", HORIZONTAL_ALIGNMENT_LEFT, -1, 30, Color("91a4cc"))
+	draw_string(font, Vector2(42, 82), "줄넘킹", HORIZONTAL_ALIGNMENT_LEFT, -1, 34, Color("91a4cc"))
 	draw_string(font, Vector2(42, 158), str(score), HORIZONTAL_ALIGNMENT_LEFT, -1, 76, Color.WHITE)
 	draw_string(font, Vector2(480, 83), "BEST  %d" % best_score, HORIZONTAL_ALIGNMENT_LEFT, -1, 26, Color("ffd166"))
 	draw_string(font, Vector2(0, 1120), message, HORIZONTAL_ALIGNMENT_CENTER, DESIGN_SIZE.x, 31, message_color)
