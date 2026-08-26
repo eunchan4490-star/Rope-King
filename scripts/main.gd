@@ -9,9 +9,9 @@ const RIGHT_HAND := Vector2(555.0, 690.0)
 const ROPE_SWING_RADIUS := 270.0
 const BASE_ROPE_SPEED := 2.35
 const MAX_ROPE_SPEED := 4.8
-const JUMP_TARGET_ANGLE := 0.84
-# The rope is red only in this narrow window, and only that same window is safe.
-const HIT_WINDOW := 0.18
+const ROPE_CROSSING_ANGLE := 0.84
+const JUMP_CUE_SECONDS := 0.34
+const REQUIRED_JUMP_HEIGHT := 36.0
 
 var score := 0
 var best_score := 0
@@ -20,9 +20,11 @@ var rope_speed := BASE_ROPE_SPEED
 var jump_height := 0.0
 var jump_velocity := 0.0
 var is_jumping := false
+var jump_started_in_cue := false
 var accepting_input := true
+var game_over := false
 var flash_time := 0.0
-var message := "화면을 눌러 점프!"
+var message := "줄이 빨간색일 때 점프!"
 var message_color := Color.WHITE
 
 
@@ -32,7 +34,9 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
-	rope_angle = fmod(rope_angle + rope_speed * delta, TAU)
+	var previous_rope_angle := rope_angle
+	if not game_over:
+		rope_angle = fposmod(rope_angle + rope_speed * delta, TAU)
 	if is_jumping:
 		jump_velocity += 1900.0 * delta
 		jump_height += jump_velocity * delta
@@ -41,6 +45,8 @@ func _process(delta: float) -> void:
 			jump_velocity = 0.0
 			is_jumping = false
 			accepting_input = true
+	if not game_over and _angle_crossed(previous_rope_angle, rope_angle, ROPE_CROSSING_ANGLE):
+		_resolve_rope_crossing()
 	if flash_time > 0.0:
 		flash_time -= delta
 	queue_redraw()
@@ -56,26 +62,47 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func attempt_jump() -> void:
+	if game_over:
+		_restart_game()
+		return
 	if not accepting_input or is_jumping:
 		return
 	accepting_input = false
 	is_jumping = true
+	jump_started_in_cue = _is_jump_cue()
 	jump_velocity = -820.0
 
-	# Score against the same visible timing window used by the rope color.
-	if _is_jump_timing():
+
+func _resolve_rope_crossing() -> void:
+	# Success is decided when the visible rope actually reaches the player's feet.
+	if jump_started_in_cue and is_jumping and jump_height <= -REQUIRED_JUMP_HEIGHT:
 		score += 1
 		best_score = maxi(best_score, score)
 		rope_speed = minf(BASE_ROPE_SPEED + score * 0.075, MAX_ROPE_SPEED)
 		message = "좋아요!  +1"
 		message_color = Color("73f7b4")
 		flash_time = 0.22
+		jump_started_in_cue = false
 	else:
-		score = 0
-		rope_speed = BASE_ROPE_SPEED
-		message = "앗! 타이밍을 맞춰보세요"
+		game_over = true
+		accepting_input = true
+		message = "줄에 걸렸어요!"
 		message_color = Color("ff7892")
-		flash_time = 0.3
+		flash_time = 0.5
+
+
+func _restart_game() -> void:
+	score = 0
+	rope_angle = PI
+	rope_speed = BASE_ROPE_SPEED
+	jump_height = 0.0
+	jump_velocity = 0.0
+	is_jumping = false
+	jump_started_in_cue = false
+	accepting_input = true
+	game_over = false
+	message = "줄이 빨간색일 때 점프!"
+	message_color = Color.WHITE
 
 
 func _draw() -> void:
@@ -132,8 +159,9 @@ func _draw_rope() -> void:
 		# 4t(1-t) is zero at both hands and one at the middle.
 		var y := lerpf(LEFT_HAND.y, RIGHT_HAND.y, t) + 4.0 * t * (1.0 - t) * (midpoint_y - LEFT_HAND.y)
 		points.append(Vector2(x, y))
-	var rope_color := Color("ff334f") if _is_jump_timing() else Color("f6b73c")
-	if _rope_is_behind():
+	var show_jump_cue := _is_jump_cue()
+	var rope_color := Color("ff334f") if show_jump_cue else Color("f6b73c")
+	if _rope_is_behind() and not show_jump_cue:
 		rope_color = Color("d9982d")
 	draw_polyline(points, Color(0, 0, 0, 0.16), 13.0, true)
 	draw_polyline(points, rope_color, 8.0, true)
@@ -145,9 +173,17 @@ func _rope_is_behind() -> bool:
 	return sin(rope_angle) < 0.0
 
 
-func _is_jump_timing() -> bool:
-	var timing_error := absf(wrapf(rope_angle - JUMP_TARGET_ANGLE, -PI, PI))
-	return timing_error <= HIT_WINDOW
+func _is_jump_cue() -> bool:
+	if game_over or rope_speed <= 0.0:
+		return false
+	var seconds_until_crossing := fposmod(ROPE_CROSSING_ANGLE - rope_angle, TAU) / rope_speed
+	return seconds_until_crossing <= JUMP_CUE_SECONDS
+
+
+func _angle_crossed(previous_angle: float, current_angle: float, target_angle: float) -> bool:
+	var travelled := fposmod(current_angle - previous_angle, TAU)
+	var target_distance := fposmod(target_angle - previous_angle, TAU)
+	return target_distance > 0.0 and target_distance <= travelled
 
 
 func _draw_turner(feet: Vector2, faces_left: bool) -> void:
@@ -195,4 +231,7 @@ func _draw_hud() -> void:
 	draw_string(font, Vector2(42, 158), str(score), HORIZONTAL_ALIGNMENT_LEFT, -1, 76, Color.WHITE)
 	draw_string(font, Vector2(480, 83), "BEST  %d" % best_score, HORIZONTAL_ALIGNMENT_LEFT, -1, 26, Color("ffd166"))
 	draw_string(font, Vector2(0, 1120), message, HORIZONTAL_ALIGNMENT_CENTER, DESIGN_SIZE.x, 31, message_color)
-	draw_string(font, Vector2(0, 1190), "화면 터치 · 마우스 클릭 · SPACE", HORIZONTAL_ALIGNMENT_CENTER, DESIGN_SIZE.x, 22, Color("8293b7"))
+	var control_text := "화면을 눌러 다시 시작" if game_over else "화면 터치 · 마우스 클릭 · SPACE"
+	draw_string(font, Vector2(0, 1190), control_text, HORIZONTAL_ALIGNMENT_CENTER, DESIGN_SIZE.x, 22, Color("8293b7"))
+	if game_over:
+		draw_string(font, Vector2(0, 520), "GAME OVER", HORIZONTAL_ALIGNMENT_CENTER, DESIGN_SIZE.x, 62, Color("ff334f"))
