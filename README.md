@@ -27,3 +27,14 @@ Godot 4로 만든 세로형 모바일 줄넘기 타이밍 게임 프로토타입
 4. 휴대폰에서 GitHub의 최신 소스를 내려받아 Godot Android Editor에서 열거나, CI가 만든 APK를 설치해 테스트합니다.
 
 GitHub 자동 업로드를 시작하려면 이 PC에서 `gh auth login`으로 다시 로그인하고, 연결할 저장소를 한 번 정해야 합니다.
+
+## 휴대폰에 APK 설치
+
+`main` 브랜치에 코드가 올라오면 GitHub Actions가 디버그 APK를 자동 생성합니다.
+
+1. 저장소의 **Actions > Android APK**로 이동합니다.
+2. 가장 최근의 성공한 실행을 엽니다.
+3. **Artifacts**에서 `Rope-King-Android`를 다운로드합니다.
+4. ZIP 압축을 풀고 APK를 실행해 설치합니다.
+
+Android가 설치를 차단하면 브라우저 또는 파일 관리자의 **알 수 없는 앱 설치** 권한을 허용해야 합니다. 테스트용 APK는 30일 동안 보관됩니다.
