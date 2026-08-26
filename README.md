@@ -22,9 +22,17 @@ Godot 4로 만든 세로형 모바일 줄넘기 타이밍 게임 프로토타입
 ## 원격 작업 흐름
 
 1. 원격으로 수정 명령을 전달합니다.
-2. 수정 후 검증하고 Git 커밋을 만듭니다.
-3. GitHub 저장소로 push합니다.
-4. 휴대폰에서 GitHub의 최신 소스를 내려받아 Godot Android Editor에서 열거나, CI가 만든 APK를 설치해 테스트합니다.
+2. 수정이 끝난 뒤 **"설치할 수 있게 해"**라고 말합니다.
+3. 프로젝트 검증, 선택한 변경 파일의 커밋과 push, GitHub APK 빌드 확인이 자동으로 이어집니다.
+4. 빌드가 성공하면 GitHub 다운로드 링크와 이 PC에 내려받은 APK 경로를 안내합니다.
+
+자동 배포는 `tools/publish-android.ps1`을 사용합니다. 예를 들어 메인 게임 스크립트를 배포하려면 다음과 같이 실행합니다.
+
+```powershell
+.\tools\publish-android.ps1 -Message "fix: update jump timing" -Files "scripts/main.gd"
+```
+
+여러 파일을 함께 배포할 때는 `-Files @("파일1", "파일2")`처럼 배열로 전달합니다.
 
 GitHub 자동 업로드를 시작하려면 이 PC에서 `gh auth login`으로 다시 로그인하고, 연결할 저장소를 한 번 정해야 합니다.
 
