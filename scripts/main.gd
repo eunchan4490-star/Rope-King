@@ -10,6 +10,9 @@ const LEFT_HAND := Vector2(165.0, 785.0)
 const RIGHT_HAND := Vector2(555.0, 785.0)
 const ROPE_SWING_RADIUS := 115.0
 const ROPE_CROSSING_ANGLE := 1.15
+const ROPE_PIXEL_GRID := 4.0
+const ROPE_PIXEL_OUTLINE_SIZE := Vector2(14.0, 14.0)
+const ROPE_PIXEL_CORE_SIZE := Vector2(8.0, 8.0)
 const HIT_REVEAL_SECONDS := 0.42
 const DEFAULT_PLAYER_SPRITE_PATH := "res://assets/player/player.png"
 const DEFAULT_BALANCE := preload("res://resources/balance/default_balance.tres")
@@ -295,19 +298,42 @@ func _draw_ground() -> void:
 
 func _draw_rope() -> void:
 	var midpoint_y := LEFT_HAND.y + sin(rope_angle) * ROPE_SWING_RADIUS
-	var points := PackedVector2Array()
-	for i in range(49):
-		var t := float(i) / 48.0
+	var pixel_points := PackedVector2Array()
+	for i in range(97):
+		var t := float(i) / 96.0
 		var x := lerpf(LEFT_HAND.x, RIGHT_HAND.x, t)
 		# 4t(1-t) is zero at both hands and one at the middle.
 		var y := lerpf(LEFT_HAND.y, RIGHT_HAND.y, t) + 4.0 * t * (1.0 - t) * (midpoint_y - LEFT_HAND.y)
-		points.append(Vector2(x, y))
+		var pixel_point := Vector2(
+			roundf(x / ROPE_PIXEL_GRID) * ROPE_PIXEL_GRID,
+			roundf(y / ROPE_PIXEL_GRID) * ROPE_PIXEL_GRID
+		)
+		if pixel_points.is_empty() or pixel_points[-1] != pixel_point:
+			pixel_points.append(pixel_point)
+
 	var show_jump_cue := _is_jump_cue()
 	var rope_color := Color("ff334f") if show_jump_cue else Color("f6b73c")
-	draw_polyline(points, Color(0, 0, 0, 0.16), 13.0, true)
-	draw_polyline(points, rope_color, 8.0, true)
-	draw_circle(LEFT_HAND, 7.0, Color("f6b73c"))
-	draw_circle(RIGHT_HAND, 7.0, Color("f6b73c"))
+	var highlight_color := Color("ff9a8d") if show_jump_cue else Color("ffe27a")
+	var outline_color := Color("3b2119")
+
+	# Draw in separate passes so the square pieces merge into one outlined pixel rope.
+	for point in pixel_points:
+		draw_rect(Rect2(point - ROPE_PIXEL_OUTLINE_SIZE * 0.5 + Vector2(2.0, 3.0), ROPE_PIXEL_OUTLINE_SIZE), Color(0, 0, 0, 0.22))
+	for point in pixel_points:
+		draw_rect(Rect2(point - ROPE_PIXEL_OUTLINE_SIZE * 0.5, ROPE_PIXEL_OUTLINE_SIZE), outline_color)
+	for point in pixel_points:
+		draw_rect(Rect2(point - ROPE_PIXEL_CORE_SIZE * 0.5, ROPE_PIXEL_CORE_SIZE), rope_color)
+	for i in range(0, pixel_points.size(), 3):
+		draw_rect(Rect2(pixel_points[i] + Vector2(-3.0, -3.0), Vector2(3.0, 3.0)), highlight_color)
+
+	_draw_pixel_rope_grip(LEFT_HAND)
+	_draw_pixel_rope_grip(RIGHT_HAND)
+
+
+func _draw_pixel_rope_grip(center: Vector2) -> void:
+	draw_rect(Rect2(center - Vector2(9.0, 9.0), Vector2(18.0, 18.0)), Color("3b2119"))
+	draw_rect(Rect2(center - Vector2(6.0, 6.0), Vector2(12.0, 12.0)), Color("f6b73c"))
+	draw_rect(Rect2(center + Vector2(-4.0, -4.0), Vector2(4.0, 4.0)), Color("ffe27a"))
 
 
 func _draw_hit_feedback() -> void:
