@@ -17,6 +17,7 @@ const HIT_REVEAL_SECONDS := 0.42
 const DEFAULT_PLAYER_SPRITE_PATH := "res://assets/player/player.png"
 const DEFAULT_PLAYER_JUMP_SHEET_PATH := "res://assets/player/player_jump_sheet.png"
 const PLAYER_VISIBLE_HEIGHT := 160.0
+const PLAYER_JUMP_SCALE := PLAYER_VISIBLE_HEIGHT / 512.0
 const PLAYER_BASE_REGION := Rect2(206.0, 58.0, 773.0, 1184.0)
 const PLAYER_JUMP_REGIONS := [
 	Rect2(67.0, 144.0, 316.0, 512.0),
@@ -450,7 +451,9 @@ func _draw_player() -> void:
 func _draw_player_sprite(feet_position: Vector2) -> void:
 	var active_texture := player_sprite
 	var source_rect := PLAYER_BASE_REGION
+	var using_jump_sheet := false
 	if is_jumping and player_jump_sprite != null:
+		using_jump_sheet = true
 		active_texture = player_jump_sprite
 		var frame := 3
 		if jump_velocity < -500.0 or jump_velocity >= 500.0:
@@ -462,7 +465,10 @@ func _draw_player_sprite(feet_position: Vector2) -> void:
 	if texture_size.x <= 0.0 or texture_size.y <= 0.0:
 		_draw_default_player(feet_position)
 		return
-	var sprite_scale := minf(PLAYER_VISIBLE_HEIGHT / texture_size.y, player_sprite_max_size.x / texture_size.x)
+	var sprite_scale := PLAYER_JUMP_SCALE if using_jump_sheet else minf(
+		PLAYER_VISIBLE_HEIGHT / texture_size.y,
+		player_sprite_max_size.x / texture_size.x
+	)
 	var draw_size := texture_size * sprite_scale
 	var anchored_feet := feet_position + player_sprite_ground_offset
 	var draw_position := anchored_feet - Vector2(draw_size.x * 0.5, draw_size.y)
