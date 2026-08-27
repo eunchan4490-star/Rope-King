@@ -15,6 +15,7 @@ const ROPE_PIXEL_OUTLINE_SIZE := Vector2(14.0, 14.0)
 const ROPE_PIXEL_CORE_SIZE := Vector2(8.0, 8.0)
 const HIT_REVEAL_SECONDS := 0.42
 const DEFAULT_PLAYER_SPRITE_PATH := "res://assets/player/player.png"
+const DEFAULT_PLAYER_JUMP_SHEET_PATH := "res://assets/player/player_jump_sheet.png"
 const DEFAULT_BALANCE := preload("res://resources/balance/default_balance.tres")
 const START_BUTTON_RECT := Rect2(165.0, 955.0, 390.0, 135.0)
 const CHARACTER_BUTTON_RECT := Rect2(25.0, 1130.0, 210.0, 115.0)
@@ -35,6 +36,7 @@ var rope_angle := PI
 var rope_speed := 0.0
 var jump_height := 0.0
 var jump_velocity := 0.0
+var jump_animation_time := 0.0
 var is_jumping := false
 var jump_started_in_cue := false
 var accepting_input := true
@@ -55,9 +57,11 @@ var run_coins_earned := 0
 var total_runs := 0
 var total_success := 0
 var hit_reveal_time := 0.0
+var player_jump_sprite: Texture2D
 
 
 func _ready() -> void:
+	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	feedback = RopeFeedbackManager.new()
 	add_child(feedback)
 	save_manager = RopeSaveManager.new()
@@ -66,6 +70,8 @@ func _ready() -> void:
 	rope_speed = balance.base_rope_speed
 	if player_sprite == null and ResourceLoader.exists(DEFAULT_PLAYER_SPRITE_PATH):
 		player_sprite = load(DEFAULT_PLAYER_SPRITE_PATH) as Texture2D
+	if ResourceLoader.exists(DEFAULT_PLAYER_JUMP_SHEET_PATH):
+		player_jump_sprite = load(DEFAULT_PLAYER_JUMP_SHEET_PATH) as Texture2D
 	get_viewport().size_changed.connect(queue_redraw)
 	queue_redraw()
 
@@ -75,11 +81,13 @@ func _process(delta: float) -> void:
 		var previous_rope_angle := rope_angle
 		rope_angle = fposmod(rope_angle + _effective_rope_speed() * delta, TAU)
 		if is_jumping:
+			jump_animation_time += delta
 			jump_velocity += 1900.0 * delta
 			jump_height += jump_velocity * delta
 			if jump_height >= 0.0:
 				jump_height = 0.0
 				jump_velocity = 0.0
+				jump_animation_time = 0.0
 				is_jumping = false
 				accepting_input = true
 		if _angle_crossed(previous_rope_angle, rope_angle, ROPE_CROSSING_ANGLE):
@@ -143,6 +151,7 @@ func attempt_jump() -> void:
 		return
 	accepting_input = false
 	is_jumping = true
+	jump_animation_time = 0.0
 	jump_started_in_cue = _is_jump_cue()
 	jump_velocity = -820.0
 
@@ -188,6 +197,7 @@ func _start_game() -> void:
 	rope_speed = balance.base_rope_speed
 	jump_height = 0.0
 	jump_velocity = 0.0
+	jump_animation_time = 0.0
 	is_jumping = false
 	jump_started_in_cue = false
 	accepting_input = true
@@ -206,6 +216,7 @@ func _return_to_main() -> void:
 	rope_speed = balance.base_rope_speed
 	jump_height = 0.0
 	jump_velocity = 0.0
+	jump_animation_time = 0.0
 	is_jumping = false
 	jump_started_in_cue = false
 	accepting_input = true
@@ -421,7 +432,14 @@ func _draw_player() -> void:
 
 
 func _draw_player_sprite(feet_position: Vector2) -> void:
-	var texture_size := player_sprite.get_size()
+	var active_texture := player_sprite
+	var source_rect := Rect2(Vector2.ZERO, player_sprite.get_size())
+	if is_jumping and player_jump_sprite != null:
+		active_texture = player_jump_sprite
+		var cell_size := Vector2(active_texture.get_width() / 4.0, active_texture.get_height())
+		var frame := 1 if jump_animation_time < 0.09 else (2 if jump_velocity < -180.0 else 3)
+		source_rect = Rect2(Vector2(cell_size.x * frame, 0.0), cell_size)
+	var texture_size := source_rect.size
 	if texture_size.x <= 0.0 or texture_size.y <= 0.0:
 		_draw_default_player(feet_position)
 		return
@@ -429,7 +447,7 @@ func _draw_player_sprite(feet_position: Vector2) -> void:
 	var draw_size := texture_size * sprite_scale
 	var anchored_feet := feet_position + player_sprite_ground_offset
 	var draw_position := anchored_feet - Vector2(draw_size.x * 0.5, draw_size.y)
-	draw_texture_rect(player_sprite, Rect2(draw_position, draw_size), false)
+	draw_texture_rect_region(active_texture, Rect2(draw_position, draw_size), source_rect)
 
 
 func _draw_default_player(p: Vector2) -> void:
