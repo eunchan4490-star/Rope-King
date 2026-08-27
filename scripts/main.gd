@@ -4,12 +4,12 @@ const DESIGN_SIZE := Vector2(720.0, 1280.0)
 const PLAYER_X := 360.0
 const PLAYER_GROUND_Y := 890.0
 const TURNER_GROUND_Y := 910.0
-const LEFT_HAND := Vector2(165.0, 690.0)
-const RIGHT_HAND := Vector2(555.0, 690.0)
-const ROPE_SWING_RADIUS := 270.0
+const LEFT_HAND := Vector2(165.0, 785.0)
+const RIGHT_HAND := Vector2(555.0, 785.0)
+const ROPE_SWING_RADIUS := 115.0
 const BASE_ROPE_SPEED := 2.35
 const MAX_ROPE_SPEED := 4.8
-const ROPE_CROSSING_ANGLE := 0.84
+const ROPE_CROSSING_ANGLE := 1.38
 const JUMP_CUE_SECONDS := 0.34
 const REQUIRED_JUMP_HEIGHT := 36.0
 const CHALLENGE_START_SCORE := 4
@@ -251,16 +251,23 @@ func _angle_crossed(previous_angle: float, current_angle: float, target_angle: f
 func _draw_turner(feet: Vector2, faces_left: bool) -> void:
 	var direction := -1.0 if faces_left else 1.0
 	_draw_shadow_ellipse(feet + Vector2(0, 13), Vector2(45, 13), Color(0, 0, 0, 0.2))
-	# Legs, torso, head, and the arm holding the rope.
-	draw_line(feet + Vector2(-10, -5), feet + Vector2(-18, -63), Color("334b73"), 15.0, true)
-	draw_line(feet + Vector2(10, -5), feet + Vector2(18, -63), Color("334b73"), 15.0, true)
-	draw_line(feet + Vector2(0, -62), feet + Vector2(0, -150), Color("ff7a68"), 39.0, true)
-	draw_circle(feet + Vector2(0, -190), 30.0, Color("ffe0bd"))
-	draw_arc(feet + Vector2(0, -195), 28.0, PI, TAU, 18, Color("49382f"), 12.0, true)
+	# Bent knees and a forward-leaning torso keep the turners low like real helpers.
+	var hip := feet + Vector2(direction * 7.0, -54.0)
+	var shoulder := feet + Vector2(direction * 22.0, -91.0)
+	var head := feet + Vector2(direction * 25.0, -122.0)
+	var left_knee := feet + Vector2(-29.0, -29.0)
+	var right_knee := feet + Vector2(29.0, -29.0)
+	draw_line(feet + Vector2(-35.0, 0.0), left_knee, Color("334b73"), 15.0, true)
+	draw_line(left_knee, hip + Vector2(-9.0, 0.0), Color("334b73"), 15.0, true)
+	draw_line(feet + Vector2(35.0, 0.0), right_knee, Color("334b73"), 15.0, true)
+	draw_line(right_knee, hip + Vector2(9.0, 0.0), Color("334b73"), 15.0, true)
+	draw_line(hip, shoulder, Color("ff7a68"), 39.0, true)
+	draw_circle(head, 28.0, Color("ffe0bd"))
+	draw_arc(head + Vector2(0.0, -4.0), 27.0, PI, TAU, 18, Color("49382f"), 12.0, true)
 	var hand := LEFT_HAND if not faces_left else RIGHT_HAND
-	draw_line(feet + Vector2(direction * 6, -135), hand, Color("ff7a68"), 13.0, true)
+	draw_line(shoulder + Vector2(direction * 4.0, 2.0), hand, Color("ff7a68"), 13.0, true)
 	draw_circle(hand, 9.0, Color("ffe0bd"))
-	draw_line(feet + Vector2(-direction * 5, -132), feet + Vector2(-direction * 36, -105), Color("ff7a68"), 13.0, true)
+	draw_line(shoulder - Vector2(direction * 5.0, -2.0), feet + Vector2(-direction * 25.0, -64.0), Color("ff7a68"), 13.0, true)
 
 
 func _draw_player() -> void:
