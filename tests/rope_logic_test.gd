@@ -2,7 +2,7 @@ extends SceneTree
 
 const MAIN_SCENE := preload("res://main.tscn")
 const BALANCE := preload("res://resources/balance/default_balance.tres")
-const TARGET_ANGLE := 1.15
+const TARGET_ANGLE := 0.215
 
 var failures: Array[String] = []
 
@@ -87,6 +87,8 @@ func _test_visible_contact_loses(game: Node) -> void:
 	_expect(not game._player_clears_rope_at_crossing(), "visible rope contact was incorrectly treated as clear")
 	game.jump_height = -12.0
 	_expect(game._player_clears_rope_at_crossing(), "visible gap above the rope was incorrectly treated as contact")
+	var overhead_y: float = game.LEFT_HAND.y - game.ROPE_SWING_RADIUS
+	_expect(overhead_y < game.PLAYER_GROUND_Y - game.player_sprite_max_size.y, "rope orbit does not clear the player's head")
 
 
 func _test_character_asset_system(game: Node) -> void:

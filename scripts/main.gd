@@ -6,10 +6,11 @@ const DESIGN_SIZE := Vector2(720.0, 1280.0)
 const PLAYER_X := 360.0
 const PLAYER_GROUND_Y := 890.0
 const TURNER_GROUND_Y := 910.0
-const LEFT_HAND := Vector2(165.0, 840.0)
-const RIGHT_HAND := Vector2(555.0, 840.0)
-const ROPE_SWING_RADIUS := 55.0
-const ROPE_CROSSING_ANGLE := 1.15
+const LEFT_HAND := Vector2(140.0, 855.0)
+const RIGHT_HAND := Vector2(580.0, 855.0)
+const ROPE_SWING_RADIUS := 165.0
+# The enlarged orbit still reaches the same fair foot-level crossing height.
+const ROPE_CROSSING_ANGLE := 0.215
 const ROPE_PIXEL_GRID := 4.0
 const ROPE_PIXEL_OUTLINE_SIZE := Vector2(14.0, 14.0)
 const ROPE_PIXEL_CORE_SIZE := Vector2(8.0, 8.0)
