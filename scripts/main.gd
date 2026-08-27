@@ -76,7 +76,7 @@ var selected_character_id := DEFAULT_CHARACTER_ID
 var player_base_region := Rect2()
 var player_jump_regions: Array[Rect2] = []
 var player_base_scale := 1.0
-var player_jump_scale := 1.0
+var player_jump_scale := Vector2.ONE
 var character_menu_open := false
 var character_preview_textures: Dictionary = {}
 var character_preview_regions: Dictionary = {}
@@ -480,8 +480,7 @@ func _draw_player_sprite(feet_position: Vector2) -> void:
 	if texture_size.x <= 0.0 or texture_size.y <= 0.0:
 		_draw_default_player(feet_position)
 		return
-	var sprite_scale := player_jump_scale if using_jump_sheet else player_base_scale
-	var draw_size := texture_size * sprite_scale
+	var draw_size := texture_size * player_jump_scale if using_jump_sheet else texture_size * player_base_scale
 	var anchored_feet := feet_position + player_sprite_ground_offset
 	var draw_position := anchored_feet - Vector2(draw_size.x * 0.5, draw_size.y)
 	draw_texture_rect_region(active_texture, Rect2(draw_position, draw_size), source_rect)
@@ -552,13 +551,17 @@ func _prepare_character_regions() -> void:
 		return
 	for frame in range(JUMP_FRAME_COUNT):
 		var cell_rect := Rect2i(frame * cell_width, 0, cell_width, sheet_image.get_height())
-		var frame_image := sheet_image.get_region(cell_rect)
-		var used := frame_image.get_used_rect()
+		var used := _image_visible_region(sheet_image, cell_rect)
 		if used.size.x <= 0 or used.size.y <= 0:
-			used = Rect2i(0, 0, cell_width, sheet_image.get_height())
-		player_jump_regions.append(Rect2(used.position + cell_rect.position, used.size))
+			used = cell_rect
+		player_jump_regions.append(Rect2(used))
 	if not player_jump_regions.is_empty():
-		player_jump_scale = _scale_for_region(player_jump_regions[0])
+		var base_draw_size := player_base_region.size * player_base_scale
+		var jump_reference_size := player_jump_regions[0].size
+		player_jump_scale = Vector2(
+			base_draw_size.x / jump_reference_size.x,
+			base_draw_size.y / jump_reference_size.y
+		)
 
 
 func _texture_used_region(texture: Texture2D) -> Rect2:
@@ -567,8 +570,29 @@ func _texture_used_region(texture: Texture2D) -> Rect2:
 	var image := texture.get_image()
 	if image == null or image.is_empty():
 		return Rect2(Vector2.ZERO, texture.get_size())
-	var used := image.get_used_rect()
+	var used := _image_visible_region(image, Rect2i(Vector2i.ZERO, image.get_size()))
 	return Rect2(used) if used.size.x > 0 and used.size.y > 0 else Rect2(Vector2.ZERO, texture.get_size())
+
+
+func _image_visible_region(image: Image, search_rect: Rect2i, alpha_threshold: int = 8) -> Rect2i:
+	var rgba: Image = image.duplicate()
+	if rgba.get_format() != Image.FORMAT_RGBA8:
+		rgba.convert(Image.FORMAT_RGBA8)
+	var data: PackedByteArray = rgba.get_data()
+	var image_width: int = rgba.get_width()
+	var minimum := search_rect.end
+	var maximum := search_rect.position - Vector2i.ONE
+	for y in range(search_rect.position.y, search_rect.end.y):
+		var row_offset: int = y * image_width * 4
+		for x in range(search_rect.position.x, search_rect.end.x):
+			if data[row_offset + x * 4 + 3] > alpha_threshold:
+				minimum.x = mini(minimum.x, x)
+				minimum.y = mini(minimum.y, y)
+				maximum.x = maxi(maximum.x, x)
+				maximum.y = maxi(maximum.y, y)
+	if maximum.x < minimum.x or maximum.y < minimum.y:
+		return Rect2i()
+	return Rect2i(minimum, maximum - minimum + Vector2i.ONE)
 
 
 func _scale_for_region(region: Rect2) -> float:

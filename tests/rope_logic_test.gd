@@ -96,7 +96,7 @@ func _test_character_asset_system(game: Node) -> void:
 	game._load_character_visuals("default")
 	_expect(game.player_sprite != null, "default character idle sprite was not loaded")
 	_expect(game.player_jump_regions.size() == 4, "jump sheet was not split into four frames")
-	_expect(game.player_jump_scale > 0.0, "character scale was not calculated")
+	_expect(game.player_jump_scale.x > 0.0 and game.player_jump_scale.y > 0.0, "character scale was not calculated")
 	_expect(not game.set_player_character("../unsafe"), "unsafe character id was accepted")
 	for character_id in ["schoolgirl_ponytail", "schoolgirl_bob"]:
 		_expect(game.set_player_character(character_id), "%s character could not be selected" % character_id)
