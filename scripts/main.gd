@@ -1,5 +1,7 @@
 extends Node2D
 
+enum GameState { TITLE, PLAYING, GAME_OVER }
+
 const DESIGN_SIZE := Vector2(720.0, 1280.0)
 const PLAYER_X := 360.0
 const PLAYER_GROUND_Y := 890.0
@@ -9,12 +11,15 @@ const RIGHT_HAND := Vector2(555.0, 785.0)
 const ROPE_SWING_RADIUS := 115.0
 const BASE_ROPE_SPEED := 2.35
 const MAX_ROPE_SPEED := 4.8
+const SPEED_GAIN_PER_SCORE := 0.075
 const ROPE_CROSSING_ANGLE := 1.38
 const JUMP_CUE_SECONDS := 0.34
 const REQUIRED_JUMP_HEIGHT := 36.0
-const CHALLENGE_START_SCORE := 4
+const CHALLENGE_START_SCORE := 10
 const MAX_PATTERN_SPEED := 6.2
 const DEFAULT_PLAYER_SPRITE_PATH := "res://assets/player/player.png"
+const UPGRADE_BUTTON_RECT := Rect2(55.0, 1090.0, 285.0, 92.0)
+const SETTINGS_BUTTON_RECT := Rect2(380.0, 1090.0, 285.0, 92.0)
 
 @export_group("Player Sprite")
 @export var player_sprite: Texture2D
@@ -30,11 +35,12 @@ var jump_velocity := 0.0
 var is_jumping := false
 var jump_started_in_cue := false
 var accepting_input := true
-var game_over := false
+var game_state := GameState.TITLE
 var challenge_pattern := 0
 var flash_time := 0.0
-var message := "줄이 빨간색일 때 점프!"
+var message := "화면을 눌러 시작"
 var message_color := Color.WHITE
+var menu_notice := ""
 
 
 func _ready() -> void:
@@ -45,19 +51,19 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
-	var previous_rope_angle := rope_angle
-	if not game_over:
+	if game_state == GameState.PLAYING:
+		var previous_rope_angle := rope_angle
 		rope_angle = fposmod(rope_angle + _effective_rope_speed() * delta, TAU)
-	if is_jumping:
-		jump_velocity += 1900.0 * delta
-		jump_height += jump_velocity * delta
-		if jump_height >= 0.0:
-			jump_height = 0.0
-			jump_velocity = 0.0
-			is_jumping = false
-			accepting_input = true
-	if not game_over and _angle_crossed(previous_rope_angle, rope_angle, ROPE_CROSSING_ANGLE):
-		_resolve_rope_crossing()
+		if is_jumping:
+			jump_velocity += 1900.0 * delta
+			jump_height += jump_velocity * delta
+			if jump_height >= 0.0:
+				jump_height = 0.0
+				jump_velocity = 0.0
+				is_jumping = false
+				accepting_input = true
+		if _angle_crossed(previous_rope_angle, rope_angle, ROPE_CROSSING_ANGLE):
+			_resolve_rope_crossing()
 	if flash_time > 0.0:
 		flash_time -= delta
 	queue_redraw()
@@ -65,16 +71,37 @@ func _process(delta: float) -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	var pressed := event.is_action_pressed("jump")
+	var pointer_position := Vector2(-1.0, -1.0)
 	if event is InputEventScreenTouch:
 		pressed = event.pressed
+		pointer_position = event.position
+	elif event is InputEventMouseButton:
+		pointer_position = event.position
 	if pressed:
+		if game_state == GameState.TITLE and pointer_position.x >= 0.0:
+			var design_position := _screen_to_design(pointer_position)
+			if UPGRADE_BUTTON_RECT.has_point(design_position):
+				menu_notice = "업그레이드 메뉴 준비 중"
+				get_viewport().set_input_as_handled()
+				return
+			if SETTINGS_BUTTON_RECT.has_point(design_position):
+				menu_notice = "설정 메뉴 준비 중"
+				get_viewport().set_input_as_handled()
+				return
 		attempt_jump()
 		get_viewport().set_input_as_handled()
 
 
+func _screen_to_design(screen_position: Vector2) -> Vector2:
+	var viewport_size := get_viewport_rect().size
+	var scale_factor := minf(viewport_size.x / DESIGN_SIZE.x, viewport_size.y / DESIGN_SIZE.y)
+	var offset := (viewport_size - DESIGN_SIZE * scale_factor) * 0.5
+	return (screen_position - offset) / scale_factor
+
+
 func attempt_jump() -> void:
-	if game_over:
-		_restart_game()
+	if game_state != GameState.PLAYING:
+		_start_game()
 		return
 	if not accepting_input or is_jumping:
 		return
@@ -89,21 +116,21 @@ func _resolve_rope_crossing() -> void:
 	if jump_started_in_cue and is_jumping and jump_height <= -REQUIRED_JUMP_HEIGHT:
 		score += 1
 		best_score = maxi(best_score, score)
-		rope_speed = minf(BASE_ROPE_SPEED + score * 0.075, MAX_ROPE_SPEED)
+		rope_speed = minf(BASE_ROPE_SPEED + score * SPEED_GAIN_PER_SCORE, MAX_ROPE_SPEED)
 		_update_challenge_pattern()
-		message = "다음 · %s" % _challenge_name() if challenge_pattern > 0 else "좋아요!  +1"
+		message = "좋아요!  +1"
 		message_color = Color("73f7b4")
 		flash_time = 0.22
 		jump_started_in_cue = false
 	else:
-		game_over = true
+		game_state = GameState.GAME_OVER
 		accepting_input = true
 		message = "줄에 걸렸어요!"
 		message_color = Color("ff7892")
 		flash_time = 0.5
 
 
-func _restart_game() -> void:
+func _start_game() -> void:
 	score = 0
 	rope_angle = PI
 	rope_speed = BASE_ROPE_SPEED
@@ -112,8 +139,9 @@ func _restart_game() -> void:
 	is_jumping = false
 	jump_started_in_cue = false
 	accepting_input = true
-	game_over = false
+	game_state = GameState.PLAYING
 	challenge_pattern = 0
+	menu_notice = ""
 	message = "줄이 빨간색일 때 점프!"
 	message_color = Color.WHITE
 
@@ -186,7 +214,7 @@ func _rope_is_behind() -> bool:
 
 
 func _is_jump_cue() -> bool:
-	if game_over or rope_speed <= 0.0 or _rope_is_behind():
+	if game_state != GameState.PLAYING or rope_speed <= 0.0 or _rope_is_behind():
 		return false
 	var seconds_until_crossing := fposmod(ROPE_CROSSING_ANGLE - rope_angle, TAU) / rope_speed
 	return seconds_until_crossing <= JUMP_CUE_SECONDS
@@ -215,17 +243,6 @@ func _update_challenge_pattern() -> void:
 		challenge_pattern = 0
 	else:
 		challenge_pattern = 1 + posmod(score - CHALLENGE_START_SCORE, 3)
-
-
-func _challenge_name() -> String:
-	match challenge_pattern:
-		1:
-			return "엇박자"
-		2:
-			return "급가속"
-		3:
-			return "물결 리듬"
-	return "기본 리듬"
 
 
 func _angle_crossed(previous_angle: float, current_angle: float, target_angle: float) -> bool:
@@ -257,7 +274,8 @@ func _draw_turner(feet: Vector2, faces_left: bool) -> void:
 
 
 func _draw_player() -> void:
-	var p := Vector2(PLAYER_X, PLAYER_GROUND_Y + jump_height)
+	var idle_bob := sin(Time.get_ticks_msec() * 0.004) * 3.0 if game_state == GameState.TITLE else 0.0
+	var p := Vector2(PLAYER_X, PLAYER_GROUND_Y + jump_height + idle_bob)
 	# Shadow
 	var shadow_scale := clampf(1.0 + jump_height / 650.0, 0.45, 1.0)
 	_draw_shadow_ellipse(Vector2(PLAYER_X, PLAYER_GROUND_Y + 18.0), Vector2(70.0 * shadow_scale, 18.0), Color(0, 0, 0, 0.28))
@@ -301,13 +319,36 @@ func _draw_shadow_ellipse(center: Vector2, radii: Vector2, color: Color) -> void
 
 func _draw_hud() -> void:
 	var font := ThemeDB.fallback_font
+	if game_state == GameState.TITLE:
+		_draw_main_menu(font)
+		return
 	draw_string(font, Vector2(42, 82), "줄넘킹", HORIZONTAL_ALIGNMENT_LEFT, -1, 34, Color("91a4cc"))
 	draw_string(font, Vector2(42, 158), str(score), HORIZONTAL_ALIGNMENT_LEFT, -1, 76, Color.WHITE)
 	draw_string(font, Vector2(480, 83), "BEST  %d" % best_score, HORIZONTAL_ALIGNMENT_LEFT, -1, 26, Color("ffd166"))
-	if challenge_pattern > 0 and not game_over:
-		draw_string(font, Vector2(0, 225), "패턴 · %s" % _challenge_name(), HORIZONTAL_ALIGNMENT_CENTER, DESIGN_SIZE.x, 27, Color("fff0a6"))
 	draw_string(font, Vector2(0, 1120), message, HORIZONTAL_ALIGNMENT_CENTER, DESIGN_SIZE.x, 31, message_color)
-	var control_text := "화면을 눌러 다시 시작" if game_over else "화면 터치 · 마우스 클릭 · SPACE"
+	var control_text := "화면 터치 · 마우스 클릭 · SPACE"
+	if game_state == GameState.GAME_OVER:
+		control_text = "화면을 눌러 즉시 재시작"
 	draw_string(font, Vector2(0, 1190), control_text, HORIZONTAL_ALIGNMENT_CENTER, DESIGN_SIZE.x, 22, Color("8293b7"))
-	if game_over:
+	if game_state == GameState.GAME_OVER:
 		draw_string(font, Vector2(0, 520), "GAME OVER", HORIZONTAL_ALIGNMENT_CENTER, DESIGN_SIZE.x, 62, Color("ff334f"))
+
+
+func _draw_main_menu(font: Font) -> void:
+	draw_string(font, Vector2(0, 125), "줄넘킹", HORIZONTAL_ALIGNMENT_CENTER, DESIGN_SIZE.x, 74, Color.WHITE)
+	draw_string(font, Vector2(0, 182), "ROPE KING", HORIZONTAL_ALIGNMENT_CENTER, DESIGN_SIZE.x, 24, Color("ffd166"))
+	draw_rect(Rect2(245.0, 218.0, 230.0, 58.0), Color(0.05, 0.09, 0.17, 0.62), true)
+	draw_string(font, Vector2(245.0, 257.0), "BEST  %d" % best_score, HORIZONTAL_ALIGNMENT_CENTER, 230.0, 25, Color("fff0a6"))
+	var pulse_alpha := 0.72 + 0.28 * sin(Time.get_ticks_msec() * 0.006)
+	draw_string(font, Vector2(0, 1015), "Tap to Start", HORIZONTAL_ALIGNMENT_CENTER, DESIGN_SIZE.x, 42, Color(1.0, 1.0, 1.0, pulse_alpha))
+	_draw_menu_button(font, UPGRADE_BUTTON_RECT, "UPGRADE", "업그레이드")
+	_draw_menu_button(font, SETTINGS_BUTTON_RECT, "SETTINGS", "설정")
+	if not menu_notice.is_empty():
+		draw_string(font, Vector2(0, 1065), menu_notice, HORIZONTAL_ALIGNMENT_CENTER, DESIGN_SIZE.x, 22, Color("ffd166"))
+
+
+func _draw_menu_button(font: Font, rect: Rect2, title: String, subtitle: String) -> void:
+	draw_rect(rect, Color(0.06, 0.10, 0.18, 0.88), true)
+	draw_rect(rect, Color("91a4cc"), false, 4.0)
+	draw_string(font, Vector2(rect.position.x, rect.position.y + 38.0), title, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, 24, Color.WHITE)
+	draw_string(font, Vector2(rect.position.x, rect.position.y + 70.0), subtitle, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, 20, Color("ffd166"))
