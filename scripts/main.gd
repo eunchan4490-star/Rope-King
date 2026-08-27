@@ -8,8 +8,8 @@ const PLAYER_GROUND_Y := 890.0
 const TURNER_GROUND_Y := 910.0
 const LEFT_HAND := Vector2(140.0, 855.0)
 const RIGHT_HAND := Vector2(580.0, 855.0)
-const ROPE_OVERHEAD_RADIUS := 135.0
-const ROPE_GROUND_RADIUS := 45.0
+const ROPE_OVERHEAD_RADIUS := 170.0
+const ROPE_GROUND_RADIUS := 40.0
 # The front half reaches the player's feet without sinking deep into the ground.
 const ROPE_CROSSING_ANGLE := 0.9
 const ROPE_PIXEL_GRID := 4.0
@@ -96,6 +96,8 @@ var character_names: Dictionary = {}
 var owned_character_ids: Array[String] = []
 var character_page := 0
 var turner_used_region := Rect2()
+var mirrored_turner_texture: Texture2D
+var mirrored_turner_used_region := Rect2()
 var character_button_used_region := Rect2()
 var upgrade_button_used_region := Rect2()
 var settings_button_used_region := Rect2()
@@ -113,10 +115,7 @@ func _ready() -> void:
 	_load_character_visuals(selected_character_id)
 	if background_texture == null and ResourceLoader.exists(DEFAULT_BACKGROUND_PATH):
 		background_texture = load(DEFAULT_BACKGROUND_PATH) as Texture2D
-	if turner_texture == null and ResourceLoader.exists(DEFAULT_TURNER_PATH):
-		turner_texture = load(DEFAULT_TURNER_PATH) as Texture2D
-	if turner_texture != null:
-		turner_used_region = _texture_used_region(turner_texture)
+	_prepare_turner_visuals()
 	if character_button_texture == null and ResourceLoader.exists(MENU_CHARACTER_TEXTURE_PATH):
 		character_button_texture = load(MENU_CHARACTER_TEXTURE_PATH) as Texture2D
 	if upgrade_button_texture == null and ResourceLoader.exists(MENU_UPGRADE_TEXTURE_PATH):
@@ -128,6 +127,19 @@ func _ready() -> void:
 	settings_button_used_region = _texture_used_region(settings_button_texture)
 	get_viewport().size_changed.connect(queue_redraw)
 	queue_redraw()
+
+
+func _prepare_turner_visuals() -> void:
+	if turner_texture == null and ResourceLoader.exists(DEFAULT_TURNER_PATH):
+		turner_texture = load(DEFAULT_TURNER_PATH) as Texture2D
+	if turner_texture != null:
+		turner_used_region = _texture_used_region(turner_texture)
+		var turner_image := turner_texture.get_image()
+		if turner_image != null and not turner_image.is_empty():
+			var mirrored_image := turner_image.duplicate()
+			mirrored_image.flip_x()
+			mirrored_turner_texture = ImageTexture.create_from_image(mirrored_image)
+			mirrored_turner_used_region = _texture_used_region(mirrored_turner_texture)
 
 
 func _process(delta: float) -> void:
@@ -344,8 +356,8 @@ func _draw() -> void:
 	# Draw the rear half first so only the parts covered by people are hidden.
 	if _rope_is_behind():
 		_draw_rope()
-	_draw_turner(Vector2(100.0, TURNER_GROUND_Y), false)
-	_draw_turner(Vector2(620.0, TURNER_GROUND_Y), true)
+	_draw_turner(Vector2(108.0, TURNER_GROUND_Y), false)
+	_draw_turner(Vector2(612.0, TURNER_GROUND_Y), true)
 	_draw_player()
 	# Draw the front half last so it visibly passes in front of the player.
 	if not _rope_is_behind():
@@ -503,16 +515,16 @@ func _angle_crossed(previous_angle: float, current_angle: float, target_angle: f
 
 func _draw_turner(feet: Vector2, faces_left: bool) -> void:
 	if turner_texture != null and turner_used_region.size.x > 0.0:
+		var active_texture := mirrored_turner_texture if faces_left and mirrored_turner_texture != null else turner_texture
+		var active_region := mirrored_turner_used_region if faces_left and mirrored_turner_texture != null else turner_used_region
 		# Match the helper's height to the playable character and preserve the
 		# original aspect ratio so the sprite never looks stretched sideways.
 		var sprite_height := 165.0
-		var sprite_width := sprite_height * turner_used_region.size.x / turner_used_region.size.y
+		var sprite_width := sprite_height * active_region.size.x / active_region.size.y
 		var sprite_size := Vector2(sprite_width, sprite_height)
 		_draw_shadow_ellipse(feet + Vector2(0, 13), Vector2(sprite_width * 0.34, 11), Color(0, 0, 0, 0.2))
 		var sprite_rect := Rect2(feet + Vector2(-sprite_width * 0.5, -sprite_height), sprite_size)
-		if faces_left:
-			sprite_rect = Rect2(feet + Vector2(sprite_width * 0.5, -sprite_height), Vector2(-sprite_width, sprite_height))
-		draw_texture_rect_region(turner_texture, sprite_rect, turner_used_region)
+		draw_texture_rect_region(active_texture, sprite_rect, active_region)
 		return
 	var direction := -1.0 if faces_left else 1.0
 	_draw_shadow_ellipse(feet + Vector2(0, 13), Vector2(45, 13), Color(0, 0, 0, 0.2))

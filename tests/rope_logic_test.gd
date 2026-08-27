@@ -88,12 +88,15 @@ func _test_visible_contact_loses(game: Node) -> void:
 	game.jump_height = -12.0
 	_expect(game._player_clears_rope_at_crossing(), "visible gap above the rope was incorrectly treated as contact")
 	var overhead_y: float = game._rope_midpoint_y(PI * 1.5)
-	_expect(overhead_y < game.PLAYER_GROUND_Y - game.player_sprite_max_size.y, "rope orbit does not clear the player's head")
+	_expect(overhead_y <= game.PLAYER_GROUND_Y - game.player_sprite_max_size.y - 30.0, "rope orbit leaves too little space above the player's head")
 	var lowest_y: float = game._rope_midpoint_y(PI * 0.5)
-	_expect(lowest_y <= game.PLAYER_GROUND_Y + 12.0, "rope orbit sinks visibly below the player's feet")
+	_expect(is_equal_approx(lowest_y, game.PLAYER_GROUND_Y + 5.0), "rope lowest point is not exactly five pixels below the player's feet")
 
 
 func _test_character_asset_system(game: Node) -> void:
+	game._prepare_turner_visuals()
+	_expect(game.mirrored_turner_texture != null, "right rope turner mirror texture was not created")
+	_expect(game.mirrored_turner_used_region.size.x > 0.0, "right rope turner mirror region is empty")
 	_expect(ResourceLoader.exists("res://assets/characters/default/idle.png"), "default idle asset path was not imported")
 	_expect(ResourceLoader.exists("res://assets/characters/default/jump_sheet.png"), "default jump asset path was not imported")
 	_expect(game._is_safe_character_id("default"), "default character id was rejected")
