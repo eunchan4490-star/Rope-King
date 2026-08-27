@@ -2,7 +2,7 @@ extends SceneTree
 
 const MAIN_SCENE := preload("res://main.tscn")
 const BALANCE := preload("res://resources/balance/default_balance.tres")
-const TARGET_ANGLE := 1.38
+const TARGET_ANGLE := 1.15
 
 var failures: Array[String] = []
 
@@ -13,7 +13,9 @@ func _init() -> void:
 	_test_speed_curve(game)
 	_test_high_speed_crossings(game)
 	_test_red_cue_matches_timing(game)
+	_test_physical_clearance_wins(game)
 	_test_save_round_trip()
+	_test_return_to_main(game)
 	game.free()
 	if failures.is_empty():
 		print("ROPE LOGIC TESTS PASSED")
@@ -61,6 +63,21 @@ func _test_red_cue_matches_timing(game: Node) -> void:
 			_expect(game._is_jump_cue() == expected, "red cue mismatch at score %d, sample %d" % [score, sample])
 
 
+func _test_physical_clearance_wins(game: Node) -> void:
+	if game.feedback == null:
+		game.feedback = RopeFeedbackManager.new()
+		game.add_child(game.feedback)
+	game.game_state = 1
+	game.score = 0
+	game.rope_speed = BALANCE.base_rope_speed
+	game.is_jumping = true
+	game.jump_height = -BALANCE.required_jump_height - 1.0
+	game.jump_started_in_cue = false
+	game._resolve_rope_crossing()
+	_expect(int(game.score) == 1, "a visibly cleared rope was incorrectly treated as a hit")
+	_expect(int(game.game_state) == 1, "physical clearance incorrectly ended the run")
+
+
 func _test_save_round_trip() -> void:
 	var test_path := "user://rope_king_automated_test.json"
 	if FileAccess.file_exists(test_path):
@@ -77,6 +94,16 @@ func _test_save_round_trip() -> void:
 	_expect(not bool(loaded.settings.sound), "settings did not survive save round trip")
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(test_path))
 	manager.free()
+
+
+func _test_return_to_main(game: Node) -> void:
+	game.game_state = 3
+	game.score = 17
+	game.is_jumping = true
+	game._return_to_main()
+	_expect(int(game.game_state) == 0, "close button did not return to title state")
+	_expect(int(game.score) == 0, "return to title did not clear current score")
+	_expect(not bool(game.is_jumping), "return to title kept the player jumping")
 
 
 func _expect(condition: bool, message: String) -> void:

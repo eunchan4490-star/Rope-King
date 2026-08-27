@@ -1,6 +1,6 @@
 extends Node2D
 
-enum GameState { TITLE, PLAYING, GAME_OVER }
+enum GameState { TITLE, PLAYING, HIT, GAME_OVER }
 
 const DESIGN_SIZE := Vector2(720.0, 1280.0)
 const PLAYER_X := 360.0
@@ -9,13 +9,15 @@ const TURNER_GROUND_Y := 910.0
 const LEFT_HAND := Vector2(165.0, 785.0)
 const RIGHT_HAND := Vector2(555.0, 785.0)
 const ROPE_SWING_RADIUS := 115.0
-const ROPE_CROSSING_ANGLE := 1.38
+const ROPE_CROSSING_ANGLE := 1.15
+const HIT_REVEAL_SECONDS := 0.42
 const DEFAULT_PLAYER_SPRITE_PATH := "res://assets/player/player.png"
 const DEFAULT_BALANCE := preload("res://resources/balance/default_balance.tres")
 const START_BUTTON_RECT := Rect2(165.0, 955.0, 390.0, 135.0)
 const CHARACTER_BUTTON_RECT := Rect2(25.0, 1130.0, 210.0, 115.0)
 const UPGRADE_BUTTON_RECT := Rect2(255.0, 1130.0, 210.0, 115.0)
 const SETTINGS_BUTTON_RECT := Rect2(485.0, 1130.0, 210.0, 115.0)
+const GAME_OVER_CLOSE_RECT := Rect2(548.0, 394.0, 58.0, 58.0)
 
 @export_group("Player Sprite")
 @export var player_sprite: Texture2D
@@ -49,6 +51,7 @@ var save_manager: RopeSaveManager
 var run_coins_earned := 0
 var total_runs := 0
 var total_success := 0
+var hit_reveal_time := 0.0
 
 
 func _ready() -> void:
@@ -78,6 +81,10 @@ func _process(delta: float) -> void:
 				accepting_input = true
 		if _angle_crossed(previous_rope_angle, rope_angle, ROPE_CROSSING_ANGLE):
 			_resolve_rope_crossing()
+	elif game_state == GameState.HIT:
+		hit_reveal_time -= delta
+		if hit_reveal_time <= 0.0:
+			game_state = GameState.GAME_OVER
 	if flash_time > 0.0:
 		flash_time -= delta
 	queue_redraw()
@@ -92,6 +99,12 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event is InputEventMouseButton:
 		pointer_position = event.position
 	if pressed:
+		if game_state == GameState.GAME_OVER and pointer_position.x >= 0.0:
+			var game_over_position := _screen_to_design(pointer_position)
+			if GAME_OVER_CLOSE_RECT.has_point(game_over_position):
+				_return_to_main()
+				get_viewport().set_input_as_handled()
+				return
 		if game_state == GameState.TITLE and pointer_position.x >= 0.0:
 			var design_position := _screen_to_design(pointer_position)
 			if CHARACTER_BUTTON_RECT.has_point(design_position):
@@ -118,6 +131,8 @@ func _screen_to_design(screen_position: Vector2) -> Vector2:
 
 
 func attempt_jump() -> void:
+	if game_state == GameState.HIT:
+		return
 	if game_state != GameState.PLAYING:
 		_start_game()
 		return
@@ -131,7 +146,7 @@ func attempt_jump() -> void:
 
 func _resolve_rope_crossing() -> void:
 	# Success is decided when the visible rope actually reaches the player's feet.
-	if jump_started_in_cue and is_jumping and jump_height <= -balance.required_jump_height:
+	if is_jumping and jump_height <= -balance.required_jump_height:
 		score += 1
 		if score > best_score:
 			best_score = score
@@ -145,9 +160,12 @@ func _resolve_rope_crossing() -> void:
 		jump_started_in_cue = false
 		feedback.play_success(score)
 	else:
-		game_state = GameState.GAME_OVER
-		accepting_input = true
-		message = "줄에 걸렸어요!"
+		# Freeze at the visible contact point before revealing the result panel.
+		rope_angle = ROPE_CROSSING_ANGLE
+		game_state = GameState.HIT
+		hit_reveal_time = HIT_REVEAL_SECONDS
+		accepting_input = false
+		message = "앗! 줄에 걸렸어요!"
 		message_color = Color("ff7892")
 		flash_time = 0.5
 		run_coins_earned = score + (5 if new_best_this_run else 0)
@@ -161,6 +179,7 @@ func _start_game() -> void:
 	run_start_best = best_score
 	new_best_this_run = false
 	run_coins_earned = 0
+	hit_reveal_time = 0.0
 	score = 0
 	rope_angle = PI
 	rope_speed = balance.base_rope_speed
@@ -175,6 +194,24 @@ func _start_game() -> void:
 	message = "줄이 빨간색일 때 점프!"
 	message_color = Color.WHITE
 	feedback.play_start()
+
+
+func _return_to_main() -> void:
+	game_state = GameState.TITLE
+	score = 0
+	rope_angle = PI
+	rope_speed = balance.base_rope_speed
+	jump_height = 0.0
+	jump_velocity = 0.0
+	is_jumping = false
+	jump_started_in_cue = false
+	accepting_input = true
+	challenge_pattern = 0
+	hit_reveal_time = 0.0
+	menu_notice = ""
+	message = "화면을 눌러 시작"
+	message_color = Color.WHITE
+	queue_redraw()
 
 
 func _load_saved_progress() -> void:
@@ -226,6 +263,8 @@ func _draw() -> void:
 	# Draw the front half last so it visibly passes in front of the player.
 	if not _rope_is_behind():
 		_draw_rope()
+	if game_state == GameState.HIT:
+		_draw_hit_feedback()
 	_draw_hud()
 
 
@@ -269,6 +308,13 @@ func _draw_rope() -> void:
 	draw_polyline(points, rope_color, 8.0, true)
 	draw_circle(LEFT_HAND, 7.0, Color("f6b73c"))
 	draw_circle(RIGHT_HAND, 7.0, Color("f6b73c"))
+
+
+func _draw_hit_feedback() -> void:
+	var contact := Vector2(PLAYER_X, PLAYER_GROUND_Y - 3.0)
+	draw_circle(contact, 24.0, Color(1.0, 0.18, 0.28, 0.34))
+	for direction in [Vector2(-1.0, -1.0), Vector2(1.0, -1.0), Vector2(-1.0, 0.35), Vector2(1.0, 0.35)]:
+		draw_line(contact + direction * 12.0, contact + direction * 35.0, Color("ff334f"), 6.0, true)
 
 
 func _rope_is_behind() -> bool:
@@ -402,6 +448,9 @@ func _draw_game_over_panel(font: Font) -> void:
 	var panel := Rect2(95.0, 380.0, 530.0, 430.0)
 	draw_rect(panel, Color(0.035, 0.055, 0.10, 0.94), true)
 	draw_rect(panel, Color("fff0a6"), false, 7.0)
+	draw_circle(GAME_OVER_CLOSE_RECT.get_center(), 26.0, Color("ff4d67"))
+	draw_line(GAME_OVER_CLOSE_RECT.get_center() + Vector2(-9.0, -9.0), GAME_OVER_CLOSE_RECT.get_center() + Vector2(9.0, 9.0), Color.WHITE, 5.0, true)
+	draw_line(GAME_OVER_CLOSE_RECT.get_center() + Vector2(9.0, -9.0), GAME_OVER_CLOSE_RECT.get_center() + Vector2(-9.0, 9.0), Color.WHITE, 5.0, true)
 	draw_string(font, Vector2(panel.position.x, panel.position.y + 76.0), "GAME OVER", HORIZONTAL_ALIGNMENT_CENTER, panel.size.x, 54, Color("ff4d67"))
 	draw_string(font, Vector2(panel.position.x, panel.position.y + 146.0), "이번 기록  %d" % score, HORIZONTAL_ALIGNMENT_CENTER, panel.size.x, 34, Color.WHITE)
 	draw_string(font, Vector2(panel.position.x, panel.position.y + 198.0), "BEST  %d" % best_score, HORIZONTAL_ALIGNMENT_CENTER, panel.size.x, 28, Color("ffd166"))
