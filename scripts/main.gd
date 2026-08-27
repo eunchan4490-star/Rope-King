@@ -16,14 +16,16 @@ const ROPE_PIXEL_CORE_SIZE := Vector2(8.0, 8.0)
 const HIT_REVEAL_SECONDS := 0.42
 const CHARACTER_ASSET_ROOT := "res://assets/characters"
 const DEFAULT_BACKGROUND_PATH := "res://assets/backgrounds/neighborhood.png"
+const MENU_CHARACTER_TEXTURE_PATH := "res://assets/ui/menu_character.png"
+const MENU_UPGRADE_TEXTURE_PATH := "res://assets/ui/menu_upgrade.png"
+const MENU_SETTINGS_TEXTURE_PATH := "res://assets/ui/menu_settings.png"
 const DEFAULT_CHARACTER_ID := "default"
 const JUMP_FRAME_COUNT := 4
 const CHARACTERS_PER_PAGE := 3
 const DEFAULT_BALANCE := preload("res://resources/balance/default_balance.tres")
-const START_BUTTON_RECT := Rect2(165.0, 955.0, 390.0, 135.0)
-const CHARACTER_BUTTON_RECT := Rect2(25.0, 1130.0, 210.0, 115.0)
-const UPGRADE_BUTTON_RECT := Rect2(255.0, 1130.0, 210.0, 115.0)
-const SETTINGS_BUTTON_RECT := Rect2(485.0, 1130.0, 210.0, 115.0)
+const CHARACTER_BUTTON_RECT := Rect2(25.0, 1055.0, 210.0, 195.0)
+const UPGRADE_BUTTON_RECT := Rect2(255.0, 1055.0, 210.0, 195.0)
+const SETTINGS_BUTTON_RECT := Rect2(485.0, 1055.0, 210.0, 195.0)
 const GAME_OVER_CLOSE_RECT := Rect2(548.0, 394.0, 58.0, 58.0)
 const CHARACTER_PANEL_RECT := Rect2(30.0, 185.0, 660.0, 700.0)
 const CHARACTER_PANEL_CLOSE_RECT := Rect2(616.0, 205.0, 52.0, 52.0)
@@ -42,6 +44,10 @@ const CHARACTER_CARD_RECTS := [
 @export var player_sprite_ground_offset := Vector2.ZERO
 @export_group("Background")
 @export var background_texture: Texture2D
+@export_group("Menu Button Assets")
+@export var character_button_texture: Texture2D
+@export var upgrade_button_texture: Texture2D
+@export var settings_button_texture: Texture2D
 @export_group("Game Balance")
 @export var balance: RopeGameBalance = DEFAULT_BALANCE
 
@@ -98,6 +104,12 @@ func _ready() -> void:
 	_load_character_visuals(selected_character_id)
 	if background_texture == null and ResourceLoader.exists(DEFAULT_BACKGROUND_PATH):
 		background_texture = load(DEFAULT_BACKGROUND_PATH) as Texture2D
+	if character_button_texture == null and ResourceLoader.exists(MENU_CHARACTER_TEXTURE_PATH):
+		character_button_texture = load(MENU_CHARACTER_TEXTURE_PATH) as Texture2D
+	if upgrade_button_texture == null and ResourceLoader.exists(MENU_UPGRADE_TEXTURE_PATH):
+		upgrade_button_texture = load(MENU_UPGRADE_TEXTURE_PATH) as Texture2D
+	if settings_button_texture == null and ResourceLoader.exists(MENU_SETTINGS_TEXTURE_PATH):
+		settings_button_texture = load(MENU_SETTINGS_TEXTURE_PATH) as Texture2D
 	get_viewport().size_changed.connect(queue_redraw)
 	queue_redraw()
 
@@ -780,23 +792,13 @@ func _draw_main_menu(font: Font) -> void:
 	draw_rect(Rect2(255.0, 320.0, 210.0, 54.0), Color(0.05, 0.09, 0.17, 0.78), true)
 	draw_string(font, Vector2(255.0, 357.0), "BEST  %d" % best_score, HORIZONTAL_ALIGNMENT_CENTER, 210.0, 24, Color("fff0a6"))
 
-	# Large primary start button; tapping any non-menu background also starts.
-	draw_rect(START_BUTTON_RECT, Color("7f4b13"), true)
-	var start_face := Rect2(START_BUTTON_RECT.position + Vector2(0.0, -8.0), START_BUTTON_RECT.size - Vector2(0.0, 8.0))
-	draw_rect(start_face, Color("ffd23f"), true)
-	draw_rect(start_face, Color("fff0a6"), false, 7.0)
-	var triangle_center := Vector2(start_face.position.x + 73.0, start_face.position.y + 59.0)
-	draw_colored_polygon(PackedVector2Array([
-		triangle_center + Vector2(-22.0, -31.0),
-		triangle_center + Vector2(-22.0, 31.0),
-		triangle_center + Vector2(31.0, 0.0)
-	]), Color("e94b35"))
-	draw_string(font, Vector2(start_face.position.x + 118.0, start_face.position.y + 55.0), "무한 줄넘기", HORIZONTAL_ALIGNMENT_CENTER, 245.0, 30, Color("633913"))
-	draw_string(font, Vector2(start_face.position.x + 118.0, start_face.position.y + 92.0), "게임 시작", HORIZONTAL_ALIGNMENT_CENTER, 245.0, 27, Color("633913"))
+	var prompt_alpha := 0.78 + sin(Time.get_ticks_msec() * 0.004) * 0.18
+	draw_string(font, Vector2(3.0, 1019.0), "TAP TO START", HORIZONTAL_ALIGNMENT_CENTER, DESIGN_SIZE.x, 34, Color(0.05, 0.08, 0.13, prompt_alpha))
+	draw_string(font, Vector2(0.0, 1015.0), "TAP TO START", HORIZONTAL_ALIGNMENT_CENTER, DESIGN_SIZE.x, 34, Color(1.0, 0.94, 0.65, prompt_alpha))
 
-	_draw_menu_button(font, CHARACTER_BUTTON_RECT, "CHARACTER", "캐릭터", Color("ef8f6b"))
-	_draw_menu_button(font, UPGRADE_BUTTON_RECT, "UPGRADE", "업그레이드", Color("65b7f3"))
-	_draw_menu_button(font, SETTINGS_BUTTON_RECT, "SETTINGS", "설정", Color("9b8bea"))
+	_draw_menu_asset_or_fallback(character_button_texture, font, CHARACTER_BUTTON_RECT, "CHARACTER", "캐릭터", Color("ef8f6b"))
+	_draw_menu_asset_or_fallback(upgrade_button_texture, font, UPGRADE_BUTTON_RECT, "UPGRADE", "업그레이드", Color("65b7f3"))
+	_draw_menu_asset_or_fallback(settings_button_texture, font, SETTINGS_BUTTON_RECT, "SETTINGS", "설정", Color("9b8bea"))
 	if not menu_notice.is_empty():
 		draw_string(font, Vector2(0, 925), menu_notice, HORIZONTAL_ALIGNMENT_CENTER, DESIGN_SIZE.x, 22, Color("ffd166"))
 
@@ -862,6 +864,13 @@ func _draw_resource_counter(font: Font, rect: Rect2, icon: String, icon_color: C
 	draw_circle(rect.position + Vector2(31.0, 31.0), 20.0, icon_color)
 	draw_string(font, Vector2(rect.position.x + 12.0, rect.position.y + 40.0), icon, HORIZONTAL_ALIGNMENT_CENTER, 38.0, 20, Color("263a57"))
 	draw_string(font, Vector2(rect.position.x + 64.0, rect.position.y + 42.0), str(amount), HORIZONTAL_ALIGNMENT_RIGHT, rect.size.x - 78.0, 27, Color.WHITE)
+
+
+func _draw_menu_asset_or_fallback(texture: Texture2D, font: Font, rect: Rect2, title: String, subtitle: String, face_color: Color) -> void:
+	if texture != null:
+		draw_texture_rect(texture, rect, false)
+		return
+	_draw_menu_button(font, rect, title, subtitle, face_color)
 
 
 func _draw_menu_button(font: Font, rect: Rect2, title: String, subtitle: String, face_color: Color) -> void:
