@@ -9,27 +9,25 @@ const TURNER_GROUND_Y := 910.0
 const LEFT_HAND := Vector2(165.0, 785.0)
 const RIGHT_HAND := Vector2(555.0, 785.0)
 const ROPE_SWING_RADIUS := 115.0
-const BASE_ROPE_SPEED := 2.35
-const MAX_ROPE_SPEED := 4.8
-const SPEED_GAIN_PER_SCORE := 0.075
 const ROPE_CROSSING_ANGLE := 1.38
-const JUMP_CUE_SECONDS := 0.34
-const REQUIRED_JUMP_HEIGHT := 36.0
-const CHALLENGE_START_SCORE := 10
-const MAX_PATTERN_SPEED := 6.2
 const DEFAULT_PLAYER_SPRITE_PATH := "res://assets/player/player.png"
-const UPGRADE_BUTTON_RECT := Rect2(55.0, 1090.0, 285.0, 92.0)
-const SETTINGS_BUTTON_RECT := Rect2(380.0, 1090.0, 285.0, 92.0)
+const DEFAULT_BALANCE := preload("res://resources/balance/default_balance.tres")
+const START_BUTTON_RECT := Rect2(165.0, 955.0, 390.0, 135.0)
+const CHARACTER_BUTTON_RECT := Rect2(25.0, 1130.0, 210.0, 115.0)
+const UPGRADE_BUTTON_RECT := Rect2(255.0, 1130.0, 210.0, 115.0)
+const SETTINGS_BUTTON_RECT := Rect2(485.0, 1130.0, 210.0, 115.0)
 
 @export_group("Player Sprite")
 @export var player_sprite: Texture2D
 @export var player_sprite_max_size := Vector2(160.0, 190.0)
 @export var player_sprite_ground_offset := Vector2.ZERO
+@export_group("Game Balance")
+@export var balance: RopeGameBalance = DEFAULT_BALANCE
 
 var score := 0
 var best_score := 0
 var rope_angle := PI
-var rope_speed := BASE_ROPE_SPEED
+var rope_speed := 0.0
 var jump_height := 0.0
 var jump_velocity := 0.0
 var is_jumping := false
@@ -41,9 +39,25 @@ var flash_time := 0.0
 var message := "화면을 눌러 시작"
 var message_color := Color.WHITE
 var menu_notice := ""
+var coins := 100
+var gems := 0
+var tickets := 0
+var run_start_best := 0
+var new_best_this_run := false
+var feedback: RopeFeedbackManager
+var save_manager: RopeSaveManager
+var run_coins_earned := 0
+var total_runs := 0
+var total_success := 0
 
 
 func _ready() -> void:
+	feedback = RopeFeedbackManager.new()
+	add_child(feedback)
+	save_manager = RopeSaveManager.new()
+	add_child(save_manager)
+	_load_saved_progress()
+	rope_speed = balance.base_rope_speed
 	if player_sprite == null and ResourceLoader.exists(DEFAULT_PLAYER_SPRITE_PATH):
 		player_sprite = load(DEFAULT_PLAYER_SPRITE_PATH) as Texture2D
 	get_viewport().size_changed.connect(queue_redraw)
@@ -80,6 +94,10 @@ func _unhandled_input(event: InputEvent) -> void:
 	if pressed:
 		if game_state == GameState.TITLE and pointer_position.x >= 0.0:
 			var design_position := _screen_to_design(pointer_position)
+			if CHARACTER_BUTTON_RECT.has_point(design_position):
+				menu_notice = "캐릭터 메뉴 준비 중"
+				get_viewport().set_input_as_handled()
+				return
 			if UPGRADE_BUTTON_RECT.has_point(design_position):
 				menu_notice = "업그레이드 메뉴 준비 중"
 				get_viewport().set_input_as_handled()
@@ -113,27 +131,39 @@ func attempt_jump() -> void:
 
 func _resolve_rope_crossing() -> void:
 	# Success is decided when the visible rope actually reaches the player's feet.
-	if jump_started_in_cue and is_jumping and jump_height <= -REQUIRED_JUMP_HEIGHT:
+	if jump_started_in_cue and is_jumping and jump_height <= -balance.required_jump_height:
 		score += 1
-		best_score = maxi(best_score, score)
-		rope_speed = minf(BASE_ROPE_SPEED + score * SPEED_GAIN_PER_SCORE, MAX_ROPE_SPEED)
+		if score > best_score:
+			best_score = score
+			new_best_this_run = true
+		rope_speed = balance.speed_for_score(score)
+		total_success += 1
 		_update_challenge_pattern()
 		message = "좋아요!  +1"
 		message_color = Color("73f7b4")
 		flash_time = 0.22
 		jump_started_in_cue = false
+		feedback.play_success(score)
 	else:
 		game_state = GameState.GAME_OVER
 		accepting_input = true
 		message = "줄에 걸렸어요!"
 		message_color = Color("ff7892")
 		flash_time = 0.5
+		run_coins_earned = score + (5 if new_best_this_run else 0)
+		coins += run_coins_earned
+		total_runs += 1
+		_save_progress()
+		feedback.play_failure()
 
 
 func _start_game() -> void:
+	run_start_best = best_score
+	new_best_this_run = false
+	run_coins_earned = 0
 	score = 0
 	rope_angle = PI
-	rope_speed = BASE_ROPE_SPEED
+	rope_speed = balance.base_rope_speed
 	jump_height = 0.0
 	jump_velocity = 0.0
 	is_jumping = false
@@ -144,6 +174,39 @@ func _start_game() -> void:
 	menu_notice = ""
 	message = "줄이 빨간색일 때 점프!"
 	message_color = Color.WHITE
+	feedback.play_start()
+
+
+func _load_saved_progress() -> void:
+	var data := save_manager.load_game()
+	best_score = int(data.best_score)
+	coins = int(data.coins)
+	gems = int(data.gems)
+	tickets = int(data.tickets)
+	total_runs = int(data.stats.total_runs)
+	total_success = int(data.stats.total_success)
+	feedback.sound_enabled = bool(data.settings.sound)
+	feedback.vibration_enabled = bool(data.settings.vibration)
+
+
+func _save_progress() -> void:
+	save_manager.save_game({
+		"save_version": RopeSaveManager.SAVE_VERSION,
+		"best_score": best_score,
+		"coins": coins,
+		"gems": gems,
+		"tickets": tickets,
+		"selected_character": "default",
+		"owned_characters": ["default"],
+		"settings": {
+			"sound": feedback.sound_enabled,
+			"vibration": feedback.vibration_enabled,
+		},
+		"stats": {
+			"total_runs": total_runs,
+			"total_success": total_success,
+		},
+	})
 
 
 func _draw() -> void:
@@ -217,7 +280,7 @@ func _is_jump_cue() -> bool:
 	if game_state != GameState.PLAYING or rope_speed <= 0.0 or _rope_is_behind():
 		return false
 	var seconds_until_crossing := fposmod(ROPE_CROSSING_ANGLE - rope_angle, TAU) / rope_speed
-	return seconds_until_crossing <= JUMP_CUE_SECONDS
+	return seconds_until_crossing <= balance.jump_cue_seconds
 
 
 func _effective_rope_speed() -> float:
@@ -228,21 +291,21 @@ func _effective_rope_speed() -> float:
 	var speed_multiplier := 1.0
 	match challenge_pattern:
 		1: # Off-beat: linger behind the player, then catch up in front.
-			speed_multiplier = 0.58 if _rope_is_behind() else 1.18
+			speed_multiplier = balance.offbeat_behind_multiplier if _rope_is_behind() else balance.offbeat_front_multiplier
 		2: # Burst: a slow wind-up followed by a sudden approach.
 			var distance_to_crossing := fposmod(ROPE_CROSSING_ANGLE - rope_angle, TAU)
-			var burst_start_distance := rope_speed * JUMP_CUE_SECONDS + 0.75
-			speed_multiplier = 1.48 if distance_to_crossing < burst_start_distance else 0.72
+			var burst_start_distance := rope_speed * balance.jump_cue_seconds + balance.burst_extra_distance
+			speed_multiplier = balance.burst_near_multiplier if distance_to_crossing < burst_start_distance else balance.burst_far_multiplier
 		3: # Wave: repeatedly changes tempo during one turn.
-			speed_multiplier = 0.78 + 0.42 * (0.5 + 0.5 * sin(rope_angle * 3.0))
-	return minf(rope_speed * speed_multiplier, MAX_PATTERN_SPEED)
+			speed_multiplier = balance.wave_min_multiplier + balance.wave_range * (0.5 + 0.5 * sin(rope_angle * 3.0))
+	return rope_speed * speed_multiplier
 
 
 func _update_challenge_pattern() -> void:
-	if score < CHALLENGE_START_SCORE:
+	if score < balance.challenge_start_score:
 		challenge_pattern = 0
 	else:
-		challenge_pattern = 1 + posmod(score - CHALLENGE_START_SCORE, 3)
+		challenge_pattern = 1 + posmod(score - balance.challenge_start_score, 3)
 
 
 func _angle_crossed(previous_angle: float, current_angle: float, target_angle: float) -> bool:
@@ -325,30 +388,87 @@ func _draw_hud() -> void:
 	draw_string(font, Vector2(42, 82), "줄넘킹", HORIZONTAL_ALIGNMENT_LEFT, -1, 34, Color("91a4cc"))
 	draw_string(font, Vector2(42, 158), str(score), HORIZONTAL_ALIGNMENT_LEFT, -1, 76, Color.WHITE)
 	draw_string(font, Vector2(480, 83), "BEST  %d" % best_score, HORIZONTAL_ALIGNMENT_LEFT, -1, 26, Color("ffd166"))
-	draw_string(font, Vector2(0, 1120), message, HORIZONTAL_ALIGNMENT_CENTER, DESIGN_SIZE.x, 31, message_color)
+	if game_state != GameState.GAME_OVER:
+		draw_string(font, Vector2(0, 1120), message, HORIZONTAL_ALIGNMENT_CENTER, DESIGN_SIZE.x, 31, message_color)
 	var control_text := "화면 터치 · 마우스 클릭 · SPACE"
 	if game_state == GameState.GAME_OVER:
 		control_text = "화면을 눌러 즉시 재시작"
 	draw_string(font, Vector2(0, 1190), control_text, HORIZONTAL_ALIGNMENT_CENTER, DESIGN_SIZE.x, 22, Color("8293b7"))
 	if game_state == GameState.GAME_OVER:
-		draw_string(font, Vector2(0, 520), "GAME OVER", HORIZONTAL_ALIGNMENT_CENTER, DESIGN_SIZE.x, 62, Color("ff334f"))
+		_draw_game_over_panel(font)
+
+
+func _draw_game_over_panel(font: Font) -> void:
+	var panel := Rect2(95.0, 380.0, 530.0, 430.0)
+	draw_rect(panel, Color(0.035, 0.055, 0.10, 0.94), true)
+	draw_rect(panel, Color("fff0a6"), false, 7.0)
+	draw_string(font, Vector2(panel.position.x, panel.position.y + 76.0), "GAME OVER", HORIZONTAL_ALIGNMENT_CENTER, panel.size.x, 54, Color("ff4d67"))
+	draw_string(font, Vector2(panel.position.x, panel.position.y + 146.0), "이번 기록  %d" % score, HORIZONTAL_ALIGNMENT_CENTER, panel.size.x, 34, Color.WHITE)
+	draw_string(font, Vector2(panel.position.x, panel.position.y + 198.0), "BEST  %d" % best_score, HORIZONTAL_ALIGNMENT_CENTER, panel.size.x, 28, Color("ffd166"))
+	var record_message := ""
+	if new_best_this_run:
+		record_message = "새 최고 기록!"
+	elif score == run_start_best:
+		record_message = "최고 기록과 같아요!"
+	else:
+		record_message = "최고 기록까지 %d회" % maxi(1, run_start_best - score)
+	draw_string(font, Vector2(panel.position.x, panel.position.y + 252.0), record_message, HORIZONTAL_ALIGNMENT_CENTER, panel.size.x, 27, Color("73f7b4"))
+	draw_string(font, Vector2(panel.position.x, panel.position.y + 300.0), "코인  +%d" % run_coins_earned, HORIZONTAL_ALIGNMENT_CENTER, panel.size.x, 25, Color("ffd166"))
+	var retry_rect := Rect2(panel.position + Vector2(75.0, 330.0), Vector2(380.0, 72.0))
+	draw_rect(retry_rect, Color("ffd23f"), true)
+	draw_rect(retry_rect, Color("fff0a6"), false, 5.0)
+	draw_string(font, Vector2(retry_rect.position.x, retry_rect.position.y + 48.0), "화면을 눌러 다시 도전", HORIZONTAL_ALIGNMENT_CENTER, retry_rect.size.x, 25, Color("633913"))
 
 
 func _draw_main_menu(font: Font) -> void:
-	draw_string(font, Vector2(0, 125), "줄넘킹", HORIZONTAL_ALIGNMENT_CENTER, DESIGN_SIZE.x, 74, Color.WHITE)
-	draw_string(font, Vector2(0, 182), "ROPE KING", HORIZONTAL_ALIGNMENT_CENTER, DESIGN_SIZE.x, 24, Color("ffd166"))
-	draw_rect(Rect2(245.0, 218.0, 230.0, 58.0), Color(0.05, 0.09, 0.17, 0.62), true)
-	draw_string(font, Vector2(245.0, 257.0), "BEST  %d" % best_score, HORIZONTAL_ALIGNMENT_CENTER, 230.0, 25, Color("fff0a6"))
-	var pulse_alpha := 0.72 + 0.28 * sin(Time.get_ticks_msec() * 0.006)
-	draw_string(font, Vector2(0, 1015), "Tap to Start", HORIZONTAL_ALIGNMENT_CENTER, DESIGN_SIZE.x, 42, Color(1.0, 1.0, 1.0, pulse_alpha))
-	_draw_menu_button(font, UPGRADE_BUTTON_RECT, "UPGRADE", "업그레이드")
-	_draw_menu_button(font, SETTINGS_BUTTON_RECT, "SETTINGS", "설정")
+	# Arcade-style resource bar.
+	_draw_resource_counter(font, Rect2(18.0, 22.0, 214.0, 62.0), "C", Color("ffd23f"), coins)
+	_draw_resource_counter(font, Rect2(253.0, 22.0, 214.0, 62.0), "G", Color("ff5f87"), gems)
+	_draw_resource_counter(font, Rect2(488.0, 22.0, 214.0, 62.0), "T", Color("63d8ff"), tickets)
+
+	# Layered title plaque inspired by a chunky pixel arcade menu.
+	draw_rect(Rect2(160.0, 130.0, 400.0, 178.0), Color("263a57"), true)
+	draw_rect(Rect2(160.0, 130.0, 400.0, 178.0), Color("fff0a6"), false, 8.0)
+	draw_rect(Rect2(190.0, 155.0, 340.0, 55.0), Color("ff9f1c"), true)
+	draw_string(font, Vector2(190.0, 194.0), "INFINITE", HORIZONTAL_ALIGNMENT_CENTER, 340.0, 31, Color.WHITE)
+	draw_rect(Rect2(182.0, 218.0, 356.0, 72.0), Color("3478c6"), true)
+	draw_string(font, Vector2(182.0, 270.0), "줄넘킹", HORIZONTAL_ALIGNMENT_CENTER, 356.0, 49, Color.WHITE)
+	draw_rect(Rect2(255.0, 320.0, 210.0, 54.0), Color(0.05, 0.09, 0.17, 0.78), true)
+	draw_string(font, Vector2(255.0, 357.0), "BEST  %d" % best_score, HORIZONTAL_ALIGNMENT_CENTER, 210.0, 24, Color("fff0a6"))
+
+	# Large primary start button; tapping any non-menu background also starts.
+	draw_rect(START_BUTTON_RECT, Color("7f4b13"), true)
+	var start_face := Rect2(START_BUTTON_RECT.position + Vector2(0.0, -8.0), START_BUTTON_RECT.size - Vector2(0.0, 8.0))
+	draw_rect(start_face, Color("ffd23f"), true)
+	draw_rect(start_face, Color("fff0a6"), false, 7.0)
+	var triangle_center := Vector2(start_face.position.x + 73.0, start_face.position.y + 59.0)
+	draw_colored_polygon(PackedVector2Array([
+		triangle_center + Vector2(-22.0, -31.0),
+		triangle_center + Vector2(-22.0, 31.0),
+		triangle_center + Vector2(31.0, 0.0)
+	]), Color("e94b35"))
+	draw_string(font, Vector2(start_face.position.x + 118.0, start_face.position.y + 55.0), "무한 줄넘기", HORIZONTAL_ALIGNMENT_CENTER, 245.0, 30, Color("633913"))
+	draw_string(font, Vector2(start_face.position.x + 118.0, start_face.position.y + 92.0), "게임 시작", HORIZONTAL_ALIGNMENT_CENTER, 245.0, 27, Color("633913"))
+
+	_draw_menu_button(font, CHARACTER_BUTTON_RECT, "CHARACTER", "캐릭터", Color("ef8f6b"))
+	_draw_menu_button(font, UPGRADE_BUTTON_RECT, "UPGRADE", "업그레이드", Color("65b7f3"))
+	_draw_menu_button(font, SETTINGS_BUTTON_RECT, "SETTINGS", "설정", Color("9b8bea"))
 	if not menu_notice.is_empty():
-		draw_string(font, Vector2(0, 1065), menu_notice, HORIZONTAL_ALIGNMENT_CENTER, DESIGN_SIZE.x, 22, Color("ffd166"))
+		draw_string(font, Vector2(0, 925), menu_notice, HORIZONTAL_ALIGNMENT_CENTER, DESIGN_SIZE.x, 22, Color("ffd166"))
 
 
-func _draw_menu_button(font: Font, rect: Rect2, title: String, subtitle: String) -> void:
-	draw_rect(rect, Color(0.06, 0.10, 0.18, 0.88), true)
-	draw_rect(rect, Color("91a4cc"), false, 4.0)
-	draw_string(font, Vector2(rect.position.x, rect.position.y + 38.0), title, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, 24, Color.WHITE)
-	draw_string(font, Vector2(rect.position.x, rect.position.y + 70.0), subtitle, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, 20, Color("ffd166"))
+func _draw_resource_counter(font: Font, rect: Rect2, icon: String, icon_color: Color, amount: int) -> void:
+	draw_rect(rect, Color(0.04, 0.07, 0.13, 0.9), true)
+	draw_rect(rect, Color("fff0a6"), false, 4.0)
+	draw_circle(rect.position + Vector2(31.0, 31.0), 20.0, icon_color)
+	draw_string(font, Vector2(rect.position.x + 12.0, rect.position.y + 40.0), icon, HORIZONTAL_ALIGNMENT_CENTER, 38.0, 20, Color("263a57"))
+	draw_string(font, Vector2(rect.position.x + 64.0, rect.position.y + 42.0), str(amount), HORIZONTAL_ALIGNMENT_RIGHT, rect.size.x - 78.0, 27, Color.WHITE)
+
+
+func _draw_menu_button(font: Font, rect: Rect2, title: String, subtitle: String, face_color: Color) -> void:
+	draw_rect(rect, Color("633913"), true)
+	var face := Rect2(rect.position + Vector2(0.0, -7.0), rect.size - Vector2(0.0, 7.0))
+	draw_rect(face, face_color, true)
+	draw_rect(face, Color("fff0a6"), false, 5.0)
+	draw_string(font, Vector2(face.position.x, face.position.y + 43.0), title, HORIZONTAL_ALIGNMENT_CENTER, face.size.x, 21, Color.WHITE)
+	draw_string(font, Vector2(face.position.x, face.position.y + 80.0), subtitle, HORIZONTAL_ALIGNMENT_CENTER, face.size.x, 24, Color("263a57"))

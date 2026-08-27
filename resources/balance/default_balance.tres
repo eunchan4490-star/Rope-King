@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="RopeGameBalance" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/game_balance.gd" id="1_balance"]
+
+[resource]
+script = ExtResource("1_balance")
+base_rope_speed = 2.85
+speed_gain_per_score = 0.11
+jump_cue_seconds = 0.34
+required_jump_height = 36.0
+challenge_start_score = 10
+offbeat_behind_multiplier = 0.58
+offbeat_front_multiplier = 1.18
+burst_far_multiplier = 0.72
+burst_near_multiplier = 1.48
+burst_extra_distance = 0.75
+wave_min_multiplier = 0.78
+wave_range = 0.42
