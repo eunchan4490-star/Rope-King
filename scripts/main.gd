@@ -94,6 +94,9 @@ var character_names: Dictionary = {}
 var owned_character_ids: Array[String] = []
 var character_page := 0
 var turner_used_region := Rect2()
+var character_button_used_region := Rect2()
+var upgrade_button_used_region := Rect2()
+var settings_button_used_region := Rect2()
 
 
 func _ready() -> void:
@@ -118,6 +121,9 @@ func _ready() -> void:
 		upgrade_button_texture = load(MENU_UPGRADE_TEXTURE_PATH) as Texture2D
 	if settings_button_texture == null and ResourceLoader.exists(MENU_SETTINGS_TEXTURE_PATH):
 		settings_button_texture = load(MENU_SETTINGS_TEXTURE_PATH) as Texture2D
+	character_button_used_region = _texture_used_region(character_button_texture)
+	upgrade_button_used_region = _texture_used_region(upgrade_button_texture)
+	settings_button_used_region = _texture_used_region(settings_button_texture)
 	get_viewport().size_changed.connect(queue_redraw)
 	queue_redraw()
 
@@ -489,11 +495,15 @@ func _angle_crossed(previous_angle: float, current_angle: float, target_angle: f
 
 func _draw_turner(feet: Vector2, faces_left: bool) -> void:
 	if turner_texture != null and turner_used_region.size.x > 0.0:
-		_draw_shadow_ellipse(feet + Vector2(0, 13), Vector2(45, 13), Color(0, 0, 0, 0.2))
-		var sprite_size := Vector2(175.0, 210.0)
-		var sprite_rect := Rect2(feet + Vector2(-75.0, -sprite_size.y), sprite_size)
+		# Match the helper's height to the playable character and preserve the
+		# original aspect ratio so the sprite never looks stretched sideways.
+		var sprite_height := 165.0
+		var sprite_width := sprite_height * turner_used_region.size.x / turner_used_region.size.y
+		var sprite_size := Vector2(sprite_width, sprite_height)
+		_draw_shadow_ellipse(feet + Vector2(0, 13), Vector2(sprite_width * 0.34, 11), Color(0, 0, 0, 0.2))
+		var sprite_rect := Rect2(feet + Vector2(-sprite_width * 0.5, -sprite_height), sprite_size)
 		if faces_left:
-			sprite_rect = Rect2(feet + Vector2(75.0, -sprite_size.y), Vector2(-sprite_size.x, sprite_size.y))
+			sprite_rect = Rect2(feet + Vector2(sprite_width * 0.5, -sprite_height), Vector2(-sprite_width, sprite_height))
 		draw_texture_rect_region(turner_texture, sprite_rect, turner_used_region)
 		return
 	var direction := -1.0 if faces_left else 1.0
@@ -793,28 +803,32 @@ func _draw_game_over_panel(font: Font) -> void:
 
 
 func _draw_main_menu(font: Font) -> void:
-	# Arcade-style resource bar.
-	_draw_resource_counter(font, Rect2(18.0, 22.0, 214.0, 62.0), "C", Color("ffd23f"), coins)
-	_draw_resource_counter(font, Rect2(253.0, 22.0, 214.0, 62.0), "G", Color("ff5f87"), gems)
-	_draw_resource_counter(font, Rect2(488.0, 22.0, 214.0, 62.0), "T", Color("63d8ff"), tickets)
+	# Give every resource a readable name instead of relying on ambiguous initials.
+	_draw_resource_counter(font, Rect2(18.0, 22.0, 214.0, 62.0), "코인", Color("ffd23f"), coins)
+	_draw_resource_counter(font, Rect2(253.0, 22.0, 214.0, 62.0), "보석", Color("ff5f87"), gems)
+	_draw_resource_counter(font, Rect2(488.0, 22.0, 214.0, 62.0), "티켓", Color("63d8ff"), tickets)
 
-	# Layered title plaque inspired by a chunky pixel arcade menu.
-	draw_rect(Rect2(160.0, 130.0, 400.0, 178.0), Color("263a57"), true)
-	draw_rect(Rect2(160.0, 130.0, 400.0, 178.0), Color("fff0a6"), false, 8.0)
-	draw_rect(Rect2(190.0, 155.0, 340.0, 55.0), Color("ff9f1c"), true)
-	draw_string(font, Vector2(190.0, 194.0), "INFINITE", HORIZONTAL_ALIGNMENT_CENTER, 340.0, 31, Color.WHITE)
-	draw_rect(Rect2(182.0, 218.0, 356.0, 72.0), Color("3478c6"), true)
-	draw_string(font, Vector2(182.0, 270.0), "줄넘킹", HORIZONTAL_ALIGNMENT_CENTER, 356.0, 49, Color.WHITE)
-	draw_rect(Rect2(255.0, 320.0, 210.0, 54.0), Color(0.05, 0.09, 0.17, 0.78), true)
-	draw_string(font, Vector2(255.0, 357.0), "BEST  %d" % best_score, HORIZONTAL_ALIGNMENT_CENTER, 210.0, 24, Color("fff0a6"))
+	# Keep one strong title instead of making the English and Korean names compete.
+	var title_shadow := Rect2(151.0, 126.0, 418.0, 174.0)
+	var title_panel := Rect2(151.0, 118.0, 418.0, 174.0)
+	draw_rect(title_shadow, Color(0.04, 0.07, 0.13, 0.55), true)
+	draw_rect(title_panel, Color("263a57"), true)
+	draw_rect(title_panel, Color("fff0a6"), false, 8.0)
+	draw_string(font, Vector2(171.0, 202.0), "줄넘킹", HORIZONTAL_ALIGNMENT_CENTER, 378.0, 57, Color.WHITE)
+	draw_rect(Rect2(239.0, 222.0, 242.0, 43.0), Color("ff9f1c"), true)
+	draw_string(font, Vector2(239.0, 252.0), "INFINITE JUMP", HORIZONTAL_ALIGNMENT_CENTER, 242.0, 21, Color.WHITE)
+	draw_rect(Rect2(255.0, 310.0, 210.0, 54.0), Color(0.05, 0.09, 0.17, 0.82), true)
+	draw_string(font, Vector2(255.0, 346.0), "최고 기록  %d" % best_score, HORIZONTAL_ALIGNMENT_CENTER, 210.0, 23, Color("fff0a6"))
 
 	var prompt_alpha := 0.78 + sin(Time.get_ticks_msec() * 0.004) * 0.18
-	draw_string(font, Vector2(3.0, 1019.0), "TAP TO START", HORIZONTAL_ALIGNMENT_CENTER, DESIGN_SIZE.x, 34, Color(0.05, 0.08, 0.13, prompt_alpha))
-	draw_string(font, Vector2(0.0, 1015.0), "TAP TO START", HORIZONTAL_ALIGNMENT_CENTER, DESIGN_SIZE.x, 34, Color(1.0, 0.94, 0.65, prompt_alpha))
+	var prompt_rect := Rect2(222.0, 965.0, 276.0, 62.0)
+	draw_rect(prompt_rect, Color(0.05, 0.08, 0.13, 0.72 * prompt_alpha), true)
+	draw_rect(prompt_rect, Color(1.0, 0.94, 0.65, prompt_alpha), false, 4.0)
+	draw_string(font, Vector2(prompt_rect.position.x, 1006.0), "화면을 눌러 시작", HORIZONTAL_ALIGNMENT_CENTER, prompt_rect.size.x, 27, Color(1.0, 0.94, 0.65, prompt_alpha))
 
-	_draw_menu_asset_or_fallback(character_button_texture, font, CHARACTER_BUTTON_RECT, "CHARACTER", "캐릭터", Color("ef8f6b"))
-	_draw_menu_asset_or_fallback(upgrade_button_texture, font, UPGRADE_BUTTON_RECT, "UPGRADE", "업그레이드", Color("65b7f3"))
-	_draw_menu_asset_or_fallback(settings_button_texture, font, SETTINGS_BUTTON_RECT, "SETTINGS", "설정", Color("9b8bea"))
+	_draw_menu_asset_or_fallback(character_button_texture, character_button_used_region, font, CHARACTER_BUTTON_RECT, "CHARACTER", "캐릭터", Color("ef8f6b"))
+	_draw_menu_asset_or_fallback(upgrade_button_texture, upgrade_button_used_region, font, UPGRADE_BUTTON_RECT, "UPGRADE", "업그레이드", Color("65b7f3"))
+	_draw_menu_asset_or_fallback(settings_button_texture, settings_button_used_region, font, SETTINGS_BUTTON_RECT, "SETTINGS", "설정", Color("9b8bea"))
 	if not menu_notice.is_empty():
 		draw_string(font, Vector2(0, 925), menu_notice, HORIZONTAL_ALIGNMENT_CENTER, DESIGN_SIZE.x, 22, Color("ffd166"))
 
@@ -874,17 +888,20 @@ func _character_preview_texture(character_id: String) -> Texture2D:
 	return texture
 
 
-func _draw_resource_counter(font: Font, rect: Rect2, icon: String, icon_color: Color, amount: int) -> void:
+func _draw_resource_counter(font: Font, rect: Rect2, label: String, icon_color: Color, amount: int) -> void:
 	draw_rect(rect, Color(0.04, 0.07, 0.13, 0.9), true)
 	draw_rect(rect, Color("fff0a6"), false, 4.0)
 	draw_circle(rect.position + Vector2(31.0, 31.0), 20.0, icon_color)
-	draw_string(font, Vector2(rect.position.x + 12.0, rect.position.y + 40.0), icon, HORIZONTAL_ALIGNMENT_CENTER, 38.0, 20, Color("263a57"))
-	draw_string(font, Vector2(rect.position.x + 64.0, rect.position.y + 42.0), str(amount), HORIZONTAL_ALIGNMENT_RIGHT, rect.size.x - 78.0, 27, Color.WHITE)
+	draw_circle(rect.position + Vector2(31.0, 31.0), 20.0, Color("fff0a6"), false, 3.0)
+	draw_string(font, Vector2(rect.position.x + 59.0, rect.position.y + 25.0), label, HORIZONTAL_ALIGNMENT_LEFT, 70.0, 15, Color("a9bad8"))
+	draw_string(font, Vector2(rect.position.x + 59.0, rect.position.y + 49.0), str(amount), HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 72.0, 24, Color.WHITE)
 
 
-func _draw_menu_asset_or_fallback(texture: Texture2D, font: Font, rect: Rect2, title: String, subtitle: String, face_color: Color) -> void:
-	if texture != null:
-		draw_texture_rect(texture, rect, false)
+func _draw_menu_asset_or_fallback(texture: Texture2D, used_region: Rect2, font: Font, rect: Rect2, title: String, subtitle: String, face_color: Color) -> void:
+	if texture != null and used_region.size.x > 0.0 and used_region.size.y > 0.0:
+		# Crop each PNG's different transparent padding before fitting it into the
+		# shared button rectangle, so all three buttons have the same visible size.
+		draw_texture_rect_region(texture, rect, used_region)
 		return
 	_draw_menu_button(font, rect, title, subtitle, face_color)
 
