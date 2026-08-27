@@ -8,9 +8,10 @@ const PLAYER_GROUND_Y := 890.0
 const TURNER_GROUND_Y := 910.0
 const LEFT_HAND := Vector2(140.0, 855.0)
 const RIGHT_HAND := Vector2(580.0, 855.0)
-const ROPE_SWING_RADIUS := 165.0
-# The enlarged orbit still reaches the same fair foot-level crossing height.
-const ROPE_CROSSING_ANGLE := 0.215
+const ROPE_OVERHEAD_RADIUS := 135.0
+const ROPE_GROUND_RADIUS := 45.0
+# The front half reaches the player's feet without sinking deep into the ground.
+const ROPE_CROSSING_ANGLE := 0.9
 const ROPE_PIXEL_GRID := 4.0
 const ROPE_PIXEL_OUTLINE_SIZE := Vector2(14.0, 14.0)
 const ROPE_PIXEL_CORE_SIZE := Vector2(8.0, 8.0)
@@ -247,7 +248,7 @@ func _resolve_rope_crossing() -> void:
 func _player_clears_rope_at_crossing() -> bool:
 	if not is_jumping:
 		return false
-	var rope_center_y := LEFT_HAND.y + sin(ROPE_CROSSING_ANGLE) * ROPE_SWING_RADIUS
+	var rope_center_y := _rope_midpoint_y(ROPE_CROSSING_ANGLE)
 	var rope_top_y := rope_center_y - ROPE_PIXEL_OUTLINE_SIZE.y * 0.5
 	var player_feet_y := PLAYER_GROUND_Y + jump_height + player_sprite_ground_offset.y
 	return player_feet_y < rope_top_y
@@ -343,8 +344,8 @@ func _draw() -> void:
 	# Draw the rear half first so only the parts covered by people are hidden.
 	if _rope_is_behind():
 		_draw_rope()
-	_draw_turner(Vector2(85.0, TURNER_GROUND_Y), false)
-	_draw_turner(Vector2(635.0, TURNER_GROUND_Y), true)
+	_draw_turner(Vector2(100.0, TURNER_GROUND_Y), false)
+	_draw_turner(Vector2(620.0, TURNER_GROUND_Y), true)
 	_draw_player()
 	# Draw the front half last so it visibly passes in front of the player.
 	if not _rope_is_behind():
@@ -405,7 +406,7 @@ func _draw_cover_texture(texture: Texture2D, target: Rect2) -> void:
 
 
 func _draw_rope() -> void:
-	var midpoint_y := LEFT_HAND.y + sin(rope_angle) * ROPE_SWING_RADIUS
+	var midpoint_y := _rope_midpoint_y(rope_angle)
 	var pixel_points := PackedVector2Array()
 	for i in range(97):
 		var t := float(i) / 96.0
@@ -436,6 +437,12 @@ func _draw_rope() -> void:
 
 	_draw_pixel_rope_grip(LEFT_HAND)
 	_draw_pixel_rope_grip(RIGHT_HAND)
+
+
+func _rope_midpoint_y(angle: float) -> float:
+	var vertical_phase := sin(angle)
+	var radius := ROPE_GROUND_RADIUS if vertical_phase >= 0.0 else ROPE_OVERHEAD_RADIUS
+	return LEFT_HAND.y + vertical_phase * radius
 
 
 func _draw_pixel_rope_grip(center: Vector2) -> void:
