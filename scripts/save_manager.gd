@@ -40,7 +40,6 @@ func default_data() -> Dictionary:
 		"best_score": 0,
 		"coins": 100,
 		"gems": 0,
-		"tickets": 0,
 		"selected_character": "default",
 		"owned_characters": ["default"],
 		"settings": {
@@ -66,7 +65,6 @@ func _sanitize(source: Dictionary, defaults: Dictionary) -> Dictionary:
 		"best_score": maxi(0, int(source.get("best_score", defaults.best_score))),
 		"coins": maxi(0, int(source.get("coins", defaults.coins))),
 		"gems": maxi(0, int(source.get("gems", defaults.gems))),
-		"tickets": maxi(0, int(source.get("tickets", defaults.tickets))),
 		"selected_character": str(source.get("selected_character", defaults.selected_character)),
 		"owned_characters": owned,
 		"settings": {

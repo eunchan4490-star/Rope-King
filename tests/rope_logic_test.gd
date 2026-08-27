@@ -102,6 +102,8 @@ func _test_character_asset_system(game: Node) -> void:
 	_expect(ResourceLoader.exists("res://assets/ui/best_score_frame.png"), "best score frame asset was not imported")
 	_expect(ResourceLoader.exists("res://assets/ui/resource_counter_frame.png"), "resource counter frame asset was not imported")
 	_expect(ResourceLoader.exists("res://assets/ui/tap_to_start.png"), "tap-to-start prompt asset was not imported")
+	_expect(ResourceLoader.exists("res://assets/ui/coin_icon.png"), "coin icon asset was not imported")
+	_expect(ResourceLoader.exists("res://assets/ui/ruby_icon.png"), "ruby icon asset was not imported")
 	_expect(ResourceLoader.exists("res://assets/characters/default/idle.png"), "default idle asset path was not imported")
 	_expect(ResourceLoader.exists("res://assets/characters/default/jump_sheet.png"), "default jump asset path was not imported")
 	_expect(game._is_safe_character_id("default"), "default character id was rejected")

@@ -27,6 +27,8 @@ const HUD_TITLE_LOGO_PATH := "res://assets/ui/title_logo.png"
 const BEST_SCORE_FRAME_PATH := "res://assets/ui/best_score_frame.png"
 const RESOURCE_COUNTER_FRAME_PATH := "res://assets/ui/resource_counter_frame.png"
 const TAP_PROMPT_PATH := "res://assets/ui/tap_to_start.png"
+const COIN_ICON_PATH := "res://assets/ui/coin_icon.png"
+const RUBY_ICON_PATH := "res://assets/ui/ruby_icon.png"
 const DEFAULT_CHARACTER_ID := "default"
 const JUMP_FRAME_COUNT := 4
 const CHARACTERS_PER_PAGE := 3
@@ -64,6 +66,8 @@ const CHARACTER_CARD_RECTS := [
 @export var best_score_frame_texture: Texture2D
 @export var resource_counter_frame_texture: Texture2D
 @export var tap_prompt_texture: Texture2D
+@export var coin_icon_texture: Texture2D
+@export var ruby_icon_texture: Texture2D
 @export_group("Game Balance")
 @export var balance: RopeGameBalance = DEFAULT_BALANCE
 
@@ -85,7 +89,6 @@ var message_color := Color.WHITE
 var menu_notice := ""
 var coins := 100
 var gems := 0
-var tickets := 0
 var run_start_best := 0
 var new_best_this_run := false
 var feedback: RopeFeedbackManager
@@ -115,6 +118,8 @@ var settings_button_used_region := Rect2()
 var best_score_frame_used_region := Rect2()
 var resource_counter_frame_used_region := Rect2()
 var tap_prompt_used_region := Rect2()
+var coin_icon_used_region := Rect2()
+var ruby_icon_used_region := Rect2()
 
 
 func _ready() -> void:
@@ -146,12 +151,18 @@ func _ready() -> void:
 		resource_counter_frame_texture = load(RESOURCE_COUNTER_FRAME_PATH) as Texture2D
 	if tap_prompt_texture == null and ResourceLoader.exists(TAP_PROMPT_PATH):
 		tap_prompt_texture = load(TAP_PROMPT_PATH) as Texture2D
+	if coin_icon_texture == null and ResourceLoader.exists(COIN_ICON_PATH):
+		coin_icon_texture = load(COIN_ICON_PATH) as Texture2D
+	if ruby_icon_texture == null and ResourceLoader.exists(RUBY_ICON_PATH):
+		ruby_icon_texture = load(RUBY_ICON_PATH) as Texture2D
 	character_button_used_region = _texture_used_region(character_button_texture)
 	upgrade_button_used_region = _texture_used_region(upgrade_button_texture)
 	settings_button_used_region = _texture_used_region(settings_button_texture)
 	best_score_frame_used_region = _texture_used_region(best_score_frame_texture)
 	resource_counter_frame_used_region = _texture_used_region(resource_counter_frame_texture)
 	tap_prompt_used_region = _texture_used_region(tap_prompt_texture)
+	coin_icon_used_region = _texture_used_region(coin_icon_texture)
+	ruby_icon_used_region = _texture_used_region(ruby_icon_texture)
 	get_viewport().size_changed.connect(queue_redraw)
 	queue_redraw()
 
@@ -339,7 +350,6 @@ func _load_saved_progress() -> void:
 	best_score = int(data.best_score)
 	coins = int(data.coins)
 	gems = int(data.gems)
-	tickets = int(data.tickets)
 	total_runs = int(data.stats.total_runs)
 	total_success = int(data.stats.total_success)
 	for owned_id in data.owned_characters:
@@ -358,7 +368,6 @@ func _save_progress() -> void:
 		"best_score": best_score,
 		"coins": coins,
 		"gems": gems,
-		"tickets": tickets,
 		"selected_character": selected_character_id,
 		"owned_characters": owned_character_ids,
 		"settings": {
@@ -851,9 +860,8 @@ func _draw_game_over_panel(font: Font) -> void:
 
 func _draw_main_menu(font: Font) -> void:
 	# Give every resource a readable name instead of relying on ambiguous initials.
-	_draw_resource_counter(font, Rect2(18.0, 22.0, 214.0, 62.0), "코인", Color("ffd23f"), coins)
-	_draw_resource_counter(font, Rect2(253.0, 22.0, 214.0, 62.0), "보석", Color("ff5f87"), gems)
-	_draw_resource_counter(font, Rect2(488.0, 22.0, 214.0, 62.0), "티켓", Color("63d8ff"), tickets)
+	_draw_resource_counter(font, Rect2(40.0, 22.0, 300.0, 62.0), "코인", coin_icon_texture, coin_icon_used_region, coins)
+	_draw_resource_counter(font, Rect2(380.0, 22.0, 300.0, 62.0), "루비", ruby_icon_texture, ruby_icon_used_region, gems)
 
 	_draw_main_menu_title(font)
 	var best_rect := Rect2(235.0, 306.0, 250.0, 64.0)
@@ -864,7 +872,7 @@ func _draw_main_menu(font: Font) -> void:
 	draw_string(font, Vector2(284.0, 347.0), "최고 기록  %d" % best_score, HORIZONTAL_ALIGNMENT_CENTER, 178.0, 23, Color("fff0a6"))
 
 	var prompt_alpha := 0.78 + sin(Time.get_ticks_msec() * 0.004) * 0.18
-	var prompt_rect := Rect2(190.0, 910.0, 340.0, 128.0)
+	var prompt_rect := Rect2(190.0, 505.0, 340.0, 128.0)
 	if tap_prompt_texture != null and tap_prompt_used_region.size.x > 0.0:
 		draw_texture_rect_region(tap_prompt_texture, prompt_rect, tap_prompt_used_region, Color(1.0, 1.0, 1.0, prompt_alpha))
 	else:
@@ -947,15 +955,15 @@ func _character_preview_texture(character_id: String) -> Texture2D:
 	return texture
 
 
-func _draw_resource_counter(font: Font, rect: Rect2, label: String, icon_color: Color, amount: int) -> void:
+func _draw_resource_counter(font: Font, rect: Rect2, label: String, icon_texture: Texture2D, icon_region: Rect2, amount: int) -> void:
 	if resource_counter_frame_texture != null and resource_counter_frame_used_region.size.x > 0.0:
 		draw_texture_rect_region(resource_counter_frame_texture, rect, resource_counter_frame_used_region)
 	else:
 		draw_rect(rect, Color(0.23, 0.14, 0.09, 0.92), true)
 		draw_rect(rect, Color("ffd23f"), false, 4.0)
-	draw_circle(rect.position + Vector2(31.0, 31.0), 16.0, icon_color)
-	draw_circle(rect.position + Vector2(31.0, 31.0), 16.0, Color("fff0a6"), false, 2.0)
-	draw_rect(Rect2(rect.position + Vector2(24.0, 20.0), Vector2(5.0, 5.0)), Color(1.0, 1.0, 1.0, 0.7), true)
+	var icon_rect := Rect2(rect.position + Vector2(9.0, 7.0), Vector2(48.0, 48.0))
+	if icon_texture != null and icon_region.size.x > 0.0:
+		draw_texture_rect_region(icon_texture, icon_rect, icon_region)
 	draw_string(font, Vector2(rect.position.x + 61.0, rect.position.y + 25.0), label, HORIZONTAL_ALIGNMENT_LEFT, 70.0, 15, Color("f4d7a1"))
 	draw_string(font, Vector2(rect.position.x + 61.0, rect.position.y + 49.0), str(amount), HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 74.0, 24, Color.WHITE)
 
