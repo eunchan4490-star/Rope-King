@@ -24,6 +24,9 @@ const MENU_UPGRADE_TEXTURE_PATH := "res://assets/ui/menu_upgrade.png"
 const MENU_SETTINGS_TEXTURE_PATH := "res://assets/ui/menu_settings.png"
 const HUD_TITLE_FRAME_PATH := "res://assets/ui/title_frame.png"
 const HUD_TITLE_LOGO_PATH := "res://assets/ui/title_logo.png"
+const BEST_SCORE_FRAME_PATH := "res://assets/ui/best_score_frame.png"
+const RESOURCE_COUNTER_FRAME_PATH := "res://assets/ui/resource_counter_frame.png"
+const TAP_PROMPT_PATH := "res://assets/ui/tap_to_start.png"
 const DEFAULT_CHARACTER_ID := "default"
 const JUMP_FRAME_COUNT := 4
 const CHARACTERS_PER_PAGE := 3
@@ -58,6 +61,9 @@ const CHARACTER_CARD_RECTS := [
 @export_group("HUD Title Assets")
 @export var hud_title_frame_texture: Texture2D
 @export var hud_title_logo_texture: Texture2D
+@export var best_score_frame_texture: Texture2D
+@export var resource_counter_frame_texture: Texture2D
+@export var tap_prompt_texture: Texture2D
 @export_group("Game Balance")
 @export var balance: RopeGameBalance = DEFAULT_BALANCE
 
@@ -106,6 +112,9 @@ var mirrored_turner_used_region := Rect2()
 var character_button_used_region := Rect2()
 var upgrade_button_used_region := Rect2()
 var settings_button_used_region := Rect2()
+var best_score_frame_used_region := Rect2()
+var resource_counter_frame_used_region := Rect2()
+var tap_prompt_used_region := Rect2()
 
 
 func _ready() -> void:
@@ -131,9 +140,18 @@ func _ready() -> void:
 		hud_title_frame_texture = load(HUD_TITLE_FRAME_PATH) as Texture2D
 	if hud_title_logo_texture == null and ResourceLoader.exists(HUD_TITLE_LOGO_PATH):
 		hud_title_logo_texture = load(HUD_TITLE_LOGO_PATH) as Texture2D
+	if best_score_frame_texture == null and ResourceLoader.exists(BEST_SCORE_FRAME_PATH):
+		best_score_frame_texture = load(BEST_SCORE_FRAME_PATH) as Texture2D
+	if resource_counter_frame_texture == null and ResourceLoader.exists(RESOURCE_COUNTER_FRAME_PATH):
+		resource_counter_frame_texture = load(RESOURCE_COUNTER_FRAME_PATH) as Texture2D
+	if tap_prompt_texture == null and ResourceLoader.exists(TAP_PROMPT_PATH):
+		tap_prompt_texture = load(TAP_PROMPT_PATH) as Texture2D
 	character_button_used_region = _texture_used_region(character_button_texture)
 	upgrade_button_used_region = _texture_used_region(upgrade_button_texture)
 	settings_button_used_region = _texture_used_region(settings_button_texture)
+	best_score_frame_used_region = _texture_used_region(best_score_frame_texture)
+	resource_counter_frame_used_region = _texture_used_region(resource_counter_frame_texture)
+	tap_prompt_used_region = _texture_used_region(tap_prompt_texture)
 	get_viewport().size_changed.connect(queue_redraw)
 	queue_redraw()
 
@@ -838,14 +856,19 @@ func _draw_main_menu(font: Font) -> void:
 	_draw_resource_counter(font, Rect2(488.0, 22.0, 214.0, 62.0), "티켓", Color("63d8ff"), tickets)
 
 	_draw_main_menu_title(font)
-	draw_rect(Rect2(255.0, 310.0, 210.0, 54.0), Color(0.05, 0.09, 0.17, 0.82), true)
-	draw_string(font, Vector2(255.0, 346.0), "최고 기록  %d" % best_score, HORIZONTAL_ALIGNMENT_CENTER, 210.0, 23, Color("fff0a6"))
+	var best_rect := Rect2(235.0, 306.0, 250.0, 64.0)
+	if best_score_frame_texture != null and best_score_frame_used_region.size.x > 0.0:
+		draw_texture_rect_region(best_score_frame_texture, best_rect, best_score_frame_used_region)
+	else:
+		draw_rect(best_rect, Color(0.23, 0.14, 0.09, 0.88), true)
+	draw_string(font, Vector2(284.0, 347.0), "최고 기록  %d" % best_score, HORIZONTAL_ALIGNMENT_CENTER, 178.0, 23, Color("fff0a6"))
 
 	var prompt_alpha := 0.78 + sin(Time.get_ticks_msec() * 0.004) * 0.18
-	var prompt_rect := Rect2(222.0, 965.0, 276.0, 62.0)
-	draw_rect(prompt_rect, Color(0.05, 0.08, 0.13, 0.72 * prompt_alpha), true)
-	draw_rect(prompt_rect, Color(1.0, 0.94, 0.65, prompt_alpha), false, 4.0)
-	draw_string(font, Vector2(prompt_rect.position.x, 1006.0), "화면을 눌러 시작", HORIZONTAL_ALIGNMENT_CENTER, prompt_rect.size.x, 27, Color(1.0, 0.94, 0.65, prompt_alpha))
+	var prompt_rect := Rect2(190.0, 910.0, 340.0, 128.0)
+	if tap_prompt_texture != null and tap_prompt_used_region.size.x > 0.0:
+		draw_texture_rect_region(tap_prompt_texture, prompt_rect, tap_prompt_used_region, Color(1.0, 1.0, 1.0, prompt_alpha))
+	else:
+		draw_string(font, Vector2(prompt_rect.position.x, 980.0), "TAP TO START", HORIZONTAL_ALIGNMENT_CENTER, prompt_rect.size.x, 30, Color(1.0, 1.0, 1.0, prompt_alpha))
 
 	_draw_menu_asset_or_fallback(character_button_texture, character_button_used_region, font, CHARACTER_BUTTON_RECT, "CHARACTER", "캐릭터", Color("ef8f6b"))
 	_draw_menu_asset_or_fallback(upgrade_button_texture, upgrade_button_used_region, font, UPGRADE_BUTTON_RECT, "UPGRADE", "업그레이드", Color("65b7f3"))
@@ -860,7 +883,7 @@ func _draw_main_menu_title(font: Font) -> void:
 	if hud_title_frame_texture != null:
 		draw_texture_rect(hud_title_frame_texture, frame_rect, false)
 	else:
-		draw_rect(frame_rect, Color("071b38"), true)
+		draw_rect(frame_rect, Color("3a2418"), true)
 		draw_rect(frame_rect, Color("ffd23f"), false, 7.0)
 	var logo_rect := Rect2(255.0, 154.0, 210.0, 112.0)
 	if hud_title_logo_texture != null:
@@ -925,12 +948,16 @@ func _character_preview_texture(character_id: String) -> Texture2D:
 
 
 func _draw_resource_counter(font: Font, rect: Rect2, label: String, icon_color: Color, amount: int) -> void:
-	draw_rect(rect, Color(0.04, 0.07, 0.13, 0.9), true)
-	draw_rect(rect, Color("fff0a6"), false, 4.0)
-	draw_circle(rect.position + Vector2(31.0, 31.0), 20.0, icon_color)
-	draw_circle(rect.position + Vector2(31.0, 31.0), 20.0, Color("fff0a6"), false, 3.0)
-	draw_string(font, Vector2(rect.position.x + 59.0, rect.position.y + 25.0), label, HORIZONTAL_ALIGNMENT_LEFT, 70.0, 15, Color("a9bad8"))
-	draw_string(font, Vector2(rect.position.x + 59.0, rect.position.y + 49.0), str(amount), HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 72.0, 24, Color.WHITE)
+	if resource_counter_frame_texture != null and resource_counter_frame_used_region.size.x > 0.0:
+		draw_texture_rect_region(resource_counter_frame_texture, rect, resource_counter_frame_used_region)
+	else:
+		draw_rect(rect, Color(0.23, 0.14, 0.09, 0.92), true)
+		draw_rect(rect, Color("ffd23f"), false, 4.0)
+	draw_circle(rect.position + Vector2(31.0, 31.0), 16.0, icon_color)
+	draw_circle(rect.position + Vector2(31.0, 31.0), 16.0, Color("fff0a6"), false, 2.0)
+	draw_rect(Rect2(rect.position + Vector2(24.0, 20.0), Vector2(5.0, 5.0)), Color(1.0, 1.0, 1.0, 0.7), true)
+	draw_string(font, Vector2(rect.position.x + 61.0, rect.position.y + 25.0), label, HORIZONTAL_ALIGNMENT_LEFT, 70.0, 15, Color("f4d7a1"))
+	draw_string(font, Vector2(rect.position.x + 61.0, rect.position.y + 49.0), str(amount), HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 74.0, 24, Color.WHITE)
 
 
 func _draw_menu_asset_or_fallback(texture: Texture2D, used_region: Rect2, font: Font, rect: Rect2, title: String, subtitle: String, face_color: Color) -> void:
