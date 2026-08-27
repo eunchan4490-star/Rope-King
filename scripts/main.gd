@@ -17,12 +17,7 @@ const HIT_REVEAL_SECONDS := 0.42
 const CHARACTER_ASSET_ROOT := "res://assets/characters"
 const DEFAULT_CHARACTER_ID := "default"
 const JUMP_FRAME_COUNT := 4
-const CHARACTER_IDS := ["default", "schoolgirl_ponytail", "schoolgirl_bob"]
-const CHARACTER_NAMES := {
-	"default": "기본 캐릭터",
-	"schoolgirl_ponytail": "포니테일 학생",
-	"schoolgirl_bob": "단발 학생",
-}
+const CHARACTERS_PER_PAGE := 3
 const DEFAULT_BALANCE := preload("res://resources/balance/default_balance.tres")
 const START_BUTTON_RECT := Rect2(165.0, 955.0, 390.0, 135.0)
 const CHARACTER_BUTTON_RECT := Rect2(25.0, 1130.0, 210.0, 115.0)
@@ -31,6 +26,8 @@ const SETTINGS_BUTTON_RECT := Rect2(485.0, 1130.0, 210.0, 115.0)
 const GAME_OVER_CLOSE_RECT := Rect2(548.0, 394.0, 58.0, 58.0)
 const CHARACTER_PANEL_RECT := Rect2(30.0, 185.0, 660.0, 700.0)
 const CHARACTER_PANEL_CLOSE_RECT := Rect2(616.0, 205.0, 52.0, 52.0)
+const CHARACTER_PAGE_PREV_RECT := Rect2(242.0, 785.0, 70.0, 58.0)
+const CHARACTER_PAGE_NEXT_RECT := Rect2(408.0, 785.0, 70.0, 58.0)
 const CHARACTER_CARD_RECTS := [
 	Rect2(52.0, 330.0, 190.0, 400.0),
 	Rect2(265.0, 330.0, 190.0, 400.0),
@@ -80,6 +77,10 @@ var player_jump_scale := Vector2.ONE
 var character_menu_open := false
 var character_preview_textures: Dictionary = {}
 var character_preview_regions: Dictionary = {}
+var character_ids: Array[String] = []
+var character_names: Dictionary = {}
+var owned_character_ids: Array[String] = []
+var character_page := 0
 
 
 func _ready() -> void:
@@ -88,6 +89,7 @@ func _ready() -> void:
 	add_child(feedback)
 	save_manager = RopeSaveManager.new()
 	add_child(save_manager)
+	_load_character_catalog()
 	_load_saved_progress()
 	rope_speed = balance.base_rope_speed
 	_load_character_visuals(selected_character_id)
@@ -268,7 +270,12 @@ func _load_saved_progress() -> void:
 	tickets = int(data.tickets)
 	total_runs = int(data.stats.total_runs)
 	total_success = int(data.stats.total_success)
-	selected_character_id = str(data.selected_character)
+	for owned_id in data.owned_characters:
+		var character_id := str(owned_id)
+		if character_ids.has(character_id) and not owned_character_ids.has(character_id):
+			owned_character_ids.append(character_id)
+	var saved_character := str(data.selected_character)
+	selected_character_id = saved_character if owned_character_ids.has(saved_character) else DEFAULT_CHARACTER_ID
 	feedback.sound_enabled = bool(data.settings.sound)
 	feedback.vibration_enabled = bool(data.settings.vibration)
 
@@ -281,7 +288,7 @@ func _save_progress() -> void:
 		"gems": gems,
 		"tickets": tickets,
 		"selected_character": selected_character_id,
-		"owned_characters": CHARACTER_IDS,
+		"owned_characters": owned_character_ids,
 		"settings": {
 			"sound": feedback.sound_enabled,
 			"vibration": feedback.vibration_enabled,
@@ -504,21 +511,69 @@ func _handle_character_menu_input(position: Vector2) -> void:
 	if CHARACTER_PANEL_CLOSE_RECT.has_point(position):
 		character_menu_open = false
 		return
-	for index in range(mini(CHARACTER_IDS.size(), CHARACTER_CARD_RECTS.size())):
+	var page_count := _character_page_count()
+	if CHARACTER_PAGE_PREV_RECT.has_point(position) and page_count > 1:
+		character_page = posmod(character_page - 1, page_count)
+		return
+	if CHARACTER_PAGE_NEXT_RECT.has_point(position) and page_count > 1:
+		character_page = (character_page + 1) % page_count
+		return
+	var page_ids := _current_character_page_ids()
+	for index in range(mini(page_ids.size(), CHARACTER_CARD_RECTS.size())):
 		if CHARACTER_CARD_RECTS[index].has_point(position):
-			var character_id: String = CHARACTER_IDS[index]
+			var character_id: String = page_ids[index]
 			if set_player_character(character_id):
-				menu_notice = "%s 선택" % CHARACTER_NAMES.get(character_id, character_id)
+				menu_notice = "%s 선택" % character_names.get(character_id, character_id)
 				_save_progress()
 			return
 
 
-func _cycle_player_character() -> void:
-	var current_index := CHARACTER_IDS.find(selected_character_id)
-	var next_id: String = CHARACTER_IDS[(current_index + 1) % CHARACTER_IDS.size()]
-	if set_player_character(next_id):
-		menu_notice = "%s 선택" % CHARACTER_NAMES.get(next_id, next_id)
-		_save_progress()
+func _load_character_catalog() -> void:
+	character_ids.clear()
+	character_names.clear()
+	owned_character_ids.clear()
+	var entries: Array[Dictionary] = []
+	for character_id in DirAccess.get_directories_at(CHARACTER_ASSET_ROOT):
+		if not _is_safe_character_id(character_id):
+			continue
+		if not ResourceLoader.exists(_character_asset_path(character_id, "idle.png")):
+			continue
+		var metadata := {
+			"id": character_id,
+			"display_name": character_id,
+			"order": 9999,
+			"unlocked_by_default": false,
+		}
+		var metadata_path := _character_asset_path(character_id, "character.json")
+		if FileAccess.file_exists(metadata_path):
+			var file := FileAccess.open(metadata_path, FileAccess.READ)
+			var parsed = JSON.parse_string(file.get_as_text()) if file != null else null
+			if parsed is Dictionary:
+				metadata.merge(parsed as Dictionary, true)
+		entries.append(metadata)
+	entries.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return int(a.order) < int(b.order))
+	for entry in entries:
+		var character_id := str(entry.id)
+		character_ids.append(character_id)
+		character_names[character_id] = str(entry.display_name)
+		if bool(entry.unlocked_by_default):
+			owned_character_ids.append(character_id)
+	if character_ids.has(DEFAULT_CHARACTER_ID) and not owned_character_ids.has(DEFAULT_CHARACTER_ID):
+		owned_character_ids.push_front(DEFAULT_CHARACTER_ID)
+
+
+func _character_page_count() -> int:
+	return maxi(1, int(ceil(float(owned_character_ids.size()) / float(CHARACTERS_PER_PAGE))))
+
+
+func _current_character_page_ids() -> Array[String]:
+	var result: Array[String] = []
+	var page_count := _character_page_count()
+	character_page = clampi(character_page, 0, page_count - 1)
+	var first_index := character_page * CHARACTERS_PER_PAGE
+	for index in range(first_index, mini(first_index + CHARACTERS_PER_PAGE, owned_character_ids.size())):
+		result.append(owned_character_ids[index])
+	return result
 
 
 func _load_character_visuals(character_id: String) -> void:
@@ -725,8 +780,18 @@ func _draw_character_menu(font: Font) -> void:
 	draw_circle(CHARACTER_PANEL_CLOSE_RECT.get_center(), 24.0, Color("ff4d67"))
 	draw_line(CHARACTER_PANEL_CLOSE_RECT.get_center() + Vector2(-8.0, -8.0), CHARACTER_PANEL_CLOSE_RECT.get_center() + Vector2(8.0, 8.0), Color.WHITE, 5.0, true)
 	draw_line(CHARACTER_PANEL_CLOSE_RECT.get_center() + Vector2(8.0, -8.0), CHARACTER_PANEL_CLOSE_RECT.get_center() + Vector2(-8.0, 8.0), Color.WHITE, 5.0, true)
-	for index in range(mini(CHARACTER_IDS.size(), CHARACTER_CARD_RECTS.size())):
-		_draw_character_card(font, CHARACTER_IDS[index], CHARACTER_CARD_RECTS[index])
+	var page_ids := _current_character_page_ids()
+	for index in range(mini(page_ids.size(), CHARACTER_CARD_RECTS.size())):
+		_draw_character_card(font, page_ids[index], CHARACTER_CARD_RECTS[index])
+	var page_count := _character_page_count()
+	if page_count > 1:
+		draw_rect(CHARACTER_PAGE_PREV_RECT, Color("263a57"), true)
+		draw_rect(CHARACTER_PAGE_PREV_RECT, Color("fff0a6"), false, 4.0)
+		draw_rect(CHARACTER_PAGE_NEXT_RECT, Color("263a57"), true)
+		draw_rect(CHARACTER_PAGE_NEXT_RECT, Color("fff0a6"), false, 4.0)
+		draw_string(font, Vector2(CHARACTER_PAGE_PREV_RECT.position.x, CHARACTER_PAGE_PREV_RECT.position.y + 40.0), "<", HORIZONTAL_ALIGNMENT_CENTER, CHARACTER_PAGE_PREV_RECT.size.x, 28, Color.WHITE)
+		draw_string(font, Vector2(CHARACTER_PAGE_NEXT_RECT.position.x, CHARACTER_PAGE_NEXT_RECT.position.y + 40.0), ">", HORIZONTAL_ALIGNMENT_CENTER, CHARACTER_PAGE_NEXT_RECT.size.x, 28, Color.WHITE)
+		draw_string(font, Vector2(312.0, 825.0), "%d / %d" % [character_page + 1, page_count], HORIZONTAL_ALIGNMENT_CENTER, 96.0, 22, Color("a9bad8"))
 
 
 func _draw_character_card(font: Font, character_id: String, card: Rect2) -> void:
@@ -742,7 +807,7 @@ func _draw_character_card(font: Font, character_id: String, card: Rect2) -> void
 		var size := source.size * scale
 		var position := Vector2(preview_rect.get_center().x - size.x * 0.5, preview_rect.end.y - size.y)
 		draw_texture_rect_region(texture, Rect2(position, size), source)
-	var name: String = CHARACTER_NAMES.get(character_id, character_id)
+	var name: String = character_names.get(character_id, character_id)
 	draw_string(font, Vector2(card.position.x + 8.0, card.position.y + 305.0), name, HORIZONTAL_ALIGNMENT_CENTER, card.size.x - 16.0, 20, Color.WHITE)
 	draw_string(font, Vector2(card.position.x + 8.0, card.position.y + 342.0), "보유", HORIZONTAL_ALIGNMENT_CENTER, card.size.x - 16.0, 19, Color("ffd166"))
 	var state_text := "사용 중" if selected else "선택"
