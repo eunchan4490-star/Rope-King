@@ -15,6 +15,7 @@ const ROPE_PIXEL_OUTLINE_SIZE := Vector2(14.0, 14.0)
 const ROPE_PIXEL_CORE_SIZE := Vector2(8.0, 8.0)
 const HIT_REVEAL_SECONDS := 0.42
 const CHARACTER_ASSET_ROOT := "res://assets/characters"
+const DEFAULT_BACKGROUND_PATH := "res://assets/backgrounds/neighborhood.png"
 const DEFAULT_CHARACTER_ID := "default"
 const JUMP_FRAME_COUNT := 4
 const CHARACTERS_PER_PAGE := 3
@@ -39,6 +40,8 @@ const CHARACTER_CARD_RECTS := [
 @export var player_jump_sprite: Texture2D
 @export var player_sprite_max_size := Vector2(160.0, 160.0)
 @export var player_sprite_ground_offset := Vector2.ZERO
+@export_group("Background")
+@export var background_texture: Texture2D
 @export_group("Game Balance")
 @export var balance: RopeGameBalance = DEFAULT_BALANCE
 
@@ -93,6 +96,8 @@ func _ready() -> void:
 	_load_saved_progress()
 	rope_speed = balance.base_rope_speed
 	_load_character_visuals(selected_character_id)
+	if background_texture == null and ResourceLoader.exists(DEFAULT_BACKGROUND_PATH):
+		background_texture = load(DEFAULT_BACKGROUND_PATH) as Texture2D
 	get_viewport().size_changed.connect(queue_redraw)
 	queue_redraw()
 
@@ -323,6 +328,11 @@ func _draw() -> void:
 
 
 func _draw_background() -> void:
+	if background_texture != null:
+		_draw_cover_texture(background_texture, Rect2(Vector2.ZERO, DESIGN_SIZE))
+		if flash_time > 0.0:
+			draw_rect(Rect2(Vector2.ZERO, DESIGN_SIZE), Color(1, 1, 1, flash_time * 0.32))
+		return
 	# Sky, distant clouds, and a simple park backdrop.
 	draw_rect(Rect2(Vector2.ZERO, DESIGN_SIZE), Color("9edcff"))
 	draw_circle(Vector2(610.0, 150.0), 66.0, Color("fff0a6"))
@@ -339,12 +349,32 @@ func _draw_background() -> void:
 
 
 func _draw_ground() -> void:
+	if background_texture != null:
+		return
 	draw_rect(Rect2(0, 650, 720, 630), Color("75c86b"))
 	draw_colored_polygon(PackedVector2Array([
 		Vector2(130, 1280), Vector2(255, 650), Vector2(465, 650), Vector2(590, 1280)
 	]), Color("e6c98c"))
 	for x in range(35, 720, 95):
 		draw_line(Vector2(x, 1010), Vector2(x + 18, 990), Color("5eae58"), 5.0, true)
+
+
+func _draw_cover_texture(texture: Texture2D, target: Rect2) -> void:
+	var source_size := texture.get_size()
+	if source_size.x <= 0.0 or source_size.y <= 0.0:
+		return
+	var target_aspect := target.size.x / target.size.y
+	var source_aspect := source_size.x / source_size.y
+	var source_rect := Rect2(Vector2.ZERO, source_size)
+	if source_aspect > target_aspect:
+		var cropped_width := source_size.y * target_aspect
+		source_rect.position.x = (source_size.x - cropped_width) * 0.5
+		source_rect.size.x = cropped_width
+	elif source_aspect < target_aspect:
+		var cropped_height := source_size.x / target_aspect
+		source_rect.position.y = (source_size.y - cropped_height) * 0.5
+		source_rect.size.y = cropped_height
+	draw_texture_rect_region(texture, target, source_rect)
 
 
 func _draw_rope() -> void:
