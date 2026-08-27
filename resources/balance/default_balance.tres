@@ -16,3 +16,4 @@ burst_near_multiplier = 1.48
 burst_extra_distance = 0.75
 wave_min_multiplier = 0.78
 wave_range = 0.42
+athlete_burst_multiplier = 1.72

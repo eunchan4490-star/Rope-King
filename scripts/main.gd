@@ -1,6 +1,7 @@
 extends Node2D
 
 enum GameState { TITLE, PLAYING, HIT, GAME_OVER }
+enum TurnerTeam { STUDENT, ATHLETE }
 
 const DESIGN_SIZE := Vector2(720.0, 1280.0)
 const PLAYER_X := 360.0
@@ -16,9 +17,17 @@ const ROPE_PIXEL_GRID := 4.0
 const ROPE_PIXEL_OUTLINE_SIZE := Vector2(14.0, 14.0)
 const ROPE_PIXEL_CORE_SIZE := Vector2(8.0, 8.0)
 const HIT_REVEAL_SECONDS := 0.42
+const TURNER_CHANGE_INTERVAL := 10
+const ATHLETE_NORMAL_TURNS := 2
+const TURNER_TRANSITION_SECONDS := 1.0
+const LEFT_TURNER_FEET := Vector2(108.0, TURNER_GROUND_Y)
+const RIGHT_TURNER_FEET := Vector2(612.0, TURNER_GROUND_Y)
+const LEFT_TURNER_ENTRY_FEET := Vector2(-120.0, TURNER_GROUND_Y)
+const RIGHT_TURNER_ENTRY_FEET := Vector2(840.0, TURNER_GROUND_Y)
 const CHARACTER_ASSET_ROOT := "res://assets/characters"
 const DEFAULT_BACKGROUND_PATH := "res://assets/backgrounds/neighborhood.png"
 const DEFAULT_TURNER_PATH := "res://assets/turners/bowl_cut_student.png"
+const ATHLETE_TURNER_PATH := "res://assets/turners/athlete_student.png"
 const MENU_CHARACTER_TEXTURE_PATH := "res://assets/ui/menu_character.png"
 const MENU_UPGRADE_TEXTURE_PATH := "res://assets/ui/menu_upgrade.png"
 const MENU_SETTINGS_TEXTURE_PATH := "res://assets/ui/menu_settings.png"
@@ -56,6 +65,7 @@ const CHARACTER_CARD_RECTS := [
 @export var background_texture: Texture2D
 @export_group("Rope Turner")
 @export var turner_texture: Texture2D
+@export var athlete_turner_texture: Texture2D
 @export_group("Menu Button Assets")
 @export var character_button_texture: Texture2D
 @export var upgrade_button_texture: Texture2D
@@ -83,6 +93,12 @@ var jump_started_in_cue := false
 var accepting_input := true
 var game_state := GameState.TITLE
 var challenge_pattern := 0
+var turner_team := TurnerTeam.STUDENT
+var athlete_normal_turns_remaining := 0
+var athlete_burst_turns_remaining := 0
+var athlete_next_burst_count := 2
+var turner_transition_active := false
+var turner_transition_time := 0.0
 var flash_time := 0.0
 var message := "화면을 눌러 시작"
 var message_color := Color.WHITE
@@ -112,6 +128,9 @@ var character_page := 0
 var turner_used_region := Rect2()
 var mirrored_turner_texture: Texture2D
 var mirrored_turner_used_region := Rect2()
+var athlete_turner_used_region := Rect2()
+var mirrored_athlete_turner_texture: Texture2D
+var mirrored_athlete_turner_used_region := Rect2()
 var character_button_used_region := Rect2()
 var upgrade_button_used_region := Rect2()
 var settings_button_used_region := Rect2()
@@ -178,12 +197,20 @@ func _prepare_turner_visuals() -> void:
 			mirrored_image.flip_x()
 			mirrored_turner_texture = ImageTexture.create_from_image(mirrored_image)
 			mirrored_turner_used_region = _texture_used_region(mirrored_turner_texture)
+	if athlete_turner_texture == null and ResourceLoader.exists(ATHLETE_TURNER_PATH):
+		athlete_turner_texture = load(ATHLETE_TURNER_PATH) as Texture2D
+	if athlete_turner_texture != null:
+		athlete_turner_used_region = _texture_used_region(athlete_turner_texture)
+		var athlete_image := athlete_turner_texture.get_image()
+		if athlete_image != null and not athlete_image.is_empty():
+			var mirrored_athlete_image := athlete_image.duplicate()
+			mirrored_athlete_image.flip_x()
+			mirrored_athlete_turner_texture = ImageTexture.create_from_image(mirrored_athlete_image)
+			mirrored_athlete_turner_used_region = _texture_used_region(mirrored_athlete_turner_texture)
 
 
 func _process(delta: float) -> void:
 	if game_state == GameState.PLAYING:
-		var previous_rope_angle := rope_angle
-		rope_angle = fposmod(rope_angle + _effective_rope_speed() * delta, TAU)
 		if is_jumping:
 			jump_animation_time += delta
 			jump_velocity += 1900.0 * delta
@@ -193,9 +220,20 @@ func _process(delta: float) -> void:
 				jump_velocity = 0.0
 				jump_animation_time = 0.0
 				is_jumping = false
-				accepting_input = true
-		if _angle_crossed(previous_rope_angle, rope_angle, ROPE_CROSSING_ANGLE):
-			_resolve_rope_crossing()
+				accepting_input = not turner_transition_active
+		if turner_transition_active:
+			accepting_input = false
+			turner_transition_time += delta
+			if turner_transition_time >= TURNER_TRANSITION_SECONDS:
+				turner_transition_active = false
+				turner_transition_time = TURNER_TRANSITION_SECONDS
+				rope_angle = PI
+				accepting_input = not is_jumping
+		else:
+			var previous_rope_angle := rope_angle
+			rope_angle = fposmod(rope_angle + _effective_rope_speed() * delta, TAU)
+			if _angle_crossed(previous_rope_angle, rope_angle, ROPE_CROSSING_ANGLE):
+				_resolve_rope_crossing()
 	elif game_state == GameState.HIT:
 		hit_reveal_time -= delta
 		if hit_reveal_time <= 0.0:
@@ -273,8 +311,14 @@ func _resolve_rope_crossing() -> void:
 			new_best_this_run = true
 		rope_speed = balance.speed_for_score(score)
 		total_success += 1
-		_update_challenge_pattern()
-		message = "좋아요!  +1"
+		var team_changed := _update_turner_team_and_pattern()
+		if team_changed:
+			_start_turner_transition()
+			message = "운동부 등장!  기본 2회 뒤 급가속!"
+		elif turner_team == TurnerTeam.ATHLETE and challenge_pattern == 2:
+			message = "운동부 급가속!"
+		else:
+			message = "좋아요!  +1"
 		message_color = Color("73f7b4")
 		flash_time = 0.22
 		jump_started_in_cue = false
@@ -319,7 +363,7 @@ func _start_game() -> void:
 	jump_started_in_cue = false
 	accepting_input = true
 	game_state = GameState.PLAYING
-	challenge_pattern = 0
+	_reset_turner_run()
 	menu_notice = ""
 	message = "줄이 빨간색일 때 점프!"
 	message_color = Color.WHITE
@@ -337,7 +381,7 @@ func _return_to_main() -> void:
 	is_jumping = false
 	jump_started_in_cue = false
 	accepting_input = true
-	challenge_pattern = 0
+	_reset_turner_run()
 	hit_reveal_time = 0.0
 	menu_notice = ""
 	message = "화면을 눌러 시작"
@@ -390,13 +434,20 @@ func _draw() -> void:
 	_draw_background()
 	_draw_ground()
 	# Draw the rear half first so only the parts covered by people are hidden.
-	if _rope_is_behind():
+	if not turner_transition_active and _rope_is_behind():
 		_draw_rope()
-	_draw_turner(Vector2(108.0, TURNER_GROUND_Y), false)
-	_draw_turner(Vector2(612.0, TURNER_GROUND_Y), true)
+	var left_turner_feet := LEFT_TURNER_FEET
+	var right_turner_feet := RIGHT_TURNER_FEET
+	if turner_transition_active:
+		var transition_progress := clampf(turner_transition_time / TURNER_TRANSITION_SECONDS, 0.0, 1.0)
+		var eased_progress := 1.0 - pow(1.0 - transition_progress, 3.0)
+		left_turner_feet = LEFT_TURNER_ENTRY_FEET.lerp(LEFT_TURNER_FEET, eased_progress)
+		right_turner_feet = RIGHT_TURNER_ENTRY_FEET.lerp(RIGHT_TURNER_FEET, eased_progress)
+	_draw_turner(left_turner_feet, false)
+	_draw_turner(right_turner_feet, true)
 	_draw_player()
 	# Draw the front half last so it visibly passes in front of the player.
-	if not _rope_is_behind():
+	if not turner_transition_active and not _rope_is_behind():
 		_draw_rope()
 	if game_state == GameState.HIT:
 		_draw_hit_feedback()
@@ -527,20 +578,55 @@ func _effective_rope_speed() -> float:
 	match challenge_pattern:
 		1: # Off-beat: linger behind the player, then catch up in front.
 			speed_multiplier = balance.offbeat_behind_multiplier if _rope_is_behind() else balance.offbeat_front_multiplier
-		2: # Burst: a slow wind-up followed by a sudden approach.
-			var distance_to_crossing := fposmod(ROPE_CROSSING_ANGLE - rope_angle, TAU)
-			var burst_start_distance := rope_speed * balance.jump_cue_seconds + balance.burst_extra_distance
-			speed_multiplier = balance.burst_near_multiplier if distance_to_crossing < burst_start_distance else balance.burst_far_multiplier
+		2: # Athlete: several whole turns are much faster than the normal rhythm.
+			speed_multiplier = balance.athlete_burst_multiplier
 		3: # Wave: repeatedly changes tempo during one turn.
 			speed_multiplier = balance.wave_min_multiplier + balance.wave_range * (0.5 + 0.5 * sin(rope_angle * 3.0))
 	return rope_speed * speed_multiplier
 
 
-func _update_challenge_pattern() -> void:
-	if score < balance.challenge_start_score:
+func _reset_turner_run() -> void:
+	turner_team = TurnerTeam.STUDENT
+	challenge_pattern = 0
+	athlete_normal_turns_remaining = 0
+	athlete_burst_turns_remaining = 0
+	athlete_next_burst_count = 2
+	turner_transition_active = false
+	turner_transition_time = 0.0
+
+
+func _start_turner_transition() -> void:
+	turner_transition_active = true
+	turner_transition_time = 0.0
+	accepting_input = false
+	# Resume with the rope safely behind the player after both athletes arrive.
+	rope_angle = PI
+
+
+func _update_turner_team_and_pattern() -> bool:
+	if turner_team == TurnerTeam.STUDENT:
+		if score < TURNER_CHANGE_INTERVAL:
+			challenge_pattern = 0
+			return false
+		turner_team = TurnerTeam.ATHLETE
 		challenge_pattern = 0
+		athlete_normal_turns_remaining = ATHLETE_NORMAL_TURNS
+		athlete_burst_turns_remaining = 0
+		athlete_next_burst_count = 2
+		return true
+
+	if challenge_pattern == 2:
+		athlete_burst_turns_remaining -= 1
+		if athlete_burst_turns_remaining <= 0:
+			challenge_pattern = 0
+			athlete_normal_turns_remaining = ATHLETE_NORMAL_TURNS
 	else:
-		challenge_pattern = 1 + posmod(score - balance.challenge_start_score, 3)
+		athlete_normal_turns_remaining -= 1
+		if athlete_normal_turns_remaining <= 0:
+			challenge_pattern = 2
+			athlete_burst_turns_remaining = athlete_next_burst_count
+			athlete_next_burst_count = 3 if athlete_next_burst_count == 2 else 2
+	return false
 
 
 func _angle_crossed(previous_angle: float, current_angle: float, target_angle: float) -> bool:
@@ -550,19 +636,27 @@ func _angle_crossed(previous_angle: float, current_angle: float, target_angle: f
 
 
 func _draw_turner(feet: Vector2, faces_left: bool) -> void:
-	if turner_texture != null and turner_used_region.size.x > 0.0:
-		var active_texture := mirrored_turner_texture if faces_left and mirrored_turner_texture != null else turner_texture
-		var active_region := mirrored_turner_used_region if faces_left and mirrored_turner_texture != null else turner_used_region
+	var render_feet := feet
+	if turner_team == TurnerTeam.ATHLETE:
+		render_feet.x += -24.0 if faces_left else 24.0
+	var base_texture := athlete_turner_texture if turner_team == TurnerTeam.ATHLETE else turner_texture
+	var base_region := athlete_turner_used_region if turner_team == TurnerTeam.ATHLETE else turner_used_region
+	var mirror_texture := mirrored_athlete_turner_texture if turner_team == TurnerTeam.ATHLETE else mirrored_turner_texture
+	var mirror_region := mirrored_athlete_turner_used_region if turner_team == TurnerTeam.ATHLETE else mirrored_turner_used_region
+	if base_texture != null and base_region.size.x > 0.0:
+		var active_texture := mirror_texture if faces_left and mirror_texture != null else base_texture
+		var active_region := mirror_region if faces_left and mirror_texture != null else base_region
 		# Match the helper's height to the playable character and preserve the
 		# original aspect ratio so the sprite never looks stretched sideways.
 		var sprite_height := 165.0
 		var sprite_width := sprite_height * active_region.size.x / active_region.size.y
 		var sprite_size := Vector2(sprite_width, sprite_height)
-		_draw_shadow_ellipse(feet + Vector2(0, 13), Vector2(sprite_width * 0.34, 11), Color(0, 0, 0, 0.2))
-		var sprite_rect := Rect2(feet + Vector2(-sprite_width * 0.5, -sprite_height), sprite_size)
+		_draw_shadow_ellipse(render_feet + Vector2(0, 13), Vector2(sprite_width * 0.34, 11), Color(0, 0, 0, 0.2))
+		var sprite_rect := Rect2(render_feet + Vector2(-sprite_width * 0.5, -sprite_height), sprite_size)
 		draw_texture_rect_region(active_texture, sprite_rect, active_region)
 		return
 	var direction := -1.0 if faces_left else 1.0
+	feet = render_feet
 	_draw_shadow_ellipse(feet + Vector2(0, 13), Vector2(45, 13), Color(0, 0, 0, 0.2))
 	# Bent knees and a forward-leaning torso keep the turners low like real helpers.
 	var hip := feet + Vector2(direction * 7.0, -54.0)

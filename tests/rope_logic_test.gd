@@ -13,6 +13,7 @@ func _init() -> void:
 	_test_speed_curve(game)
 	_test_high_speed_crossings(game)
 	_test_red_cue_matches_timing(game)
+	_test_athlete_turner_pattern(game)
 	_test_physical_clearance_wins(game)
 	_test_visible_contact_loses(game)
 	_test_character_asset_system(game)
@@ -65,6 +66,51 @@ func _test_red_cue_matches_timing(game: Node) -> void:
 			_expect(game._is_jump_cue() == expected, "red cue mismatch at score %d, sample %d" % [score, sample])
 
 
+func _test_athlete_turner_pattern(game: Node) -> void:
+	game._reset_turner_run()
+	game.score = 9
+	_expect(not game._update_turner_team_and_pattern(), "turner changed before ten successes")
+	game.score = 10
+	_expect(game._update_turner_team_and_pattern(), "athlete did not enter at ten successes")
+	_expect(int(game.turner_team) == 1, "athlete team was not activated")
+	_expect(int(game.challenge_pattern) == 0, "athlete started with an unfair immediate burst")
+	game.is_jumping = false
+	game.accepting_input = true
+	game._start_turner_transition()
+	_expect(bool(game.turner_transition_active), "athlete entrance transition did not start")
+	_expect(not bool(game.accepting_input), "jump input stayed active during athlete entrance")
+	_expect(is_equal_approx(game.rope_angle, PI), "rope was not moved behind the player for athlete entrance")
+	game._process(game.TURNER_TRANSITION_SECONDS + 0.01)
+	_expect(not bool(game.turner_transition_active), "athlete entrance transition did not finish")
+	_expect(bool(game.accepting_input), "jump input did not resume after athlete entrance")
+	game.score = 11
+	game._update_turner_team_and_pattern()
+	_expect(int(game.challenge_pattern) == 0, "athlete normal lead-in was shorter than two turns")
+	game.score = 12
+	game._update_turner_team_and_pattern()
+	_expect(int(game.challenge_pattern) == 2, "athlete two-turn burst did not begin")
+	game.score = 13
+	game._update_turner_team_and_pattern()
+	_expect(int(game.challenge_pattern) == 2, "athlete two-turn burst ended early")
+	game.score = 14
+	game._update_turner_team_and_pattern()
+	_expect(int(game.challenge_pattern) == 0, "athlete burst did not return to normal rhythm")
+	game.score = 15
+	game._update_turner_team_and_pattern()
+	game.score = 16
+	game._update_turner_team_and_pattern()
+	_expect(int(game.challenge_pattern) == 2, "athlete alternating three-turn burst did not begin")
+	_expect(int(game.athlete_burst_turns_remaining) == 3, "athlete burst did not alternate from two to three turns")
+
+	game.game_state = 1
+	game.rope_speed = 3.0
+	game.rope_angle = PI
+	_expect(is_equal_approx(game._effective_rope_speed(), 3.0 * BALANCE.athlete_burst_multiplier), "athlete burst multiplier was not applied")
+	game.rope_angle = fposmod(TARGET_ANGLE - game.rope_speed * BALANCE.jump_cue_seconds * 0.5, TAU)
+	_expect(game._is_jump_cue(), "athlete red cue test did not enter the cue window")
+	_expect(is_equal_approx(game._effective_rope_speed(), game.rope_speed), "athlete burst changed speed during the red cue")
+
+
 func _test_physical_clearance_wins(game: Node) -> void:
 	if game.feedback == null:
 		game.feedback = RopeFeedbackManager.new()
@@ -97,6 +143,10 @@ func _test_character_asset_system(game: Node) -> void:
 	game._prepare_turner_visuals()
 	_expect(game.mirrored_turner_texture != null, "right rope turner mirror texture was not created")
 	_expect(game.mirrored_turner_used_region.size.x > 0.0, "right rope turner mirror region is empty")
+	_expect(ResourceLoader.exists("res://assets/turners/athlete_student.png"), "athlete turner asset was not imported")
+	_expect(game.athlete_turner_texture != null, "athlete turner texture was not loaded")
+	_expect(game.mirrored_athlete_turner_texture != null, "right athlete turner mirror texture was not created")
+	_expect(game.mirrored_athlete_turner_used_region.size.x > 0.0, "right athlete turner mirror region is empty")
 	_expect(ResourceLoader.exists("res://assets/ui/title_frame.png"), "HUD title frame asset was not imported")
 	_expect(ResourceLoader.exists("res://assets/ui/title_logo.png"), "HUD title logo asset was not imported")
 	_expect(ResourceLoader.exists("res://assets/ui/best_score_frame.png"), "best score frame asset was not imported")
