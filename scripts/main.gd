@@ -118,13 +118,13 @@ func _draw() -> void:
 
 	_draw_background()
 	_draw_ground()
-	# The upper half of the rope passes behind everyone.
+	# Draw the rear half first so only the parts covered by people are hidden.
 	if _rope_is_behind():
 		_draw_rope()
 	_draw_turner(Vector2(85.0, TURNER_GROUND_Y), false)
 	_draw_turner(Vector2(635.0, TURNER_GROUND_Y), true)
 	_draw_player()
-	# The lower half passes in front of the player, like a real long rope.
+	# Draw the front half last so it visibly passes in front of the player.
 	if not _rope_is_behind():
 		_draw_rope()
 	_draw_hud()
@@ -166,33 +166,10 @@ func _draw_rope() -> void:
 		points.append(Vector2(x, y))
 	var show_jump_cue := _is_jump_cue()
 	var rope_color := Color("ff334f") if show_jump_cue else Color("f6b73c")
-	if _rope_is_behind() and not show_jump_cue:
-		rope_color = Color("d9982d")
-	_draw_rope_polyline(points, Color(0, 0, 0, 0.16), 13.0)
-	_draw_rope_polyline(points, rope_color, 8.0)
+	draw_polyline(points, Color(0, 0, 0, 0.16), 13.0, true)
+	draw_polyline(points, rope_color, 8.0, true)
 	draw_circle(LEFT_HAND, 7.0, Color("f6b73c"))
 	draw_circle(RIGHT_HAND, 7.0, Color("f6b73c"))
-
-
-func _draw_rope_polyline(points: PackedVector2Array, color: Color, width: float) -> void:
-	if not _rope_is_behind():
-		draw_polyline(points, color, width, true)
-		return
-
-	# Hide the rear rope anywhere it overlaps the player's full silhouette.
-	# This prevents it from showing through gaps between the body and limbs.
-	var player_position := Vector2(PLAYER_X, PLAYER_GROUND_Y + jump_height)
-	var player_occlusion := Rect2(player_position + Vector2(-82.0, -176.0), Vector2(164.0, 200.0))
-	var visible_segment := PackedVector2Array()
-	for point in points:
-		if player_occlusion.has_point(point):
-			if visible_segment.size() >= 2:
-				draw_polyline(visible_segment, color, width, true)
-			visible_segment = PackedVector2Array()
-		else:
-			visible_segment.append(point)
-	if visible_segment.size() >= 2:
-		draw_polyline(visible_segment, color, width, true)
 
 
 func _rope_is_behind() -> bool:
@@ -200,7 +177,7 @@ func _rope_is_behind() -> bool:
 
 
 func _is_jump_cue() -> bool:
-	if game_over or rope_speed <= 0.0:
+	if game_over or rope_speed <= 0.0 or _rope_is_behind():
 		return false
 	var seconds_until_crossing := fposmod(ROPE_CROSSING_ANGLE - rope_angle, TAU) / rope_speed
 	return seconds_until_crossing <= JUMP_CUE_SECONDS
