@@ -793,7 +793,7 @@ func _draw_hud() -> void:
 		if character_menu_open:
 			_draw_character_menu(font)
 		return
-	_draw_hud_title(font)
+	draw_string(font, Vector2(42, 82), "줄넘킹", HORIZONTAL_ALIGNMENT_LEFT, -1, 34, Color("91a4cc"))
 	draw_string(font, Vector2(42, 158), str(score), HORIZONTAL_ALIGNMENT_LEFT, -1, 76, Color.WHITE)
 	draw_string(font, Vector2(480, 83), "BEST  %d" % best_score, HORIZONTAL_ALIGNMENT_LEFT, -1, 26, Color("ffd166"))
 	if game_state != GameState.GAME_OVER:
@@ -804,20 +804,6 @@ func _draw_hud() -> void:
 	draw_string(font, Vector2(0, 1190), control_text, HORIZONTAL_ALIGNMENT_CENTER, DESIGN_SIZE.x, 22, Color("8293b7"))
 	if game_state == GameState.GAME_OVER:
 		_draw_game_over_panel(font)
-
-
-func _draw_hud_title(font: Font) -> void:
-	var frame_rect := Rect2(18.0, 14.0, 280.0, 112.0)
-	if hud_title_frame_texture != null:
-		draw_texture_rect(hud_title_frame_texture, frame_rect, false)
-	else:
-		draw_rect(frame_rect, Color("071b38"), true)
-		draw_rect(frame_rect, Color("ffd23f"), false, 5.0)
-	var logo_rect := Rect2(74.0, 43.0, 150.0, 66.0)
-	if hud_title_logo_texture != null:
-		draw_texture_rect(hud_title_logo_texture, logo_rect, false)
-	else:
-		draw_string(font, Vector2(42, 82), "줄넘킹", HORIZONTAL_ALIGNMENT_LEFT, -1, 34, Color("ffd23f"))
 
 
 func _draw_game_over_panel(font: Font) -> void:
@@ -851,15 +837,7 @@ func _draw_main_menu(font: Font) -> void:
 	_draw_resource_counter(font, Rect2(253.0, 22.0, 214.0, 62.0), "보석", Color("ff5f87"), gems)
 	_draw_resource_counter(font, Rect2(488.0, 22.0, 214.0, 62.0), "티켓", Color("63d8ff"), tickets)
 
-	# Keep one strong title instead of making the English and Korean names compete.
-	var title_shadow := Rect2(151.0, 126.0, 418.0, 174.0)
-	var title_panel := Rect2(151.0, 118.0, 418.0, 174.0)
-	draw_rect(title_shadow, Color(0.04, 0.07, 0.13, 0.55), true)
-	draw_rect(title_panel, Color("263a57"), true)
-	draw_rect(title_panel, Color("fff0a6"), false, 8.0)
-	draw_string(font, Vector2(171.0, 202.0), "줄넘킹", HORIZONTAL_ALIGNMENT_CENTER, 378.0, 57, Color.WHITE)
-	draw_rect(Rect2(239.0, 222.0, 242.0, 43.0), Color("ff9f1c"), true)
-	draw_string(font, Vector2(239.0, 252.0), "INFINITE JUMP", HORIZONTAL_ALIGNMENT_CENTER, 242.0, 21, Color.WHITE)
+	_draw_main_menu_title(font)
 	draw_rect(Rect2(255.0, 310.0, 210.0, 54.0), Color(0.05, 0.09, 0.17, 0.82), true)
 	draw_string(font, Vector2(255.0, 346.0), "최고 기록  %d" % best_score, HORIZONTAL_ALIGNMENT_CENTER, 210.0, 23, Color("fff0a6"))
 
@@ -874,6 +852,21 @@ func _draw_main_menu(font: Font) -> void:
 	_draw_menu_asset_or_fallback(settings_button_texture, settings_button_used_region, font, SETTINGS_BUTTON_RECT, "SETTINGS", "설정", Color("9b8bea"))
 	if not menu_notice.is_empty():
 		draw_string(font, Vector2(0, 925), menu_notice, HORIZONTAL_ALIGNMENT_CENTER, DESIGN_SIZE.x, 22, Color("ffd166"))
+
+
+func _draw_main_menu_title(font: Font) -> void:
+	# Both rectangles share the exact screen center (x = 360).
+	var frame_rect := Rect2(125.0, 116.0, 470.0, 188.0)
+	if hud_title_frame_texture != null:
+		draw_texture_rect(hud_title_frame_texture, frame_rect, false)
+	else:
+		draw_rect(frame_rect, Color("071b38"), true)
+		draw_rect(frame_rect, Color("ffd23f"), false, 7.0)
+	var logo_rect := Rect2(255.0, 154.0, 210.0, 112.0)
+	if hud_title_logo_texture != null:
+		draw_texture_rect(hud_title_logo_texture, logo_rect, false)
+	else:
+		draw_string(font, Vector2(160.0, 225.0), "줄넘킹", HORIZONTAL_ALIGNMENT_CENTER, 400.0, 54, Color("ffd23f"))
 
 
 func _draw_character_menu(font: Font) -> void:
