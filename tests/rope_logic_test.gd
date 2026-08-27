@@ -14,6 +14,7 @@ func _init() -> void:
 	_test_high_speed_crossings(game)
 	_test_red_cue_matches_timing(game)
 	_test_physical_clearance_wins(game)
+	_test_visible_contact_loses(game)
 	_test_save_round_trip()
 	_test_return_to_main(game)
 	game.free()
@@ -76,6 +77,15 @@ func _test_physical_clearance_wins(game: Node) -> void:
 	game._resolve_rope_crossing()
 	_expect(int(game.score) == 1, "a visibly cleared rope was incorrectly treated as a hit")
 	_expect(int(game.game_state) == 1, "physical clearance incorrectly ended the run")
+
+
+func _test_visible_contact_loses(game: Node) -> void:
+	game.game_state = 1
+	game.is_jumping = true
+	game.jump_height = -3.0
+	_expect(not game._player_clears_rope_at_crossing(), "visible rope contact was incorrectly treated as clear")
+	game.jump_height = -12.0
+	_expect(game._player_clears_rope_at_crossing(), "visible gap above the rope was incorrectly treated as contact")
 
 
 func _test_save_round_trip() -> void:

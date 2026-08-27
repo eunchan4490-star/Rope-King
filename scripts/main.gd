@@ -16,6 +16,14 @@ const ROPE_PIXEL_CORE_SIZE := Vector2(8.0, 8.0)
 const HIT_REVEAL_SECONDS := 0.42
 const DEFAULT_PLAYER_SPRITE_PATH := "res://assets/player/player.png"
 const DEFAULT_PLAYER_JUMP_SHEET_PATH := "res://assets/player/player_jump_sheet.png"
+const PLAYER_VISIBLE_HEIGHT := 160.0
+const PLAYER_BASE_REGION := Rect2(206.0, 58.0, 773.0, 1184.0)
+const PLAYER_JUMP_REGIONS := [
+	Rect2(67.0, 144.0, 316.0, 512.0),
+	Rect2(635.0, 242.0, 343.0, 423.0),
+	Rect2(1202.0, 132.0, 344.0, 489.0),
+	Rect2(1777.0, 74.0, 336.0, 485.0),
+]
 const DEFAULT_BALANCE := preload("res://resources/balance/default_balance.tres")
 const START_BUTTON_RECT := Rect2(165.0, 955.0, 390.0, 135.0)
 const CHARACTER_BUTTON_RECT := Rect2(25.0, 1130.0, 210.0, 115.0)
@@ -158,7 +166,7 @@ func attempt_jump() -> void:
 
 func _resolve_rope_crossing() -> void:
 	# Success is decided when the visible rope actually reaches the player's feet.
-	if is_jumping and jump_height <= -balance.required_jump_height:
+	if _player_clears_rope_at_crossing():
 		score += 1
 		if score > best_score:
 			best_score = score
@@ -185,6 +193,15 @@ func _resolve_rope_crossing() -> void:
 		total_runs += 1
 		_save_progress()
 		feedback.play_failure()
+
+
+func _player_clears_rope_at_crossing() -> bool:
+	if not is_jumping:
+		return false
+	var rope_center_y := LEFT_HAND.y + sin(ROPE_CROSSING_ANGLE) * ROPE_SWING_RADIUS
+	var rope_top_y := rope_center_y - ROPE_PIXEL_OUTLINE_SIZE.y * 0.5
+	var player_feet_y := PLAYER_GROUND_Y + jump_height + player_sprite_ground_offset.y
+	return player_feet_y < rope_top_y
 
 
 func _start_game() -> void:
@@ -420,8 +437,7 @@ func _draw_turner(feet: Vector2, faces_left: bool) -> void:
 
 
 func _draw_player() -> void:
-	var idle_bob := sin(Time.get_ticks_msec() * 0.004) * 3.0 if game_state == GameState.TITLE else 0.0
-	var p := Vector2(PLAYER_X, PLAYER_GROUND_Y + jump_height + idle_bob)
+	var p := Vector2(PLAYER_X, PLAYER_GROUND_Y + jump_height)
 	# Shadow
 	var shadow_scale := clampf(1.0 + jump_height / 650.0, 0.45, 1.0)
 	_draw_shadow_ellipse(Vector2(PLAYER_X, PLAYER_GROUND_Y + 18.0), Vector2(70.0 * shadow_scale, 18.0), Color(0, 0, 0, 0.28))
@@ -433,17 +449,20 @@ func _draw_player() -> void:
 
 func _draw_player_sprite(feet_position: Vector2) -> void:
 	var active_texture := player_sprite
-	var source_rect := Rect2(Vector2.ZERO, player_sprite.get_size())
+	var source_rect := PLAYER_BASE_REGION
 	if is_jumping and player_jump_sprite != null:
 		active_texture = player_jump_sprite
-		var cell_size := Vector2(active_texture.get_width() / 4.0, active_texture.get_height())
-		var frame := 1 if jump_animation_time < 0.09 else (2 if jump_velocity < -180.0 else 3)
-		source_rect = Rect2(Vector2(cell_size.x * frame, 0.0), cell_size)
+		var frame := 3
+		if jump_velocity < -500.0 or jump_velocity >= 500.0:
+			frame = 1
+		elif jump_velocity < -100.0 or jump_velocity >= 100.0:
+			frame = 2
+		source_rect = PLAYER_JUMP_REGIONS[frame]
 	var texture_size := source_rect.size
 	if texture_size.x <= 0.0 or texture_size.y <= 0.0:
 		_draw_default_player(feet_position)
 		return
-	var sprite_scale := minf(player_sprite_max_size.x / texture_size.x, player_sprite_max_size.y / texture_size.y)
+	var sprite_scale := minf(PLAYER_VISIBLE_HEIGHT / texture_size.y, player_sprite_max_size.x / texture_size.x)
 	var draw_size := texture_size * sprite_scale
 	var anchored_feet := feet_position + player_sprite_ground_offset
 	var draw_position := anchored_feet - Vector2(draw_size.x * 0.5, draw_size.y)
