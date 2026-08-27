@@ -6,9 +6,9 @@ const DESIGN_SIZE := Vector2(720.0, 1280.0)
 const PLAYER_X := 360.0
 const PLAYER_GROUND_Y := 890.0
 const TURNER_GROUND_Y := 910.0
-const LEFT_HAND := Vector2(165.0, 785.0)
-const RIGHT_HAND := Vector2(555.0, 785.0)
-const ROPE_SWING_RADIUS := 115.0
+const LEFT_HAND := Vector2(165.0, 840.0)
+const RIGHT_HAND := Vector2(555.0, 840.0)
+const ROPE_SWING_RADIUS := 55.0
 const ROPE_CROSSING_ANGLE := 1.15
 const ROPE_PIXEL_GRID := 4.0
 const ROPE_PIXEL_OUTLINE_SIZE := Vector2(14.0, 14.0)
@@ -16,6 +16,7 @@ const ROPE_PIXEL_CORE_SIZE := Vector2(8.0, 8.0)
 const HIT_REVEAL_SECONDS := 0.42
 const CHARACTER_ASSET_ROOT := "res://assets/characters"
 const DEFAULT_BACKGROUND_PATH := "res://assets/backgrounds/neighborhood.png"
+const DEFAULT_TURNER_PATH := "res://assets/turners/bowl_cut_student.png"
 const MENU_CHARACTER_TEXTURE_PATH := "res://assets/ui/menu_character.png"
 const MENU_UPGRADE_TEXTURE_PATH := "res://assets/ui/menu_upgrade.png"
 const MENU_SETTINGS_TEXTURE_PATH := "res://assets/ui/menu_settings.png"
@@ -44,6 +45,8 @@ const CHARACTER_CARD_RECTS := [
 @export var player_sprite_ground_offset := Vector2.ZERO
 @export_group("Background")
 @export var background_texture: Texture2D
+@export_group("Rope Turner")
+@export var turner_texture: Texture2D
 @export_group("Menu Button Assets")
 @export var character_button_texture: Texture2D
 @export var upgrade_button_texture: Texture2D
@@ -90,6 +93,7 @@ var character_ids: Array[String] = []
 var character_names: Dictionary = {}
 var owned_character_ids: Array[String] = []
 var character_page := 0
+var turner_used_region := Rect2()
 
 
 func _ready() -> void:
@@ -104,6 +108,10 @@ func _ready() -> void:
 	_load_character_visuals(selected_character_id)
 	if background_texture == null and ResourceLoader.exists(DEFAULT_BACKGROUND_PATH):
 		background_texture = load(DEFAULT_BACKGROUND_PATH) as Texture2D
+	if turner_texture == null and ResourceLoader.exists(DEFAULT_TURNER_PATH):
+		turner_texture = load(DEFAULT_TURNER_PATH) as Texture2D
+	if turner_texture != null:
+		turner_used_region = _texture_used_region(turner_texture)
 	if character_button_texture == null and ResourceLoader.exists(MENU_CHARACTER_TEXTURE_PATH):
 		character_button_texture = load(MENU_CHARACTER_TEXTURE_PATH) as Texture2D
 	if upgrade_button_texture == null and ResourceLoader.exists(MENU_UPGRADE_TEXTURE_PATH):
@@ -480,6 +488,14 @@ func _angle_crossed(previous_angle: float, current_angle: float, target_angle: f
 
 
 func _draw_turner(feet: Vector2, faces_left: bool) -> void:
+	if turner_texture != null and turner_used_region.size.x > 0.0:
+		_draw_shadow_ellipse(feet + Vector2(0, 13), Vector2(45, 13), Color(0, 0, 0, 0.2))
+		var sprite_size := Vector2(175.0, 210.0)
+		var sprite_rect := Rect2(feet + Vector2(-75.0, -sprite_size.y), sprite_size)
+		if faces_left:
+			sprite_rect = Rect2(feet + Vector2(75.0, -sprite_size.y), Vector2(-sprite_size.x, sprite_size.y))
+		draw_texture_rect_region(turner_texture, sprite_rect, turner_used_region)
+		return
 	var direction := -1.0 if faces_left else 1.0
 	_draw_shadow_ellipse(feet + Vector2(0, 13), Vector2(45, 13), Color(0, 0, 0, 0.2))
 	# Bent knees and a forward-leaning torso keep the turners low like real helpers.
