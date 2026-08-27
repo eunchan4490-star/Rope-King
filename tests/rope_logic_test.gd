@@ -15,6 +15,7 @@ func _init() -> void:
 	_test_red_cue_matches_timing(game)
 	_test_physical_clearance_wins(game)
 	_test_visible_contact_loses(game)
+	_test_character_asset_system(game)
 	_test_save_round_trip()
 	_test_return_to_main(game)
 	game.free()
@@ -86,6 +87,21 @@ func _test_visible_contact_loses(game: Node) -> void:
 	_expect(not game._player_clears_rope_at_crossing(), "visible rope contact was incorrectly treated as clear")
 	game.jump_height = -12.0
 	_expect(game._player_clears_rope_at_crossing(), "visible gap above the rope was incorrectly treated as contact")
+
+
+func _test_character_asset_system(game: Node) -> void:
+	_expect(ResourceLoader.exists("res://assets/characters/default/idle.png"), "default idle asset path was not imported")
+	_expect(ResourceLoader.exists("res://assets/characters/default/jump_sheet.png"), "default jump asset path was not imported")
+	_expect(game._is_safe_character_id("default"), "default character id was rejected")
+	game._load_character_visuals("default")
+	_expect(game.player_sprite != null, "default character idle sprite was not loaded")
+	_expect(game.player_jump_regions.size() == 4, "jump sheet was not split into four frames")
+	_expect(game.player_jump_scale > 0.0, "character scale was not calculated")
+	_expect(not game.set_player_character("../unsafe"), "unsafe character id was accepted")
+	for character_id in ["schoolgirl_ponytail", "schoolgirl_bob"]:
+		_expect(game.set_player_character(character_id), "%s character could not be selected" % character_id)
+		_expect(game.player_jump_regions.size() == 4, "%s jump sheet was not split into four frames" % character_id)
+	_expect(game.set_player_character("default"), "default character could not be selected")
 
 
 func _test_save_round_trip() -> void:

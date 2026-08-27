@@ -14,27 +14,33 @@ const ROPE_PIXEL_GRID := 4.0
 const ROPE_PIXEL_OUTLINE_SIZE := Vector2(14.0, 14.0)
 const ROPE_PIXEL_CORE_SIZE := Vector2(8.0, 8.0)
 const HIT_REVEAL_SECONDS := 0.42
-const DEFAULT_PLAYER_SPRITE_PATH := "res://assets/player/player.png"
-const DEFAULT_PLAYER_JUMP_SHEET_PATH := "res://assets/player/player_jump_sheet.png"
-const PLAYER_VISIBLE_HEIGHT := 160.0
-const PLAYER_JUMP_SCALE := PLAYER_VISIBLE_HEIGHT / 512.0
-const PLAYER_BASE_REGION := Rect2(206.0, 58.0, 773.0, 1184.0)
-const PLAYER_JUMP_REGIONS := [
-	Rect2(67.0, 144.0, 316.0, 512.0),
-	Rect2(635.0, 242.0, 343.0, 423.0),
-	Rect2(1202.0, 132.0, 344.0, 489.0),
-	Rect2(1777.0, 74.0, 336.0, 485.0),
-]
+const CHARACTER_ASSET_ROOT := "res://assets/characters"
+const DEFAULT_CHARACTER_ID := "default"
+const JUMP_FRAME_COUNT := 4
+const CHARACTER_IDS := ["default", "schoolgirl_ponytail", "schoolgirl_bob"]
+const CHARACTER_NAMES := {
+	"default": "기본 캐릭터",
+	"schoolgirl_ponytail": "포니테일 학생",
+	"schoolgirl_bob": "단발 학생",
+}
 const DEFAULT_BALANCE := preload("res://resources/balance/default_balance.tres")
 const START_BUTTON_RECT := Rect2(165.0, 955.0, 390.0, 135.0)
 const CHARACTER_BUTTON_RECT := Rect2(25.0, 1130.0, 210.0, 115.0)
 const UPGRADE_BUTTON_RECT := Rect2(255.0, 1130.0, 210.0, 115.0)
 const SETTINGS_BUTTON_RECT := Rect2(485.0, 1130.0, 210.0, 115.0)
 const GAME_OVER_CLOSE_RECT := Rect2(548.0, 394.0, 58.0, 58.0)
+const CHARACTER_PANEL_RECT := Rect2(30.0, 185.0, 660.0, 700.0)
+const CHARACTER_PANEL_CLOSE_RECT := Rect2(616.0, 205.0, 52.0, 52.0)
+const CHARACTER_CARD_RECTS := [
+	Rect2(52.0, 330.0, 190.0, 400.0),
+	Rect2(265.0, 330.0, 190.0, 400.0),
+	Rect2(478.0, 330.0, 190.0, 400.0),
+]
 
 @export_group("Player Sprite")
 @export var player_sprite: Texture2D
-@export var player_sprite_max_size := Vector2(160.0, 190.0)
+@export var player_jump_sprite: Texture2D
+@export var player_sprite_max_size := Vector2(160.0, 160.0)
 @export var player_sprite_ground_offset := Vector2.ZERO
 @export_group("Game Balance")
 @export var balance: RopeGameBalance = DEFAULT_BALANCE
@@ -66,7 +72,14 @@ var run_coins_earned := 0
 var total_runs := 0
 var total_success := 0
 var hit_reveal_time := 0.0
-var player_jump_sprite: Texture2D
+var selected_character_id := DEFAULT_CHARACTER_ID
+var player_base_region := Rect2()
+var player_jump_regions: Array[Rect2] = []
+var player_base_scale := 1.0
+var player_jump_scale := 1.0
+var character_menu_open := false
+var character_preview_textures: Dictionary = {}
+var character_preview_regions: Dictionary = {}
 
 
 func _ready() -> void:
@@ -77,10 +90,7 @@ func _ready() -> void:
 	add_child(save_manager)
 	_load_saved_progress()
 	rope_speed = balance.base_rope_speed
-	if player_sprite == null and ResourceLoader.exists(DEFAULT_PLAYER_SPRITE_PATH):
-		player_sprite = load(DEFAULT_PLAYER_SPRITE_PATH) as Texture2D
-	if ResourceLoader.exists(DEFAULT_PLAYER_JUMP_SHEET_PATH):
-		player_jump_sprite = load(DEFAULT_PLAYER_JUMP_SHEET_PATH) as Texture2D
+	_load_character_visuals(selected_character_id)
 	get_viewport().size_changed.connect(queue_redraw)
 	queue_redraw()
 
@@ -127,8 +137,12 @@ func _unhandled_input(event: InputEvent) -> void:
 				return
 		if game_state == GameState.TITLE and pointer_position.x >= 0.0:
 			var design_position := _screen_to_design(pointer_position)
+			if character_menu_open:
+				_handle_character_menu_input(design_position)
+				get_viewport().set_input_as_handled()
+				return
 			if CHARACTER_BUTTON_RECT.has_point(design_position):
-				menu_notice = "캐릭터 메뉴 준비 중"
+				character_menu_open = true
 				get_viewport().set_input_as_handled()
 				return
 			if UPGRADE_BUTTON_RECT.has_point(design_position):
@@ -254,6 +268,7 @@ func _load_saved_progress() -> void:
 	tickets = int(data.tickets)
 	total_runs = int(data.stats.total_runs)
 	total_success = int(data.stats.total_success)
+	selected_character_id = str(data.selected_character)
 	feedback.sound_enabled = bool(data.settings.sound)
 	feedback.vibration_enabled = bool(data.settings.vibration)
 
@@ -265,8 +280,8 @@ func _save_progress() -> void:
 		"coins": coins,
 		"gems": gems,
 		"tickets": tickets,
-		"selected_character": "default",
-		"owned_characters": ["default"],
+		"selected_character": selected_character_id,
+		"owned_characters": CHARACTER_IDS,
 		"settings": {
 			"sound": feedback.sound_enabled,
 			"vibration": feedback.vibration_enabled,
@@ -450,9 +465,9 @@ func _draw_player() -> void:
 
 func _draw_player_sprite(feet_position: Vector2) -> void:
 	var active_texture := player_sprite
-	var source_rect := PLAYER_BASE_REGION
+	var source_rect := player_base_region
 	var using_jump_sheet := false
-	if is_jumping and player_jump_sprite != null:
+	if is_jumping and player_jump_sprite != null and player_jump_regions.size() == JUMP_FRAME_COUNT:
 		using_jump_sheet = true
 		active_texture = player_jump_sprite
 		var frame := 3
@@ -460,19 +475,119 @@ func _draw_player_sprite(feet_position: Vector2) -> void:
 			frame = 1
 		elif jump_velocity < -100.0 or jump_velocity >= 100.0:
 			frame = 2
-		source_rect = PLAYER_JUMP_REGIONS[frame]
+		source_rect = player_jump_regions[frame]
 	var texture_size := source_rect.size
 	if texture_size.x <= 0.0 or texture_size.y <= 0.0:
 		_draw_default_player(feet_position)
 		return
-	var sprite_scale := PLAYER_JUMP_SCALE if using_jump_sheet else minf(
-		PLAYER_VISIBLE_HEIGHT / texture_size.y,
-		player_sprite_max_size.x / texture_size.x
-	)
+	var sprite_scale := player_jump_scale if using_jump_sheet else player_base_scale
 	var draw_size := texture_size * sprite_scale
 	var anchored_feet := feet_position + player_sprite_ground_offset
 	var draw_position := anchored_feet - Vector2(draw_size.x * 0.5, draw_size.y)
 	draw_texture_rect_region(active_texture, Rect2(draw_position, draw_size), source_rect)
+
+
+func set_player_character(character_id: String) -> bool:
+	if not _is_safe_character_id(character_id):
+		return false
+	var idle_path := _character_asset_path(character_id, "idle.png")
+	if not ResourceLoader.exists(idle_path):
+		return false
+	selected_character_id = character_id
+	player_sprite = null
+	player_jump_sprite = null
+	_load_character_visuals(character_id)
+	queue_redraw()
+	return player_sprite != null
+
+
+func _handle_character_menu_input(position: Vector2) -> void:
+	if CHARACTER_PANEL_CLOSE_RECT.has_point(position):
+		character_menu_open = false
+		return
+	for index in range(mini(CHARACTER_IDS.size(), CHARACTER_CARD_RECTS.size())):
+		if CHARACTER_CARD_RECTS[index].has_point(position):
+			var character_id: String = CHARACTER_IDS[index]
+			if set_player_character(character_id):
+				menu_notice = "%s 선택" % CHARACTER_NAMES.get(character_id, character_id)
+				_save_progress()
+			return
+
+
+func _cycle_player_character() -> void:
+	var current_index := CHARACTER_IDS.find(selected_character_id)
+	var next_id: String = CHARACTER_IDS[(current_index + 1) % CHARACTER_IDS.size()]
+	if set_player_character(next_id):
+		menu_notice = "%s 선택" % CHARACTER_NAMES.get(next_id, next_id)
+		_save_progress()
+
+
+func _load_character_visuals(character_id: String) -> void:
+	var safe_id := character_id if _is_safe_character_id(character_id) else DEFAULT_CHARACTER_ID
+	selected_character_id = safe_id
+	var idle_path := _character_asset_path(safe_id, "idle.png")
+	var jump_path := _character_asset_path(safe_id, "jump_sheet.png")
+	if player_sprite == null and ResourceLoader.exists(idle_path):
+		player_sprite = load(idle_path) as Texture2D
+	if player_jump_sprite == null and ResourceLoader.exists(jump_path):
+		player_jump_sprite = load(jump_path) as Texture2D
+	if player_sprite == null and safe_id != DEFAULT_CHARACTER_ID:
+		selected_character_id = DEFAULT_CHARACTER_ID
+		_load_character_visuals(DEFAULT_CHARACTER_ID)
+		return
+	_prepare_character_regions()
+
+
+func _prepare_character_regions() -> void:
+	player_base_region = _texture_used_region(player_sprite)
+	player_base_scale = _scale_for_region(player_base_region)
+	player_jump_regions.clear()
+	if player_jump_sprite == null:
+		return
+	var sheet_image := player_jump_sprite.get_image()
+	if sheet_image == null or sheet_image.is_empty():
+		return
+	var cell_width := sheet_image.get_width() / JUMP_FRAME_COUNT
+	if cell_width <= 0:
+		return
+	for frame in range(JUMP_FRAME_COUNT):
+		var cell_rect := Rect2i(frame * cell_width, 0, cell_width, sheet_image.get_height())
+		var frame_image := sheet_image.get_region(cell_rect)
+		var used := frame_image.get_used_rect()
+		if used.size.x <= 0 or used.size.y <= 0:
+			used = Rect2i(0, 0, cell_width, sheet_image.get_height())
+		player_jump_regions.append(Rect2(used.position + cell_rect.position, used.size))
+	if not player_jump_regions.is_empty():
+		player_jump_scale = _scale_for_region(player_jump_regions[0])
+
+
+func _texture_used_region(texture: Texture2D) -> Rect2:
+	if texture == null:
+		return Rect2()
+	var image := texture.get_image()
+	if image == null or image.is_empty():
+		return Rect2(Vector2.ZERO, texture.get_size())
+	var used := image.get_used_rect()
+	return Rect2(used) if used.size.x > 0 and used.size.y > 0 else Rect2(Vector2.ZERO, texture.get_size())
+
+
+func _scale_for_region(region: Rect2) -> float:
+	if region.size.x <= 0.0 or region.size.y <= 0.0:
+		return 1.0
+	return minf(player_sprite_max_size.y / region.size.y, player_sprite_max_size.x / region.size.x)
+
+
+func _character_asset_path(character_id: String, file_name: String) -> String:
+	return "%s/%s/%s" % [CHARACTER_ASSET_ROOT, character_id, file_name]
+
+
+func _is_safe_character_id(character_id: String) -> bool:
+	if character_id.is_empty():
+		return false
+	for character in character_id:
+		if not "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-".contains(character):
+			return false
+	return true
 
 
 func _draw_default_player(p: Vector2) -> void:
@@ -499,6 +614,8 @@ func _draw_hud() -> void:
 	var font := ThemeDB.fallback_font
 	if game_state == GameState.TITLE:
 		_draw_main_menu(font)
+		if character_menu_open:
+			_draw_character_menu(font)
 		return
 	draw_string(font, Vector2(42, 82), "줄넘킹", HORIZONTAL_ALIGNMENT_LEFT, -1, 34, Color("91a4cc"))
 	draw_string(font, Vector2(42, 158), str(score), HORIZONTAL_ALIGNMENT_LEFT, -1, 76, Color.WHITE)
@@ -573,6 +690,51 @@ func _draw_main_menu(font: Font) -> void:
 	_draw_menu_button(font, SETTINGS_BUTTON_RECT, "SETTINGS", "설정", Color("9b8bea"))
 	if not menu_notice.is_empty():
 		draw_string(font, Vector2(0, 925), menu_notice, HORIZONTAL_ALIGNMENT_CENTER, DESIGN_SIZE.x, 22, Color("ffd166"))
+
+
+func _draw_character_menu(font: Font) -> void:
+	draw_rect(Rect2(Vector2.ZERO, DESIGN_SIZE), Color(0.02, 0.03, 0.06, 0.72), true)
+	draw_rect(CHARACTER_PANEL_RECT, Color("17243b"), true)
+	draw_rect(CHARACTER_PANEL_RECT, Color("fff0a6"), false, 7.0)
+	draw_string(font, Vector2(CHARACTER_PANEL_RECT.position.x, 260.0), "보유 캐릭터", HORIZONTAL_ALIGNMENT_CENTER, CHARACTER_PANEL_RECT.size.x, 38, Color.WHITE)
+	draw_string(font, Vector2(CHARACTER_PANEL_RECT.position.x, 300.0), "캐릭터 사진을 눌러 선택", HORIZONTAL_ALIGNMENT_CENTER, CHARACTER_PANEL_RECT.size.x, 22, Color("a9bad8"))
+	draw_circle(CHARACTER_PANEL_CLOSE_RECT.get_center(), 24.0, Color("ff4d67"))
+	draw_line(CHARACTER_PANEL_CLOSE_RECT.get_center() + Vector2(-8.0, -8.0), CHARACTER_PANEL_CLOSE_RECT.get_center() + Vector2(8.0, 8.0), Color.WHITE, 5.0, true)
+	draw_line(CHARACTER_PANEL_CLOSE_RECT.get_center() + Vector2(8.0, -8.0), CHARACTER_PANEL_CLOSE_RECT.get_center() + Vector2(-8.0, 8.0), Color.WHITE, 5.0, true)
+	for index in range(mini(CHARACTER_IDS.size(), CHARACTER_CARD_RECTS.size())):
+		_draw_character_card(font, CHARACTER_IDS[index], CHARACTER_CARD_RECTS[index])
+
+
+func _draw_character_card(font: Font, character_id: String, card: Rect2) -> void:
+	var selected := character_id == selected_character_id
+	var border_color := Color("73f7b4") if selected else Color("fff0a6")
+	draw_rect(card, Color("263a57"), true)
+	draw_rect(card, border_color, false, 6.0)
+	var preview_rect := Rect2(card.position + Vector2(14.0, 16.0), Vector2(card.size.x - 28.0, 245.0))
+	var texture := _character_preview_texture(character_id)
+	if texture != null:
+		var source: Rect2 = character_preview_regions.get(character_id, Rect2(Vector2.ZERO, texture.get_size()))
+		var scale := minf(preview_rect.size.x / source.size.x, preview_rect.size.y / source.size.y)
+		var size := source.size * scale
+		var position := Vector2(preview_rect.get_center().x - size.x * 0.5, preview_rect.end.y - size.y)
+		draw_texture_rect_region(texture, Rect2(position, size), source)
+	var name: String = CHARACTER_NAMES.get(character_id, character_id)
+	draw_string(font, Vector2(card.position.x + 8.0, card.position.y + 305.0), name, HORIZONTAL_ALIGNMENT_CENTER, card.size.x - 16.0, 20, Color.WHITE)
+	draw_string(font, Vector2(card.position.x + 8.0, card.position.y + 342.0), "보유", HORIZONTAL_ALIGNMENT_CENTER, card.size.x - 16.0, 19, Color("ffd166"))
+	var state_text := "사용 중" if selected else "선택"
+	draw_string(font, Vector2(card.position.x + 8.0, card.position.y + 378.0), state_text, HORIZONTAL_ALIGNMENT_CENTER, card.size.x - 16.0, 21, border_color)
+
+
+func _character_preview_texture(character_id: String) -> Texture2D:
+	if character_preview_textures.has(character_id):
+		return character_preview_textures[character_id] as Texture2D
+	var path := _character_asset_path(character_id, "idle.png")
+	if not ResourceLoader.exists(path):
+		return null
+	var texture := load(path) as Texture2D
+	character_preview_textures[character_id] = texture
+	character_preview_regions[character_id] = _texture_used_region(texture)
+	return texture
 
 
 func _draw_resource_counter(font: Font, rect: Rect2, icon: String, icon_color: Color, amount: int) -> void:
