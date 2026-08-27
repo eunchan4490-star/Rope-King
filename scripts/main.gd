@@ -14,6 +14,12 @@ const JUMP_CUE_SECONDS := 0.34
 const REQUIRED_JUMP_HEIGHT := 36.0
 const CHALLENGE_START_SCORE := 4
 const MAX_PATTERN_SPEED := 6.2
+const DEFAULT_PLAYER_SPRITE_PATH := "res://assets/player/player.png"
+
+@export_group("Player Sprite")
+@export var player_sprite: Texture2D
+@export var player_sprite_max_size := Vector2(160.0, 190.0)
+@export var player_sprite_ground_offset := Vector2.ZERO
 
 var score := 0
 var best_score := 0
@@ -32,6 +38,8 @@ var message_color := Color.WHITE
 
 
 func _ready() -> void:
+	if player_sprite == null and ResourceLoader.exists(DEFAULT_PLAYER_SPRITE_PATH):
+		player_sprite = load(DEFAULT_PLAYER_SPRITE_PATH) as Texture2D
 	get_viewport().size_changed.connect(queue_redraw)
 	queue_redraw()
 
@@ -173,7 +181,8 @@ func _draw_rope() -> void:
 
 
 func _rope_is_behind() -> bool:
-	return sin(rope_angle) < 0.0
+	# The descending half comes toward the player; the rising half moves behind.
+	return cos(rope_angle) < 0.0
 
 
 func _is_jump_cue() -> bool:
@@ -252,6 +261,25 @@ func _draw_player() -> void:
 	# Shadow
 	var shadow_scale := clampf(1.0 + jump_height / 650.0, 0.45, 1.0)
 	_draw_shadow_ellipse(Vector2(PLAYER_X, PLAYER_GROUND_Y + 18.0), Vector2(70.0 * shadow_scale, 18.0), Color(0, 0, 0, 0.28))
+	if player_sprite != null:
+		_draw_player_sprite(p)
+	else:
+		_draw_default_player(p)
+
+
+func _draw_player_sprite(feet_position: Vector2) -> void:
+	var texture_size := player_sprite.get_size()
+	if texture_size.x <= 0.0 or texture_size.y <= 0.0:
+		_draw_default_player(feet_position)
+		return
+	var sprite_scale := minf(player_sprite_max_size.x / texture_size.x, player_sprite_max_size.y / texture_size.y)
+	var draw_size := texture_size * sprite_scale
+	var anchored_feet := feet_position + player_sprite_ground_offset
+	var draw_position := anchored_feet - Vector2(draw_size.x * 0.5, draw_size.y)
+	draw_texture_rect(player_sprite, Rect2(draw_position, draw_size), false)
+
+
+func _draw_default_player(p: Vector2) -> void:
 	# Body, head, legs and arms
 	draw_line(p + Vector2(0, -95), p + Vector2(0, -28), Color("62d8ff"), 28.0, true)
 	draw_circle(p + Vector2(0, -132), 31.0, Color("ffe1bd"))
