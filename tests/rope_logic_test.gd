@@ -97,6 +97,8 @@ func _test_character_asset_system(game: Node) -> void:
 	game._prepare_turner_visuals()
 	_expect(game.mirrored_turner_texture != null, "right rope turner mirror texture was not created")
 	_expect(game.mirrored_turner_used_region.size.x > 0.0, "right rope turner mirror region is empty")
+	_expect(ResourceLoader.exists("res://assets/ui/title_frame.png"), "HUD title frame asset was not imported")
+	_expect(ResourceLoader.exists("res://assets/ui/title_logo.png"), "HUD title logo asset was not imported")
 	_expect(ResourceLoader.exists("res://assets/characters/default/idle.png"), "default idle asset path was not imported")
 	_expect(ResourceLoader.exists("res://assets/characters/default/jump_sheet.png"), "default jump asset path was not imported")
 	_expect(game._is_safe_character_id("default"), "default character id was rejected")

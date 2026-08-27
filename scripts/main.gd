@@ -22,6 +22,8 @@ const DEFAULT_TURNER_PATH := "res://assets/turners/bowl_cut_student.png"
 const MENU_CHARACTER_TEXTURE_PATH := "res://assets/ui/menu_character.png"
 const MENU_UPGRADE_TEXTURE_PATH := "res://assets/ui/menu_upgrade.png"
 const MENU_SETTINGS_TEXTURE_PATH := "res://assets/ui/menu_settings.png"
+const HUD_TITLE_FRAME_PATH := "res://assets/ui/title_frame.png"
+const HUD_TITLE_LOGO_PATH := "res://assets/ui/title_logo.png"
 const DEFAULT_CHARACTER_ID := "default"
 const JUMP_FRAME_COUNT := 4
 const CHARACTERS_PER_PAGE := 3
@@ -53,6 +55,9 @@ const CHARACTER_CARD_RECTS := [
 @export var character_button_texture: Texture2D
 @export var upgrade_button_texture: Texture2D
 @export var settings_button_texture: Texture2D
+@export_group("HUD Title Assets")
+@export var hud_title_frame_texture: Texture2D
+@export var hud_title_logo_texture: Texture2D
 @export_group("Game Balance")
 @export var balance: RopeGameBalance = DEFAULT_BALANCE
 
@@ -122,6 +127,10 @@ func _ready() -> void:
 		upgrade_button_texture = load(MENU_UPGRADE_TEXTURE_PATH) as Texture2D
 	if settings_button_texture == null and ResourceLoader.exists(MENU_SETTINGS_TEXTURE_PATH):
 		settings_button_texture = load(MENU_SETTINGS_TEXTURE_PATH) as Texture2D
+	if hud_title_frame_texture == null and ResourceLoader.exists(HUD_TITLE_FRAME_PATH):
+		hud_title_frame_texture = load(HUD_TITLE_FRAME_PATH) as Texture2D
+	if hud_title_logo_texture == null and ResourceLoader.exists(HUD_TITLE_LOGO_PATH):
+		hud_title_logo_texture = load(HUD_TITLE_LOGO_PATH) as Texture2D
 	character_button_used_region = _texture_used_region(character_button_texture)
 	upgrade_button_used_region = _texture_used_region(upgrade_button_texture)
 	settings_button_used_region = _texture_used_region(settings_button_texture)
@@ -784,7 +793,7 @@ func _draw_hud() -> void:
 		if character_menu_open:
 			_draw_character_menu(font)
 		return
-	draw_string(font, Vector2(42, 82), "줄넘킹", HORIZONTAL_ALIGNMENT_LEFT, -1, 34, Color("91a4cc"))
+	_draw_hud_title(font)
 	draw_string(font, Vector2(42, 158), str(score), HORIZONTAL_ALIGNMENT_LEFT, -1, 76, Color.WHITE)
 	draw_string(font, Vector2(480, 83), "BEST  %d" % best_score, HORIZONTAL_ALIGNMENT_LEFT, -1, 26, Color("ffd166"))
 	if game_state != GameState.GAME_OVER:
@@ -795,6 +804,20 @@ func _draw_hud() -> void:
 	draw_string(font, Vector2(0, 1190), control_text, HORIZONTAL_ALIGNMENT_CENTER, DESIGN_SIZE.x, 22, Color("8293b7"))
 	if game_state == GameState.GAME_OVER:
 		_draw_game_over_panel(font)
+
+
+func _draw_hud_title(font: Font) -> void:
+	var frame_rect := Rect2(18.0, 14.0, 280.0, 112.0)
+	if hud_title_frame_texture != null:
+		draw_texture_rect(hud_title_frame_texture, frame_rect, false)
+	else:
+		draw_rect(frame_rect, Color("071b38"), true)
+		draw_rect(frame_rect, Color("ffd23f"), false, 5.0)
+	var logo_rect := Rect2(74.0, 43.0, 150.0, 66.0)
+	if hud_title_logo_texture != null:
+		draw_texture_rect(hud_title_logo_texture, logo_rect, false)
+	else:
+		draw_string(font, Vector2(42, 82), "줄넘킹", HORIZONTAL_ALIGNMENT_LEFT, -1, 34, Color("ffd23f"))
 
 
 func _draw_game_over_panel(font: Font) -> void:
