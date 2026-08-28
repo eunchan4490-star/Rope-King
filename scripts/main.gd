@@ -1253,11 +1253,16 @@ func _draw_player_sprite(feet_position: Vector2, jumping: bool, velocity: float)
 	if jumping and player_jump_sprite != null and player_jump_regions.size() == JUMP_FRAME_COUNT:
 		using_jump_sheet = true
 		active_texture = player_jump_sprite
+		# Jump sequence: frame 2 (takeoff) -> 1 (up) -> 2 (down) -> 4 (land).
+		# The idle texture is frame 4, so a non-jumping character remains still
+		# on the final pose while the velocity bands drive the four jump poses.
 		var frame := 3
-		if velocity < -500.0 or velocity >= 500.0:
+		if velocity < -650.0:
 			frame = 1
-		elif velocity < -100.0 or velocity >= 100.0:
-			frame = 2
+		elif velocity < -300.0:
+			frame = 0
+		elif velocity < 300.0:
+			frame = 1
 		source_rect = player_jump_regions[frame]
 	var texture_size := source_rect.size
 	if texture_size.x <= 0.0 or texture_size.y <= 0.0:
