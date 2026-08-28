@@ -6,8 +6,8 @@ enum TurnerTransitionPhase { NONE, TURNER_EXIT, TURNER_ENTRY_COUNTDOWN }
 
 const DESIGN_SIZE := Vector2(720.0, 1280.0)
 const PLAYER_X := 360.0
-const COOP_LEFT_PLAYER_X := 270.0
-const COOP_RIGHT_PLAYER_X := 450.0
+const COOP_LEFT_PLAYER_X := 180.0
+const COOP_RIGHT_PLAYER_X := 540.0
 const PLAYER_GROUND_Y := 890.0
 const TURNER_GROUND_Y := 910.0
 const LEFT_HAND := Vector2(140.0, 855.0)
@@ -64,6 +64,7 @@ const SLEEPY_TURNER_AWAKE_PATH := "res://assets/turners/sleepy_student_awake.png
 const PRANKSTER_TURNER_PATH := "res://assets/turners/prankster_student.png"
 const WIZARD_TURNER_PATH := "res://assets/turners/wizard_student.png"
 const MENU_CHARACTER_TEXTURE_PATH := "res://assets/ui/menu_character.png"
+const MENU_COOP_TEXTURE_PATH := "res://assets/ui/menu_coop.png"
 const MENU_UPGRADE_TEXTURE_PATH := "res://assets/ui/menu_upgrade.png"
 const MENU_SETTINGS_TEXTURE_PATH := "res://assets/ui/menu_settings.png"
 const HUD_TITLE_FRAME_PATH := "res://assets/ui/title_frame.png"
@@ -116,6 +117,7 @@ const CHARACTER_CARD_RECTS := [
 @export var wizard_turner_texture: Texture2D
 @export_group("Menu Button Assets")
 @export var character_button_texture: Texture2D
+@export var coop_button_texture: Texture2D
 @export var upgrade_button_texture: Texture2D
 @export var settings_button_texture: Texture2D
 @export_group("HUD Title Assets")
@@ -213,6 +215,7 @@ var wizard_turner_used_region := Rect2()
 var mirrored_wizard_turner_texture: Texture2D
 var mirrored_wizard_turner_used_region := Rect2()
 var character_button_used_region := Rect2()
+var coop_button_used_region := Rect2()
 var upgrade_button_used_region := Rect2()
 var settings_button_used_region := Rect2()
 var best_score_frame_used_region := Rect2()
@@ -243,6 +246,8 @@ func _ready() -> void:
 	_prepare_turner_visuals()
 	if character_button_texture == null and ResourceLoader.exists(MENU_CHARACTER_TEXTURE_PATH):
 		character_button_texture = load(MENU_CHARACTER_TEXTURE_PATH) as Texture2D
+	if coop_button_texture == null and ResourceLoader.exists(MENU_COOP_TEXTURE_PATH):
+		coop_button_texture = load(MENU_COOP_TEXTURE_PATH) as Texture2D
 	if upgrade_button_texture == null and ResourceLoader.exists(MENU_UPGRADE_TEXTURE_PATH):
 		upgrade_button_texture = load(MENU_UPGRADE_TEXTURE_PATH) as Texture2D
 	if settings_button_texture == null and ResourceLoader.exists(MENU_SETTINGS_TEXTURE_PATH):
@@ -266,6 +271,7 @@ func _ready() -> void:
 	if gold_digit_sheet_texture == null and ResourceLoader.exists(GOLD_DIGIT_SHEET_PATH):
 		gold_digit_sheet_texture = load(GOLD_DIGIT_SHEET_PATH) as Texture2D
 	character_button_used_region = _texture_used_region(character_button_texture)
+	coop_button_used_region = _texture_used_region(coop_button_texture)
 	upgrade_button_used_region = _texture_used_region(upgrade_button_texture)
 	settings_button_used_region = _texture_used_region(settings_button_texture)
 	best_score_frame_used_region = _texture_used_region(best_score_frame_texture)
@@ -1524,7 +1530,7 @@ func _draw_main_menu(font: Font) -> void:
 		draw_string(font, Vector2(prompt_rect.position.x, 980.0), "TAP TO START", HORIZONTAL_ALIGNMENT_CENTER, prompt_rect.size.x, 30, Color(1.0, 1.0, 1.0, prompt_alpha))
 
 	_draw_menu_asset_or_fallback(character_button_texture, character_button_used_region, font, CHARACTER_BUTTON_RECT, "CHARACTER", "캐릭터", Color("ef8f6b"))
-	_draw_menu_button(font, UPGRADE_BUTTON_RECT, "CO-OP", "협동 모드", Color("65b7f3"))
+	_draw_menu_asset_or_fallback(coop_button_texture, coop_button_used_region, font, UPGRADE_BUTTON_RECT, "CO-OP", "협동 모드", Color("65b7f3"))
 	_draw_menu_asset_or_fallback(settings_button_texture, settings_button_used_region, font, SETTINGS_BUTTON_RECT, "SETTINGS", "설정", Color("9b8bea"))
 	_draw_test_start_button(font)
 	if not menu_notice.is_empty():
