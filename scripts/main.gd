@@ -6,8 +6,8 @@ enum TurnerTransitionPhase { NONE, TURNER_EXIT, TURNER_ENTRY_COUNTDOWN }
 
 const DESIGN_SIZE := Vector2(720.0, 1280.0)
 const PLAYER_X := 360.0
-const COOP_LEFT_PLAYER_X := 180.0
-const COOP_RIGHT_PLAYER_X := 540.0
+const COOP_LEFT_PLAYER_X := 240.0
+const COOP_RIGHT_PLAYER_X := 480.0
 const PLAYER_GROUND_Y := 890.0
 const TURNER_GROUND_Y := 910.0
 const LEFT_HAND := Vector2(140.0, 855.0)
