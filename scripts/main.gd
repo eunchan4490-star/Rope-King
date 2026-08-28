@@ -6,10 +6,16 @@ enum TurnerTransitionPhase { NONE, TURNER_EXIT, TURNER_ENTRY_COUNTDOWN }
 
 const DESIGN_SIZE := Vector2(720.0, 1280.0)
 const PLAYER_X := 360.0
+const COOP_LEFT_PLAYER_X := 270.0
+const COOP_RIGHT_PLAYER_X := 450.0
 const PLAYER_GROUND_Y := 890.0
 const TURNER_GROUND_Y := 910.0
 const LEFT_HAND := Vector2(140.0, 855.0)
 const RIGHT_HAND := Vector2(580.0, 855.0)
+const COOP_LEFT_HAND := Vector2(72.0, 855.0)
+const COOP_RIGHT_HAND := Vector2(648.0, 855.0)
+const COOP_LEFT_TURNER_FEET := Vector2(42.0, TURNER_GROUND_Y)
+const COOP_RIGHT_TURNER_FEET := Vector2(678.0, TURNER_GROUND_Y)
 const ROPE_OVERHEAD_RADIUS := 170.0
 const ROPE_GROUND_RADIUS := 40.0
 # The front half reaches the player's feet without sinking deep into the ground.
@@ -134,6 +140,16 @@ var jump_velocity := 0.0
 var jump_animation_time := 0.0
 var is_jumping := false
 var jump_started_in_cue := false
+var coop_mode := false
+var coop_left_jump_height := 0.0
+var coop_left_jump_velocity := 0.0
+var coop_left_jump_time := 0.0
+var coop_left_is_jumping := false
+var coop_right_jump_height := 0.0
+var coop_right_jump_velocity := 0.0
+var coop_right_jump_time := 0.0
+var coop_right_is_jumping := false
+var coop_hit_player := 0
 var accepting_input := true
 var game_state := GameState.TITLE
 var challenge_pattern := 0
@@ -338,7 +354,9 @@ func _prepare_countdown_visuals() -> void:
 
 func _process(delta: float) -> void:
 	if game_state == GameState.PLAYING:
-		if is_jumping:
+		if coop_mode:
+			_advance_coop_jumps(delta)
+		elif is_jumping:
 			jump_animation_time += delta
 			jump_velocity += 1900.0 * delta
 			jump_height += jump_velocity * delta
@@ -412,14 +430,18 @@ func _unhandled_input(event: InputEvent) -> void:
 				get_viewport().set_input_as_handled()
 				return
 			if UPGRADE_BUTTON_RECT.has_point(design_position):
-				menu_notice = "업그레이드 메뉴 준비 중"
+				_start_coop_game()
 				get_viewport().set_input_as_handled()
 				return
 			if SETTINGS_BUTTON_RECT.has_point(design_position):
 				menu_notice = "설정 메뉴 준비 중"
 				get_viewport().set_input_as_handled()
 				return
-		attempt_jump()
+		if coop_mode:
+			if pointer_position.x >= 0.0:
+				attempt_coop_jump(_screen_to_design(pointer_position).x < DESIGN_SIZE.x * 0.5)
+		else:
+			attempt_jump()
 		get_viewport().set_input_as_handled()
 
 
@@ -443,6 +465,51 @@ func attempt_jump() -> void:
 	jump_animation_time = 0.0
 	jump_started_in_cue = _is_jump_cue()
 	jump_velocity = -820.0
+
+
+func attempt_coop_jump(left_player: bool) -> void:
+	if game_state == GameState.HIT:
+		return
+	if game_state != GameState.PLAYING:
+		_start_coop_game()
+		return
+	if not accepting_input:
+		return
+	if left_player:
+		if coop_left_is_jumping:
+			return
+		coop_left_is_jumping = true
+		coop_left_jump_height = 0.0
+		coop_left_jump_velocity = -820.0
+		coop_left_jump_time = 0.0
+	else:
+		if coop_right_is_jumping:
+			return
+		coop_right_is_jumping = true
+		coop_right_jump_height = 0.0
+		coop_right_jump_velocity = -820.0
+		coop_right_jump_time = 0.0
+
+
+func _advance_coop_jumps(delta: float) -> void:
+	if coop_left_is_jumping:
+		coop_left_jump_time += delta
+		coop_left_jump_velocity += 1900.0 * delta
+		coop_left_jump_height += coop_left_jump_velocity * delta
+		if coop_left_jump_height >= 0.0:
+			coop_left_jump_height = 0.0
+			coop_left_jump_velocity = 0.0
+			coop_left_jump_time = 0.0
+			coop_left_is_jumping = false
+	if coop_right_is_jumping:
+		coop_right_jump_time += delta
+		coop_right_jump_velocity += 1900.0 * delta
+		coop_right_jump_height += coop_right_jump_velocity * delta
+		if coop_right_jump_height >= 0.0:
+			coop_right_jump_height = 0.0
+			coop_right_jump_velocity = 0.0
+			coop_right_jump_time = 0.0
+			coop_right_is_jumping = false
 
 
 func _resolve_rope_crossing() -> void:
@@ -483,7 +550,10 @@ func _resolve_rope_crossing() -> void:
 		game_state = GameState.HIT
 		hit_reveal_time = HIT_REVEAL_SECONDS
 		accepting_input = false
-		message = "앗! 줄에 걸렸어요!"
+		if coop_mode:
+			message = "왼쪽 플레이어가 걸렸어요!" if coop_hit_player == 1 else "오른쪽 플레이어가 걸렸어요!"
+		else:
+			message = "앗! 줄에 걸렸어요!"
 		message_color = Color("ff7892")
 		flash_time = 0.5
 		run_coins_earned = score + (5 if new_best_this_run else 0)
@@ -494,6 +564,11 @@ func _resolve_rope_crossing() -> void:
 
 
 func _player_clears_rope_at_crossing() -> bool:
+	if coop_mode:
+		var left_clear := _coop_player_clears_rope(COOP_LEFT_PLAYER_X, coop_left_is_jumping, coop_left_jump_height)
+		var right_clear := _coop_player_clears_rope(COOP_RIGHT_PLAYER_X, coop_right_is_jumping, coop_right_jump_height)
+		coop_hit_player = 0 if left_clear and right_clear else (1 if not left_clear else 2)
+		return left_clear and right_clear
 	if not is_jumping:
 		return false
 	var rope_center_y := _rope_midpoint_y(ROPE_CROSSING_ANGLE)
@@ -502,7 +577,27 @@ func _player_clears_rope_at_crossing() -> bool:
 	return player_feet_y < rope_top_y
 
 
+func _coop_player_clears_rope(player_x: float, jumping: bool, height: float) -> bool:
+	if not jumping:
+		return false
+	var rope_top_y := _rope_y_at_x(ROPE_CROSSING_ANGLE, player_x) - ROPE_PIXEL_OUTLINE_SIZE.y * 0.5
+	return PLAYER_GROUND_Y + height + player_sprite_ground_offset.y < rope_top_y
+
+
 func _start_game() -> void:
+	coop_mode = false
+	_reset_coop_players()
+	_start_run()
+
+
+func _start_coop_game() -> void:
+	coop_mode = true
+	_reset_coop_players()
+	_start_run()
+	message = "왼쪽과 오른쪽을 함께 점프!"
+
+
+func _start_run() -> void:
 	run_start_best = best_score
 	new_best_this_run = false
 	run_coins_earned = 0
@@ -553,6 +648,8 @@ func _return_to_main() -> void:
 	jump_velocity = 0.0
 	jump_animation_time = 0.0
 	is_jumping = false
+	coop_mode = false
+	_reset_coop_players()
 	jump_started_in_cue = false
 	accepting_input = true
 	_reset_turner_run()
@@ -561,6 +658,18 @@ func _return_to_main() -> void:
 	message = "화면을 눌러 시작"
 	message_color = Color.WHITE
 	queue_redraw()
+
+
+func _reset_coop_players() -> void:
+	coop_left_jump_height = 0.0
+	coop_left_jump_velocity = 0.0
+	coop_left_jump_time = 0.0
+	coop_left_is_jumping = false
+	coop_right_jump_height = 0.0
+	coop_right_jump_velocity = 0.0
+	coop_right_jump_time = 0.0
+	coop_right_is_jumping = false
+	coop_hit_player = 0
 
 
 func _load_saved_progress() -> void:
@@ -609,28 +718,35 @@ func _draw() -> void:
 
 	_draw_background()
 	_draw_ground()
+	if coop_mode and game_state != GameState.TITLE:
+		_draw_coop_divider()
 	# Each wizard illusion has its own phase and depth, so rear ropes are drawn
 	# independently instead of sharing the real rope's layer.
 	if not turner_transition_active:
 		_draw_rope_layer(true)
-	var left_turner_feet := LEFT_TURNER_FEET
-	var right_turner_feet := RIGHT_TURNER_FEET
+	var left_turner_feet := COOP_LEFT_TURNER_FEET if coop_mode else LEFT_TURNER_FEET
+	var right_turner_feet := COOP_RIGHT_TURNER_FEET if coop_mode else RIGHT_TURNER_FEET
+	var active_left_turner_feet := left_turner_feet
+	var active_right_turner_feet := right_turner_feet
 	var visible_turner_team := -1
 	if turner_transition_phase == TurnerTransitionPhase.TURNER_EXIT:
 		var exit_progress := clampf(turner_transition_time / TURNER_EXIT_SECONDS, 0.0, 1.0)
 		var eased_exit := exit_progress * exit_progress
-		left_turner_feet = LEFT_TURNER_FEET.lerp(LEFT_TURNER_ENTRY_FEET, eased_exit)
-		right_turner_feet = RIGHT_TURNER_FEET.lerp(RIGHT_TURNER_ENTRY_FEET, eased_exit)
+		left_turner_feet = active_left_turner_feet.lerp(LEFT_TURNER_ENTRY_FEET, eased_exit)
+		right_turner_feet = active_right_turner_feet.lerp(RIGHT_TURNER_ENTRY_FEET, eased_exit)
 		visible_turner_team = departing_turner_team
 	elif turner_transition_phase == TurnerTransitionPhase.TURNER_ENTRY_COUNTDOWN:
 		var entry_progress := clampf(turner_transition_time / ATHLETE_ENTRY_SECONDS, 0.0, 1.0)
 		var eased_entry := 1.0 - pow(1.0 - entry_progress, 3.0)
-		left_turner_feet = LEFT_TURNER_ENTRY_FEET.lerp(LEFT_TURNER_FEET, eased_entry)
-		right_turner_feet = RIGHT_TURNER_ENTRY_FEET.lerp(RIGHT_TURNER_FEET, eased_entry)
+		left_turner_feet = LEFT_TURNER_ENTRY_FEET.lerp(active_left_turner_feet, eased_entry)
+		right_turner_feet = RIGHT_TURNER_ENTRY_FEET.lerp(active_right_turner_feet, eased_entry)
 		visible_turner_team = turner_team
 	_draw_turner(left_turner_feet, false, visible_turner_team)
 	_draw_turner(right_turner_feet, true, visible_turner_team)
-	_draw_player()
+	if coop_mode:
+		_draw_coop_players()
+	else:
+		_draw_player()
 	if turner_transition_phase == TurnerTransitionPhase.TURNER_ENTRY_COUNTDOWN:
 		_draw_countdown_overlay()
 	# Front ropes pass over the character visually, but only the real rope owns
@@ -640,6 +756,12 @@ func _draw() -> void:
 	if game_state == GameState.HIT:
 		_draw_hit_feedback()
 	_draw_hud()
+
+
+func _draw_coop_divider() -> void:
+	draw_rect(Rect2(0.0, 0.0, DESIGN_SIZE.x * 0.5, DESIGN_SIZE.y), Color(0.20, 0.55, 1.0, 0.055), true)
+	draw_rect(Rect2(DESIGN_SIZE.x * 0.5, 0.0, DESIGN_SIZE.x * 0.5, DESIGN_SIZE.y), Color(1.0, 0.35, 0.48, 0.055), true)
+	draw_line(Vector2(DESIGN_SIZE.x * 0.5, 0.0), Vector2(DESIGN_SIZE.x * 0.5, DESIGN_SIZE.y), Color(1.0, 1.0, 1.0, 0.72), 5.0, true)
 
 
 func _draw_countdown_overlay() -> void:
@@ -733,18 +855,20 @@ func _draw_rope_layer(draw_behind: bool) -> void:
 				_draw_rope_curve(illusion_angle, illusion_core, illusion_highlight, illusion_outline, Color.TRANSPARENT, cos(illusion_angle) * WIZARD_ILLUSION_LATERAL_SWAY)
 	if _rope_angle_is_behind(rope_angle) == draw_behind:
 		_draw_rope_curve(rope_angle, rope_color, highlight_color, outline_color, shadow_color)
-		_draw_pixel_rope_grip(LEFT_HAND, wizard_ghosted)
-		_draw_pixel_rope_grip(RIGHT_HAND, wizard_ghosted)
+		_draw_pixel_rope_grip(_active_left_hand(), wizard_ghosted)
+		_draw_pixel_rope_grip(_active_right_hand(), wizard_ghosted)
 
 
 func _draw_rope_curve(curve_angle: float, rope_color: Color, highlight_color: Color, outline_color: Color, shadow_color: Color, lateral_offset := 0.0) -> void:
 	var midpoint_y := _rope_midpoint_y(curve_angle)
+	var left_hand := _active_left_hand()
+	var right_hand := _active_right_hand()
 	var pixel_points := PackedVector2Array()
 	for i in range(97):
 		var t := float(i) / 96.0
-		var x := lerpf(LEFT_HAND.x, RIGHT_HAND.x, t) + 4.0 * t * (1.0 - t) * lateral_offset
+		var x := lerpf(left_hand.x, right_hand.x, t) + 4.0 * t * (1.0 - t) * lateral_offset
 		# 4t(1-t) is zero at both hands and one at the middle.
-		var y := lerpf(LEFT_HAND.y, RIGHT_HAND.y, t) + 4.0 * t * (1.0 - t) * (midpoint_y - LEFT_HAND.y)
+		var y := lerpf(left_hand.y, right_hand.y, t) + 4.0 * t * (1.0 - t) * (midpoint_y - left_hand.y)
 		var pixel_point := Vector2(
 			roundf(x / ROPE_PIXEL_GRID) * ROPE_PIXEL_GRID,
 			roundf(y / ROPE_PIXEL_GRID) * ROPE_PIXEL_GRID
@@ -785,7 +909,22 @@ func _rope_angle_is_behind(angle: float) -> bool:
 func _rope_midpoint_y(angle: float) -> float:
 	var vertical_phase := sin(angle)
 	var radius := ROPE_GROUND_RADIUS if vertical_phase >= 0.0 else ROPE_OVERHEAD_RADIUS
-	return LEFT_HAND.y + vertical_phase * radius
+	return _active_left_hand().y + vertical_phase * radius
+
+
+func _rope_y_at_x(angle: float, x: float) -> float:
+	var left_hand := _active_left_hand()
+	var right_hand := _active_right_hand()
+	var t := clampf((x - left_hand.x) / (right_hand.x - left_hand.x), 0.0, 1.0)
+	return lerpf(left_hand.y, right_hand.y, t) + 4.0 * t * (1.0 - t) * (_rope_midpoint_y(angle) - left_hand.y)
+
+
+func _active_left_hand() -> Vector2:
+	return COOP_LEFT_HAND if coop_mode else LEFT_HAND
+
+
+func _active_right_hand() -> Vector2:
+	return COOP_RIGHT_HAND if coop_mode else RIGHT_HAND
 
 
 func _draw_pixel_rope_grip(center: Vector2, ghosted := false) -> void:
@@ -798,7 +937,10 @@ func _draw_pixel_rope_grip(center: Vector2, ghosted := false) -> void:
 
 
 func _draw_hit_feedback() -> void:
-	var contact := Vector2(PLAYER_X, PLAYER_GROUND_Y - 3.0)
+	var contact_x := PLAYER_X
+	if coop_mode:
+		contact_x = COOP_LEFT_PLAYER_X if coop_hit_player == 1 else COOP_RIGHT_PLAYER_X
+	var contact := Vector2(contact_x, PLAYER_GROUND_Y - 3.0)
 	draw_circle(contact, 24.0, Color(1.0, 0.18, 0.28, 0.34))
 	for direction in [Vector2(-1.0, -1.0), Vector2(1.0, -1.0), Vector2(-1.0, 0.35), Vector2(1.0, 0.35)]:
 		draw_line(contact + direction * 12.0, contact + direction * 35.0, Color("ff334f"), 6.0, true)
@@ -1060,7 +1202,7 @@ func _draw_turner(feet: Vector2, faces_left: bool, display_team := -1) -> void:
 	draw_line(hip, shoulder, Color("ff7a68"), 39.0, true)
 	draw_circle(head, 28.0, Color("ffe0bd"))
 	draw_arc(head + Vector2(0.0, -4.0), 27.0, PI, TAU, 18, Color("49382f"), 12.0, true)
-	var hand := LEFT_HAND if not faces_left else RIGHT_HAND
+	var hand := _active_left_hand() if not faces_left else _active_right_hand()
 	draw_line(shoulder + Vector2(direction * 4.0, 2.0), hand, Color("ff7a68"), 13.0, true)
 	draw_circle(hand, 9.0, Color("ffe0bd"))
 	draw_line(shoulder - Vector2(direction * 5.0, -2.0), feet + Vector2(-direction * 25.0, -64.0), Color("ff7a68"), 13.0, true)
@@ -1072,22 +1214,37 @@ func _draw_player() -> void:
 	var shadow_scale := clampf(1.0 + jump_height / 650.0, 0.45, 1.0)
 	_draw_shadow_ellipse(Vector2(PLAYER_X, PLAYER_GROUND_Y + 18.0), Vector2(70.0 * shadow_scale, 18.0), Color(0, 0, 0, 0.28))
 	if player_sprite != null:
-		_draw_player_sprite(p)
+		_draw_player_sprite(p, is_jumping, jump_velocity)
 	else:
 		_draw_default_player(p)
 
 
-func _draw_player_sprite(feet_position: Vector2) -> void:
+func _draw_coop_players() -> void:
+	_draw_coop_player(COOP_LEFT_PLAYER_X, coop_left_jump_height, coop_left_is_jumping, coop_left_jump_velocity)
+	_draw_coop_player(COOP_RIGHT_PLAYER_X, coop_right_jump_height, coop_right_is_jumping, coop_right_jump_velocity)
+
+
+func _draw_coop_player(player_x: float, height: float, jumping: bool, velocity: float) -> void:
+	var feet := Vector2(player_x, PLAYER_GROUND_Y + height)
+	var shadow_scale := clampf(1.0 + height / 650.0, 0.45, 1.0)
+	_draw_shadow_ellipse(Vector2(player_x, PLAYER_GROUND_Y + 18.0), Vector2(58.0 * shadow_scale, 16.0), Color(0, 0, 0, 0.28))
+	if player_sprite != null:
+		_draw_player_sprite(feet, jumping, velocity)
+	else:
+		_draw_default_player(feet)
+
+
+func _draw_player_sprite(feet_position: Vector2, jumping: bool, velocity: float) -> void:
 	var active_texture := player_sprite
 	var source_rect := player_base_region
 	var using_jump_sheet := false
-	if is_jumping and player_jump_sprite != null and player_jump_regions.size() == JUMP_FRAME_COUNT:
+	if jumping and player_jump_sprite != null and player_jump_regions.size() == JUMP_FRAME_COUNT:
 		using_jump_sheet = true
 		active_texture = player_jump_sprite
 		var frame := 3
-		if jump_velocity < -500.0 or jump_velocity >= 500.0:
+		if velocity < -500.0 or velocity >= 500.0:
 			frame = 1
-		elif jump_velocity < -100.0 or jump_velocity >= 100.0:
+		elif velocity < -100.0 or velocity >= 100.0:
 			frame = 2
 		source_rect = player_jump_regions[frame]
 	var texture_size := source_rect.size
@@ -1310,7 +1467,7 @@ func _draw_hud() -> void:
 	_draw_image_number(str(best_score), Vector2(570.0, 54.0), 31.0)
 	if game_state != GameState.GAME_OVER:
 		draw_string(font, Vector2(0, 1120), message, HORIZONTAL_ALIGNMENT_CENTER, DESIGN_SIZE.x, 31, message_color)
-	var control_text := "화면 터치 · 마우스 클릭 · SPACE"
+	var control_text := "왼쪽 터치: 1P · 오른쪽 터치: 2P" if coop_mode else "화면 터치 · 마우스 클릭 · SPACE"
 	if game_state == GameState.GAME_OVER:
 		control_text = "화면을 눌러 즉시 재시작"
 	draw_string(font, Vector2(0, 1190), control_text, HORIZONTAL_ALIGNMENT_CENTER, DESIGN_SIZE.x, 22, Color("8293b7"))
@@ -1367,7 +1524,7 @@ func _draw_main_menu(font: Font) -> void:
 		draw_string(font, Vector2(prompt_rect.position.x, 980.0), "TAP TO START", HORIZONTAL_ALIGNMENT_CENTER, prompt_rect.size.x, 30, Color(1.0, 1.0, 1.0, prompt_alpha))
 
 	_draw_menu_asset_or_fallback(character_button_texture, character_button_used_region, font, CHARACTER_BUTTON_RECT, "CHARACTER", "캐릭터", Color("ef8f6b"))
-	_draw_menu_asset_or_fallback(upgrade_button_texture, upgrade_button_used_region, font, UPGRADE_BUTTON_RECT, "UPGRADE", "업그레이드", Color("65b7f3"))
+	_draw_menu_button(font, UPGRADE_BUTTON_RECT, "CO-OP", "협동 모드", Color("65b7f3"))
 	_draw_menu_asset_or_fallback(settings_button_texture, settings_button_used_region, font, SETTINGS_BUTTON_RECT, "SETTINGS", "설정", Color("9b8bea"))
 	_draw_test_start_button(font)
 	if not menu_notice.is_empty():

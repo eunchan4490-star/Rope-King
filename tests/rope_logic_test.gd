@@ -20,6 +20,7 @@ func _init() -> void:
 	_test_wizard_turner_pattern(game)
 	_test_physical_clearance_wins(game)
 	_test_visible_contact_loses(game)
+	_test_coop_mode(game)
 	_test_character_asset_system(game)
 	_test_save_round_trip()
 	_test_return_to_main(game)
@@ -286,6 +287,25 @@ func _test_visible_contact_loses(game: Node) -> void:
 	_expect(overhead_y <= game.PLAYER_GROUND_Y - game.player_sprite_max_size.y - 30.0, "rope orbit leaves too little space above the player's head")
 	var lowest_y: float = game._rope_midpoint_y(PI * 0.5)
 	_expect(is_equal_approx(lowest_y, game.PLAYER_GROUND_Y + 5.0), "rope lowest point is not exactly five pixels below the player's feet")
+
+
+func _test_coop_mode(game: Node) -> void:
+	game._start_coop_game()
+	_expect(bool(game.coop_mode), "coop button did not activate coop mode")
+	_expect(game._active_left_hand() == game.COOP_LEFT_HAND, "coop rope did not extend to the left screen edge")
+	_expect(game._active_right_hand() == game.COOP_RIGHT_HAND, "coop rope did not extend to the right screen edge")
+	game.attempt_coop_jump(true)
+	_expect(bool(game.coop_left_is_jumping), "left-half input did not jump the left player")
+	_expect(not bool(game.coop_right_is_jumping), "left-half input also jumped the right player")
+	game.attempt_coop_jump(false)
+	_expect(bool(game.coop_right_is_jumping), "right-half input did not jump the right player")
+	game.coop_left_jump_height = -40.0
+	game.coop_right_jump_height = -40.0
+	_expect(game._player_clears_rope_at_crossing(), "two jumping coop players did not clear the rope together")
+	game.coop_right_is_jumping = false
+	_expect(not game._player_clears_rope_at_crossing(), "coop run survived when the right player missed")
+	_expect(int(game.coop_hit_player) == 2, "coop collision did not identify the missed right player")
+	game._return_to_main()
 
 
 func _test_character_asset_system(game: Node) -> void:
