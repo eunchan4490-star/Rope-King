@@ -1,5 +1,6 @@
 {
   "display_name": "공룡 잠옷",
   "order": 80,
-  "unlocked_by_default": true
+  "unlocked_by_default": true,
+  "body_top_fraction": 0.06
 }

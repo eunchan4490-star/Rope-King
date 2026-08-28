@@ -74,6 +74,8 @@ const RESOURCE_COUNTER_FRAME_PATH := "res://assets/ui/resource_counter_frame.png
 const TAP_PROMPT_PATH := "res://assets/ui/tap_to_start.png"
 const COIN_ICON_PATH := "res://assets/ui/coin_icon.png"
 const RUBY_ICON_PATH := "res://assets/ui/ruby_icon.png"
+const RESOURCE_ICON_OFFSET := Vector2(5.0, 12.0)
+const RESOURCE_ICON_SIZE := Vector2(38.0, 38.0)
 const GAME_OVER_PANEL_PATH := "res://assets/ui/game_over_panel.png"
 const GOLD_DIGIT_SHEET_PATH := "res://assets/ui/gold_digit_sheet.png"
 const COUNTDOWN_PATHS := [
@@ -194,6 +196,7 @@ var character_preview_textures: Dictionary = {}
 var character_preview_regions: Dictionary = {}
 var character_ids: Array[String] = []
 var character_names: Dictionary = {}
+var character_body_top_fractions: Dictionary = {}
 var owned_character_ids: Array[String] = []
 var character_page := 0
 var turner_used_region := Rect2()
@@ -1304,6 +1307,7 @@ func _handle_character_menu_input(position: Vector2) -> void:
 func _load_character_catalog() -> void:
 	character_ids.clear()
 	character_names.clear()
+	character_body_top_fractions.clear()
 	owned_character_ids.clear()
 	var entries: Array[Dictionary] = []
 	for character_id in DirAccess.get_directories_at(CHARACTER_ASSET_ROOT):
@@ -1316,6 +1320,7 @@ func _load_character_catalog() -> void:
 			"display_name": character_id,
 			"order": 9999,
 			"unlocked_by_default": false,
+			"body_top_fraction": 0.0,
 		}
 		var metadata_path := _character_asset_path(character_id, "character.json")
 		if FileAccess.file_exists(metadata_path):
@@ -1329,6 +1334,7 @@ func _load_character_catalog() -> void:
 		var character_id := str(entry.id)
 		character_ids.append(character_id)
 		character_names[character_id] = str(entry.display_name)
+		character_body_top_fractions[character_id] = clampf(float(entry.body_top_fraction), 0.0, 0.45)
 		if bool(entry.unlocked_by_default):
 			owned_character_ids.append(character_id)
 	if character_ids.has(DEFAULT_CHARACTER_ID) and not owned_character_ids.has(DEFAULT_CHARACTER_ID):
@@ -1425,14 +1431,14 @@ func _image_visible_region(image: Image, search_rect: Rect2i, alpha_threshold: i
 func _scale_for_region(region: Rect2) -> float:
 	if region.size.x <= 0.0 or region.size.y <= 0.0:
 		return 1.0
-	# Matching only the maximum height made narrow characters look much smaller
-	# than broad chibi characters. Normalize their visible area while preserving
-	# the source aspect ratio, then cap extreme widths and heights.
-	var target_area := player_sprite_max_size.x * player_sprite_max_size.y * 0.72
-	var area_scale := sqrt(target_area / (region.size.x * region.size.y))
+	# Size the actual person, not hats, ears, or other tall accessories. This
+	# keeps faces and bodies comparable without stretching the source artwork.
+	var body_top_fraction := float(character_body_top_fractions.get(selected_character_id, 0.0))
+	var body_height := region.size.y * (1.0 - body_top_fraction)
+	var body_scale := player_sprite_max_size.y / body_height
 	var width_limit := player_sprite_max_size.x / region.size.x
-	var height_limit := player_sprite_max_size.y * 1.15 / region.size.y
-	return minf(area_scale, minf(width_limit, height_limit))
+	var total_height_limit := player_sprite_max_size.y * 1.4 / region.size.y
+	return minf(body_scale, minf(width_limit, total_height_limit))
 
 
 func _character_asset_path(character_id: String, file_name: String) -> String:
@@ -1643,7 +1649,9 @@ func _draw_resource_counter(font: Font, rect: Rect2, icon_texture: Texture2D, ic
 		frame_rect.size.x = minf(rect.size.x, 222.0)
 		draw_rect(frame_rect, Color(0.23, 0.14, 0.09, 0.92), true)
 		draw_rect(frame_rect, Color("ffd23f"), false, 4.0)
-	var icon_rect := Rect2(frame_rect.position + Vector2(9.0, 7.0), Vector2(48.0, 48.0))
+	# The frame already contains a circular icon socket. Keep the resource icon
+	# inside that socket instead of letting its artwork cross the gold rim.
+	var icon_rect := Rect2(frame_rect.position + RESOURCE_ICON_OFFSET, RESOURCE_ICON_SIZE)
 	if icon_texture != null and icon_region.size.x > 0.0:
 		draw_texture_rect_region(icon_texture, icon_rect, icon_region)
 	# The icon already identifies the resource. A single large number stays clear

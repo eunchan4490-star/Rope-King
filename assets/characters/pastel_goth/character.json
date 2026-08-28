@@ -1,5 +1,6 @@
 {
   "display_name": "파스텔 고스",
   "order": 100,
-  "unlocked_by_default": true
+  "unlocked_by_default": true,
+  "body_top_fraction": 0.03
 }

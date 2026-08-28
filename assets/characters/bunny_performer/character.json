@@ -1,5 +1,6 @@
 {
   "display_name": "바니 퍼포머",
   "order": 90,
-  "unlocked_by_default": true
+  "unlocked_by_default": true,
+  "body_top_fraction": 0.20
 }

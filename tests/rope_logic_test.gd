@@ -309,8 +309,8 @@ func _test_coop_mode(game: Node) -> void:
 
 
 func _test_character_asset_system(game: Node) -> void:
-	var smallest_draw_area := INF
-	var largest_draw_area := 0.0
+	var smallest_body_height := INF
+	var largest_body_height := 0.0
 	game._prepare_turner_visuals()
 	_expect(game.mirrored_turner_texture != null, "right rope turner mirror texture was not created")
 	_expect(game.mirrored_turner_used_region.size.x > 0.0, "right rope turner mirror region is empty")
@@ -337,6 +337,8 @@ func _test_character_asset_system(game: Node) -> void:
 	_expect(ResourceLoader.exists("res://assets/ui/tap_to_start.png"), "tap-to-start prompt asset was not imported")
 	_expect(ResourceLoader.exists("res://assets/ui/coin_icon.png"), "coin icon asset was not imported")
 	_expect(ResourceLoader.exists("res://assets/ui/ruby_icon.png"), "ruby icon asset was not imported")
+	var resource_icon_rect := Rect2(game.RESOURCE_ICON_OFFSET, game.RESOURCE_ICON_SIZE)
+	_expect(Rect2(Vector2.ZERO, Vector2(48.0, 62.0)).encloses(resource_icon_rect), "resource icon protrudes outside its frame socket")
 	for countdown_name in ["3", "2", "1", "go"]:
 		var countdown_path := "res://assets/ui/countdown_%s.png" % countdown_name
 		_expect(ResourceLoader.exists(countdown_path), "countdown asset %s was not imported" % countdown_name)
@@ -351,6 +353,8 @@ func _test_character_asset_system(game: Node) -> void:
 	_expect(game.character_ids.size() >= 12, "new character folders were not discovered")
 	_expect(game.character_ids[0] == "default", "character metadata order was not applied")
 	_expect(game.character_names.get("schoolgirl_bob", "") == "단발 학생", "character display name was not loaded")
+	_expect(float(game.character_body_top_fractions.get("chef", 0.0)) >= 0.2, "chef hat was not excluded from body sizing")
+	_expect(float(game.character_body_top_fractions.get("bunny_performer", 0.0)) >= 0.15, "bunny ears were not excluded from body sizing")
 	_expect(game.owned_character_ids.size() >= 3, "default-owned characters were not registered")
 	game._load_character_visuals("default")
 	_expect(game.player_sprite != null, "default character idle sprite was not loaded")
@@ -374,11 +378,11 @@ func _test_character_asset_system(game: Node) -> void:
 		_expect(idle_image.get_pixel(0, 0).a < 0.01, "%s idle sprite background is not transparent" % character_id)
 	for character_id in game.character_ids:
 		_expect(game.set_player_character(character_id), "%s character could not be measured" % character_id)
-		var draw_size: Vector2 = game.player_base_region.size * game.player_base_scale
-		var draw_area := draw_size.x * draw_size.y
-		smallest_draw_area = minf(smallest_draw_area, draw_area)
-		largest_draw_area = maxf(largest_draw_area, draw_area)
-	_expect(largest_draw_area / smallest_draw_area < 1.4, "owned character display sizes differ too much")
+		var body_top_fraction := float(game.character_body_top_fractions.get(character_id, 0.0))
+		var body_height: float = game.player_base_region.size.y * (1.0 - body_top_fraction) * game.player_base_scale
+		smallest_body_height = minf(smallest_body_height, body_height)
+		largest_body_height = maxf(largest_body_height, body_height)
+	_expect(largest_body_height / smallest_body_height < 1.08, "character body heights differ too much")
 	_expect(game.set_player_character("default"), "default character could not be selected")
 
 
