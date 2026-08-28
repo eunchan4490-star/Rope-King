@@ -35,6 +35,9 @@ const PRANKSTER_REVERSE_SPEED_MULTIPLIER := 0.45
 const PRANKSTER_MIN_NORMAL_TURNS := 1
 const PRANKSTER_MAX_NORMAL_TURNS := 3
 const WIZARD_START_SCORE := 70
+const WIZARD_BASE_SPEED_MULTIPLIER := 0.72
+const WIZARD_SPEED_MULTIPLIERS := [0.75, 1.0, 1.35, 1.8]
+const WIZARD_SPEED_PAIR_TURNS := 2
 const TURNER_EXIT_SECONDS := 0.7
 const ATHLETE_ENTRY_SECONDS := 0.8
 const COUNTDOWN_NUMBER_SECONDS := 0.65
@@ -139,6 +142,8 @@ var prankster_fake_pending := false
 var prankster_fake_mode := 0
 var prankster_fake_time := 0.0
 var wizard_rope_hidden := false
+var wizard_speed_multiplier := 1.0
+var wizard_speed_turns_remaining := 0
 var turner_transition_active := false
 var turner_transition_time := 0.0
 var turner_transition_phase := TurnerTransitionPhase.NONE
@@ -514,6 +519,8 @@ func _start_game_at_score(start_score: int) -> void:
 	if score >= WIZARD_START_SCORE:
 		turner_team = TurnerTeam.WIZARD
 		wizard_rope_hidden = false
+		wizard_speed_multiplier = _roll_wizard_speed_multiplier()
+		wizard_speed_turns_remaining = WIZARD_SPEED_PAIR_TURNS
 	elif score >= PRANKSTER_START_SCORE:
 		turner_team = TurnerTeam.PRANKSTER
 		prankster_normal_turns_remaining = _roll_prankster_normal_turns()
@@ -760,11 +767,19 @@ func _rope_is_behind() -> bool:
 func _is_jump_cue() -> bool:
 	if game_state != GameState.PLAYING or rope_speed <= 0.0 or _rope_is_behind():
 		return false
-	var seconds_until_crossing := fposmod(ROPE_CROSSING_ANGLE - rope_angle, TAU) / rope_speed
+	var seconds_until_crossing := fposmod(ROPE_CROSSING_ANGLE - rope_angle, TAU) / _cue_reference_speed()
 	return seconds_until_crossing <= balance.jump_cue_seconds
 
 
+func _cue_reference_speed() -> float:
+	if turner_team == TurnerTeam.WIZARD:
+		return rope_speed * WIZARD_BASE_SPEED_MULTIPLIER * wizard_speed_multiplier
+	return rope_speed
+
+
 func _effective_rope_speed() -> float:
+	if turner_team == TurnerTeam.WIZARD:
+		return rope_speed * WIZARD_BASE_SPEED_MULTIPLIER * wizard_speed_multiplier
 	if turner_team == TurnerTeam.SLEEPY:
 		if sleepy_fast_turns_remaining > 0:
 			return rope_speed if _is_jump_cue() else rope_speed * SLEEPY_FAST_MULTIPLIER
@@ -807,6 +822,8 @@ func _reset_turner_run() -> void:
 	prankster_fake_mode = 0
 	prankster_fake_time = 0.0
 	wizard_rope_hidden = false
+	wizard_speed_multiplier = 1.0
+	wizard_speed_turns_remaining = 0
 	turner_transition_active = false
 	turner_transition_time = 0.0
 	turner_transition_phase = TurnerTransitionPhase.NONE
@@ -857,6 +874,8 @@ func _update_turner_team_and_pattern() -> bool:
 		prankster_fake_mode = 0
 		prankster_fake_time = 0.0
 		wizard_rope_hidden = false
+		wizard_speed_multiplier = _roll_wizard_speed_multiplier()
+		wizard_speed_turns_remaining = WIZARD_SPEED_PAIR_TURNS
 		return true
 	if turner_team == TurnerTeam.SLEEPY:
 		if sleepy_fast_turns_remaining > 0:
@@ -877,6 +896,10 @@ func _update_turner_team_and_pattern() -> bool:
 		return false
 	if turner_team == TurnerTeam.WIZARD:
 		wizard_rope_hidden = not wizard_rope_hidden
+		wizard_speed_turns_remaining -= 1
+		if wizard_speed_turns_remaining <= 0:
+			wizard_speed_multiplier = _roll_wizard_speed_multiplier(wizard_speed_multiplier)
+			wizard_speed_turns_remaining = WIZARD_SPEED_PAIR_TURNS
 		return false
 
 	if challenge_pattern == 2:
@@ -910,6 +933,14 @@ func _roll_sleepy_slow_turns() -> int:
 
 func _roll_prankster_normal_turns() -> int:
 	return randi_range(PRANKSTER_MIN_NORMAL_TURNS, PRANKSTER_MAX_NORMAL_TURNS)
+
+
+func _roll_wizard_speed_multiplier(previous_multiplier := -1.0) -> float:
+	var candidates := WIZARD_SPEED_MULTIPLIERS.duplicate()
+	for index in range(candidates.size() - 1, -1, -1):
+		if is_equal_approx(float(candidates[index]), previous_multiplier):
+			candidates.remove_at(index)
+	return float(candidates[randi_range(0, candidates.size() - 1)])
 
 
 func _update_prankster_fake(delta: float) -> bool:

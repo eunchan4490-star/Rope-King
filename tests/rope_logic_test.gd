@@ -233,8 +233,14 @@ func _test_wizard_turner_pattern(game: Node) -> void:
 	_expect(game._update_turner_team_and_pattern(), "wizard did not enter at score 70")
 	_expect(int(game.turner_team) == int(game.TurnerTeam.WIZARD), "wizard team was not activated")
 	_expect(not bool(game.wizard_rope_hidden), "wizard began with an invisible turn instead of a normal turn")
+	_expect(int(game.wizard_speed_turns_remaining) == 2, "wizard random speed did not begin as a two-turn pair")
+	_expect(is_equal_approx(game.WIZARD_BASE_SPEED_MULTIPLIER, 0.72), "wizard base speed was not slowed down")
+	_expect(float(game.wizard_speed_multiplier) >= 0.75 and float(game.wizard_speed_multiplier) <= 1.8, "wizard random speed began outside the safe range")
+	var first_pair_speed: float = game.wizard_speed_multiplier
 	game._update_turner_team_and_pattern()
 	_expect(bool(game.wizard_rope_hidden), "wizard's second turn did not become invisible")
+	_expect(int(game.wizard_speed_turns_remaining) == 1, "wizard speed changed before both turns in the pair completed")
+	_expect(is_equal_approx(game.wizard_speed_multiplier, first_pair_speed), "wizard speed changed between visible and invisible turns")
 	game.game_state = game.GameState.PLAYING
 	game.rope_speed = BALANCE.speed_for_score(10)
 	game.rope_angle = PI
@@ -244,6 +250,11 @@ func _test_wizard_turner_pattern(game: Node) -> void:
 	_expect(game._wizard_rope_is_visible(), "wizard's invisible rope did not reappear for the red cue")
 	game._update_turner_team_and_pattern()
 	_expect(not bool(game.wizard_rope_hidden), "wizard rope did not return to a normal visible turn")
+	_expect(int(game.wizard_speed_turns_remaining) == 2, "wizard speed pair counter did not reset")
+	_expect(not is_equal_approx(game.wizard_speed_multiplier, first_pair_speed), "wizard randomly repeated the same speed on consecutive pairs")
+	_expect(float(game.wizard_speed_multiplier) <= 1.8, "wizard random speed exceeded 1.8x")
+	game.rope_angle = PI
+	_expect(is_equal_approx(game._effective_rope_speed(), game.rope_speed * game.WIZARD_BASE_SPEED_MULTIPLIER * game.wizard_speed_multiplier), "wizard random multiplier was not applied to rope movement")
 
 
 func _test_physical_clearance_wins(game: Node) -> void:
