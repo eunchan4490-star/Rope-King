@@ -1259,9 +1259,9 @@ func _draw_player_sprite(feet_position: Vector2, jumping: bool, velocity: float)
 		var frame := 3
 		if velocity < -650.0:
 			frame = 1
-		elif velocity < -300.0:
+		elif velocity < -150.0:
 			frame = 0
-		elif velocity < 300.0:
+		elif velocity < 180.0:
 			frame = 1
 		source_rect = player_jump_regions[frame]
 	var texture_size := source_rect.size
