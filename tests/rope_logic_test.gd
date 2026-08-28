@@ -23,6 +23,7 @@ func _init() -> void:
 	_test_character_asset_system(game)
 	_test_save_round_trip()
 	_test_return_to_main(game)
+	_test_start_at_fifty(game)
 	game.free()
 	if failures.is_empty():
 		print("ROPE LOGIC TESTS PASSED")
@@ -352,6 +353,16 @@ func _test_return_to_main(game: Node) -> void:
 	_expect(int(game.game_state) == 0, "close button did not return to title state")
 	_expect(int(game.score) == 0, "return to title did not clear current score")
 	_expect(not bool(game.is_jumping), "return to title kept the player jumping")
+
+
+func _test_start_at_fifty(game: Node) -> void:
+	game._start_game_at_score(50)
+	_expect(int(game.game_state) == int(game.GameState.PLAYING), "50-start test button did not start gameplay")
+	_expect(int(game.score) == 50, "50-start test button used the wrong score")
+	_expect(int(game.turner_team) == int(game.TurnerTeam.PRANKSTER), "50-start test button did not activate the prankster team")
+	_expect(is_equal_approx(game.rope_speed, game._base_speed_for_score(50)), "50-start test button used the wrong rope speed")
+	_expect(not bool(game.turner_transition_active), "50-start test button incorrectly played an entrance transition")
+	game._return_to_main()
 
 
 func _expect(condition: bool, message: String) -> void:

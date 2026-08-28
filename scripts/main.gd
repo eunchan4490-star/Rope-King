@@ -75,6 +75,7 @@ const DEFAULT_BALANCE := preload("res://resources/balance/default_balance.tres")
 const CHARACTER_BUTTON_RECT := Rect2(25.0, 1055.0, 210.0, 195.0)
 const UPGRADE_BUTTON_RECT := Rect2(255.0, 1055.0, 210.0, 195.0)
 const SETTINGS_BUTTON_RECT := Rect2(485.0, 1055.0, 210.0, 195.0)
+const TEST_START_50_RECT := Rect2(555.0, 670.0, 145.0, 82.0)
 const GAME_OVER_CLOSE_RECT := Rect2(548.0, 394.0, 58.0, 58.0)
 const CHARACTER_PANEL_RECT := Rect2(30.0, 185.0, 660.0, 700.0)
 const CHARACTER_PANEL_CLOSE_RECT := Rect2(616.0, 205.0, 52.0, 52.0)
@@ -385,6 +386,10 @@ func _unhandled_input(event: InputEvent) -> void:
 				_handle_character_menu_input(design_position)
 				get_viewport().set_input_as_handled()
 				return
+			if TEST_START_50_RECT.has_point(design_position):
+				_start_game_at_score(50)
+				get_viewport().set_input_as_handled()
+				return
 			if CHARACTER_BUTTON_RECT.has_point(design_position):
 				character_menu_open = true
 				get_viewport().set_input_as_handled()
@@ -500,6 +505,26 @@ func _start_game() -> void:
 	message = "줄이 빨간색일 때 점프!"
 	message_color = Color.WHITE
 	feedback.play_start()
+
+
+func _start_game_at_score(start_score: int) -> void:
+	_start_game()
+	score = maxi(0, start_score)
+	rope_speed = _base_speed_for_score(score)
+	if score >= WIZARD_START_SCORE:
+		turner_team = TurnerTeam.WIZARD
+		wizard_rope_hidden = false
+	elif score >= PRANKSTER_START_SCORE:
+		turner_team = TurnerTeam.PRANKSTER
+		prankster_normal_turns_remaining = _roll_prankster_normal_turns()
+	elif score >= SLEEPY_START_SCORE:
+		turner_team = TurnerTeam.SLEEPY
+		sleepy_slow_turns_remaining = _roll_sleepy_slow_turns()
+	elif score >= TURNER_CHANGE_INTERVAL:
+		turner_team = TurnerTeam.ATHLETE
+		athlete_normal_turns_remaining = ATHLETE_NORMAL_TURNS
+	message = "테스트 모드: %d회부터 시작!" % score
+	message_color = Color("ffd84a")
 
 
 func _return_to_main() -> void:
@@ -1286,8 +1311,17 @@ func _draw_main_menu(font: Font) -> void:
 	_draw_menu_asset_or_fallback(character_button_texture, character_button_used_region, font, CHARACTER_BUTTON_RECT, "CHARACTER", "캐릭터", Color("ef8f6b"))
 	_draw_menu_asset_or_fallback(upgrade_button_texture, upgrade_button_used_region, font, UPGRADE_BUTTON_RECT, "UPGRADE", "업그레이드", Color("65b7f3"))
 	_draw_menu_asset_or_fallback(settings_button_texture, settings_button_used_region, font, SETTINGS_BUTTON_RECT, "SETTINGS", "설정", Color("9b8bea"))
+	_draw_test_start_button(font)
 	if not menu_notice.is_empty():
 		draw_string(font, Vector2(0, 925), menu_notice, HORIZONTAL_ALIGNMENT_CENTER, DESIGN_SIZE.x, 22, Color("ffd166"))
+
+
+func _draw_test_start_button(font: Font) -> void:
+	draw_rect(TEST_START_50_RECT, Color("3b2119"), true)
+	draw_rect(TEST_START_50_RECT.grow(-5.0), Color("ffd23f"), true)
+	draw_rect(TEST_START_50_RECT.grow(-9.0), Color("7a4317"), false, 3.0)
+	draw_string(font, Vector2(TEST_START_50_RECT.position.x, TEST_START_50_RECT.position.y + 31.0), "TEST", HORIZONTAL_ALIGNMENT_CENTER, TEST_START_50_RECT.size.x, 18, Color("633913"))
+	draw_string(font, Vector2(TEST_START_50_RECT.position.x, TEST_START_50_RECT.position.y + 62.0), "50 START", HORIZONTAL_ALIGNMENT_CENTER, TEST_START_50_RECT.size.x, 25, Color("3b2119"))
 
 
 func _draw_rotated_texture_region(texture: Texture2D, target: Rect2, source: Rect2, rotation: float, modulate: Color = Color.WHITE) -> void:
