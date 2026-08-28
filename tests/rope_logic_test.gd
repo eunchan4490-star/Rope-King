@@ -346,7 +346,7 @@ func _test_character_asset_system(game: Node) -> void:
 	_expect(ResourceLoader.exists("res://assets/characters/default/jump_sheet.png"), "default jump asset path was not imported")
 	_expect(game._is_safe_character_id("default"), "default character id was rejected")
 	game._load_character_catalog()
-	_expect(game.character_ids.size() >= 3, "character folders were not discovered")
+	_expect(game.character_ids.size() >= 12, "new character folders were not discovered")
 	_expect(game.character_ids[0] == "default", "character metadata order was not applied")
 	_expect(game.character_names.get("schoolgirl_bob", "") == "단발 학생", "character display name was not loaded")
 	_expect(game.owned_character_ids.size() >= 3, "default-owned characters were not registered")
@@ -358,6 +358,15 @@ func _test_character_asset_system(game: Node) -> void:
 	for character_id in ["schoolgirl_ponytail", "schoolgirl_bob"]:
 		_expect(game.set_player_character(character_id), "%s character could not be selected" % character_id)
 		_expect(game.player_jump_regions.size() == 4, "%s jump sheet was not split into four frames" % character_id)
+	for character_id in ["chef", "astronaut", "grandma_hiker", "retro_robot", "ballerina", "dino_onesie", "bunny_performer", "pastel_goth", "cafe_maid"]:
+		var idle_path := "res://assets/characters/%s/idle.png" % character_id
+		var jump_path := "res://assets/characters/%s/jump_sheet.png" % character_id
+		_expect(ResourceLoader.exists(idle_path), "%s idle sprite was not imported" % character_id)
+		_expect(ResourceLoader.exists(jump_path), "%s jump sheet was not imported" % character_id)
+		_expect(game.set_player_character(character_id), "%s character could not be selected" % character_id)
+		_expect(game.player_jump_regions.size() == 4, "%s jump sheet was not split into four frames" % character_id)
+		var idle_image := (load(idle_path) as Texture2D).get_image()
+		_expect(idle_image.get_pixel(0, 0).a < 0.01, "%s idle sprite background is not transparent" % character_id)
 	_expect(game.set_player_character("default"), "default character could not be selected")
 
 
