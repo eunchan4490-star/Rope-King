@@ -68,6 +68,7 @@ const TAP_PROMPT_PATH := "res://assets/ui/tap_to_start.png"
 const COIN_ICON_PATH := "res://assets/ui/coin_icon.png"
 const RUBY_ICON_PATH := "res://assets/ui/ruby_icon.png"
 const GAME_OVER_PANEL_PATH := "res://assets/ui/game_over_panel.png"
+const GOLD_DIGIT_SHEET_PATH := "res://assets/ui/gold_digit_sheet.png"
 const COUNTDOWN_PATHS := [
 	"res://assets/ui/countdown_3.png",
 	"res://assets/ui/countdown_2.png",
@@ -120,6 +121,7 @@ const CHARACTER_CARD_RECTS := [
 @export var coin_icon_texture: Texture2D
 @export var ruby_icon_texture: Texture2D
 @export var game_over_panel_texture: Texture2D
+@export var gold_digit_sheet_texture: Texture2D
 @export_group("Game Balance")
 @export var balance: RopeGameBalance = DEFAULT_BALANCE
 
@@ -203,6 +205,7 @@ var tap_prompt_used_region := Rect2()
 var coin_icon_used_region := Rect2()
 var ruby_icon_used_region := Rect2()
 var game_over_panel_used_region := Rect2()
+var gold_digit_regions: Array[Rect2] = []
 var countdown_textures: Array[Texture2D] = []
 var countdown_used_regions: Array[Rect2] = []
 var design_draw_offset := Vector2.ZERO
@@ -244,6 +247,8 @@ func _ready() -> void:
 		ruby_icon_texture = load(RUBY_ICON_PATH) as Texture2D
 	if game_over_panel_texture == null and ResourceLoader.exists(GAME_OVER_PANEL_PATH):
 		game_over_panel_texture = load(GAME_OVER_PANEL_PATH) as Texture2D
+	if gold_digit_sheet_texture == null and ResourceLoader.exists(GOLD_DIGIT_SHEET_PATH):
+		gold_digit_sheet_texture = load(GOLD_DIGIT_SHEET_PATH) as Texture2D
 	character_button_used_region = _texture_used_region(character_button_texture)
 	upgrade_button_used_region = _texture_used_region(upgrade_button_texture)
 	settings_button_used_region = _texture_used_region(settings_button_texture)
@@ -253,6 +258,7 @@ func _ready() -> void:
 	coin_icon_used_region = _texture_used_region(coin_icon_texture)
 	ruby_icon_used_region = _texture_used_region(ruby_icon_texture)
 	game_over_panel_used_region = _texture_used_region(game_over_panel_texture)
+	_prepare_gold_digit_regions()
 	_prepare_countdown_visuals()
 	get_viewport().size_changed.connect(queue_redraw)
 	queue_redraw()
@@ -1299,9 +1305,9 @@ func _draw_hud() -> void:
 		return
 	draw_string(font, Vector2(42, 82), "줄넘킹", HORIZONTAL_ALIGNMENT_LEFT, -1, 34, Color("91a4cc"))
 	var score_cell_size := 10.0 + clampf(flash_time / 0.22, 0.0, 1.0) * 2.0
-	_draw_pixel_number(str(score), Vector2(42.0, 102.0), score_cell_size, Color.WHITE, Color("263a57"))
+	_draw_image_number(str(score), Vector2(42.0, 101.0), score_cell_size * 7.0)
 	draw_string(font, Vector2(480, 82), "BEST", HORIZONTAL_ALIGNMENT_LEFT, -1, 24, Color("fff0a6"))
-	_draw_pixel_number(str(best_score), Vector2(570.0, 58.0), 4.0, Color("ffd23f"), Color("633913"))
+	_draw_image_number(str(best_score), Vector2(570.0, 54.0), 31.0)
 	if game_state != GameState.GAME_OVER:
 		draw_string(font, Vector2(0, 1120), message, HORIZONTAL_ALIGNMENT_CENTER, DESIGN_SIZE.x, 31, message_color)
 	var control_text := "화면 터치 · 마우스 클릭 · SPACE"
@@ -1351,7 +1357,7 @@ func _draw_main_menu(font: Font) -> void:
 	else:
 		draw_rect(best_rect, Color(0.23, 0.14, 0.09, 0.88), true)
 	draw_string(font, Vector2(278.0, 347.0), "최고 기록", HORIZONTAL_ALIGNMENT_CENTER, 105.0, 21, Color("fff0a6"))
-	_draw_pixel_number(str(best_score), Vector2(394.0, 324.0), 4.0, Color("ffd23f"), Color("633913"), 62.0, HORIZONTAL_ALIGNMENT_CENTER)
+	_draw_image_number(str(best_score), Vector2(390.0, 326.0), 22.0, 76.0, HORIZONTAL_ALIGNMENT_CENTER)
 
 	var prompt_alpha := 0.78 + sin(Time.get_ticks_msec() * 0.004) * 0.18
 	var prompt_rect := Rect2(225.0, 505.0, 340.0, 128.0)
@@ -1454,18 +1460,85 @@ func _character_preview_texture(character_id: String) -> Texture2D:
 
 
 func _draw_resource_counter(font: Font, rect: Rect2, icon_texture: Texture2D, icon_region: Rect2, amount: int) -> void:
+	var frame_rect := rect
 	if resource_counter_frame_texture != null and resource_counter_frame_used_region.size.x > 0.0:
-		draw_texture_rect_region(resource_counter_frame_texture, rect, resource_counter_frame_used_region)
+		# Preserve the frame artwork's original aspect ratio. The counter owns the
+		# full `rect`, but unused width intentionally stays empty on the right.
+		var original_aspect := resource_counter_frame_used_region.size.x / resource_counter_frame_used_region.size.y
+		frame_rect.size.x = minf(rect.size.x, rect.size.y * original_aspect)
+		draw_texture_rect_region(resource_counter_frame_texture, frame_rect, resource_counter_frame_used_region)
 	else:
-		draw_rect(rect, Color(0.23, 0.14, 0.09, 0.92), true)
-		draw_rect(rect, Color("ffd23f"), false, 4.0)
-	var icon_rect := Rect2(rect.position + Vector2(9.0, 7.0), Vector2(48.0, 48.0))
+		frame_rect.size.x = minf(rect.size.x, 222.0)
+		draw_rect(frame_rect, Color(0.23, 0.14, 0.09, 0.92), true)
+		draw_rect(frame_rect, Color("ffd23f"), false, 4.0)
+	var icon_rect := Rect2(frame_rect.position + Vector2(9.0, 7.0), Vector2(48.0, 48.0))
 	if icon_texture != null and icon_region.size.x > 0.0:
 		draw_texture_rect_region(icon_texture, icon_rect, icon_region)
 	# The icon already identifies the resource. A single large number stays clear
 	# on narrow mobile screens and cannot collide with a second label line.
-	var amount_position := Vector2(rect.position.x + 76.0, rect.position.y + 19.0)
-	_draw_pixel_number(str(amount), amount_position, 4.0, Color.WHITE, Color("3b2119"))
+	var amount_position := Vector2(frame_rect.position.x + 76.0, frame_rect.position.y + 19.0)
+	_draw_image_number(str(amount), amount_position - Vector2(0.0, 4.0), 34.0)
+
+
+func _prepare_gold_digit_regions() -> void:
+	gold_digit_regions.clear()
+	if gold_digit_sheet_texture == null:
+		return
+	var image := gold_digit_sheet_texture.get_image()
+	if image == null or image.is_empty():
+		return
+	var image_size := image.get_size()
+	for digit in range(10):
+		var column := digit % 5
+		var row := digit / 5
+		var cell_start := Vector2i(
+			roundi(float(column) * image_size.x / 5.0),
+			roundi(float(row) * image_size.y / 2.0)
+		)
+		var cell_end := Vector2i(
+			roundi(float(column + 1) * image_size.x / 5.0),
+			roundi(float(row + 1) * image_size.y / 2.0)
+		)
+		# Ignore the generator's nearly invisible fringe pixels; otherwise those
+		# pixels become fake whitespace and split numbers such as 130 into 13 0.
+		var visible := _image_visible_region(image, Rect2i(cell_start, cell_end - cell_start), 96)
+		gold_digit_regions.append(Rect2(visible))
+
+
+func _draw_image_number(text: String, position: Vector2, height: float, align_width := 0.0, alignment := HORIZONTAL_ALIGNMENT_LEFT) -> void:
+	if gold_digit_sheet_texture == null or gold_digit_regions.size() != 10:
+		_draw_pixel_number(text, position, height / 7.0, Color("ffd23f"), Color("633913"), align_width, alignment)
+		return
+	# The sprites already include a thick down-right shadow, so an additional
+	# typographic gap makes a continuous value look split (for example, 13 0).
+	var gap := -height * 0.22
+	var total_width := _image_number_width(text, height, gap)
+	var draw_x := position.x
+	if alignment == HORIZONTAL_ALIGNMENT_CENTER:
+		draw_x += (align_width - total_width) * 0.5
+	elif alignment == HORIZONTAL_ALIGNMENT_RIGHT:
+		draw_x += align_width - total_width
+	for character in text:
+		var digit := character.to_int()
+		if digit < 0 or digit >= gold_digit_regions.size():
+			continue
+		var source := gold_digit_regions[digit]
+		var width := height * source.size.x / source.size.y
+		draw_texture_rect_region(gold_digit_sheet_texture, Rect2(Vector2(draw_x, position.y), Vector2(width, height)), source)
+		draw_x += width + gap
+
+
+func _image_number_width(text: String, height: float, gap: float) -> float:
+	var width := 0.0
+	var drawn_digits := 0
+	for character in text:
+		var digit := character.to_int()
+		if digit < 0 or digit >= gold_digit_regions.size():
+			continue
+		var source := gold_digit_regions[digit]
+		width += height * source.size.x / source.size.y
+		drawn_digits += 1
+	return width + maxf(0.0, drawn_digits - 1) * gap
 
 
 func _draw_pixel_number(text: String, position: Vector2, cell_size: float, face_color: Color, outline_color: Color, align_width := 0.0, alignment := HORIZONTAL_ALIGNMENT_LEFT) -> void:
