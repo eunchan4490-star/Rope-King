@@ -39,6 +39,9 @@ const WIZARD_BASE_SPEED_MULTIPLIER := 0.60
 const WIZARD_SPEED_MULTIPLIERS := [0.75, 1.0, 1.35, 1.8]
 const WIZARD_SPEED_PAIR_TURNS := 2
 const WIZARD_SIZE_MULTIPLIERS := [0.80, 1.0, 1.25]
+const WIZARD_GHOST_CORE_ALPHA := 0.04
+const WIZARD_GHOST_HIGHLIGHT_ALPHA := 0.07
+const WIZARD_GHOST_OUTLINE_ALPHA := 0.02
 const TURNER_EXIT_SECONDS := 0.7
 const ATHLETE_ENTRY_SECONDS := 0.8
 const COUNTDOWN_NUMBER_SECONDS := 0.65
@@ -725,10 +728,10 @@ func _draw_rope() -> void:
 	var outline_color := Color("3b2119")
 	var shadow_color := Color(0, 0, 0, 0.22)
 	if wizard_ghosted:
-		rope_color = Color(0.20, 0.72, 1.0, 0.34)
-		highlight_color = Color(0.62, 0.94, 1.0, 0.46)
-		outline_color = Color(0.05, 0.22, 0.42, 0.28)
-		shadow_color = Color(0.02, 0.15, 0.30, 0.12)
+		rope_color = Color(0.20, 0.72, 1.0, WIZARD_GHOST_CORE_ALPHA)
+		highlight_color = Color(0.62, 0.94, 1.0, WIZARD_GHOST_HIGHLIGHT_ALPHA)
+		outline_color = Color(0.05, 0.22, 0.42, WIZARD_GHOST_OUTLINE_ALPHA)
+		shadow_color = Color(0.02, 0.15, 0.30, 0.0)
 
 	# Draw in separate passes so the square pieces merge into one outlined pixel rope.
 	for point in pixel_points:
@@ -757,9 +760,9 @@ func _rope_midpoint_y(angle: float) -> float:
 
 
 func _draw_pixel_rope_grip(center: Vector2, ghosted := false) -> void:
-	var outline := Color(0.05, 0.22, 0.42, 0.28) if ghosted else Color("3b2119")
-	var core := Color(0.20, 0.72, 1.0, 0.34) if ghosted else Color("f6b73c")
-	var shine := Color(0.62, 0.94, 1.0, 0.46) if ghosted else Color("ffe27a")
+	var outline := Color(0.05, 0.22, 0.42, WIZARD_GHOST_OUTLINE_ALPHA) if ghosted else Color("3b2119")
+	var core := Color(0.20, 0.72, 1.0, WIZARD_GHOST_CORE_ALPHA) if ghosted else Color("f6b73c")
+	var shine := Color(0.62, 0.94, 1.0, WIZARD_GHOST_HIGHLIGHT_ALPHA) if ghosted else Color("ffe27a")
 	draw_rect(Rect2(center - Vector2(9.0, 9.0), Vector2(18.0, 18.0)), outline)
 	draw_rect(Rect2(center - Vector2(6.0, 6.0), Vector2(12.0, 12.0)), core)
 	draw_rect(Rect2(center + Vector2(-4.0, -4.0), Vector2(4.0, 4.0)), shine)
