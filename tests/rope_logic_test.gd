@@ -244,10 +244,10 @@ func _test_wizard_turner_pattern(game: Node) -> void:
 	game.game_state = game.GameState.PLAYING
 	game.rope_speed = BALANCE.speed_for_score(10)
 	game.rope_angle = PI
-	_expect(not game._wizard_rope_is_visible(), "wizard's hidden rope remained visible outside the red cue")
+	_expect(game._wizard_rope_is_ghosted(), "wizard's hidden turn did not switch to the blue translucent rope")
 	game.rope_angle = fposmod(TARGET_ANGLE - game.rope_speed * BALANCE.jump_cue_seconds * 0.5, TAU)
 	_expect(game._is_jump_cue(), "wizard visibility test did not enter the red cue")
-	_expect(game._wizard_rope_is_visible(), "wizard's invisible rope did not reappear for the red cue")
+	_expect(not game._wizard_rope_is_ghosted(), "wizard's translucent rope did not become solid for the red cue")
 	game._update_turner_team_and_pattern()
 	_expect(not bool(game.wizard_rope_hidden), "wizard rope did not return to a normal visible turn")
 	_expect(int(game.wizard_speed_turns_remaining) == 2, "wizard speed pair counter did not reset")

@@ -701,8 +701,6 @@ func _draw_cover_texture(texture: Texture2D, target: Rect2) -> void:
 
 
 func _draw_rope() -> void:
-	if not _wizard_rope_is_visible():
-		return
 	var midpoint_y := _rope_midpoint_y(rope_angle)
 	var pixel_points := PackedVector2Array()
 	for i in range(97):
@@ -718,13 +716,20 @@ func _draw_rope() -> void:
 			pixel_points.append(pixel_point)
 
 	var show_jump_cue := _is_jump_cue()
+	var wizard_ghosted := _wizard_rope_is_ghosted()
 	var rope_color := Color("ff334f") if show_jump_cue else Color("f6b73c")
 	var highlight_color := Color("ff9a8d") if show_jump_cue else Color("ffe27a")
 	var outline_color := Color("3b2119")
+	var shadow_color := Color(0, 0, 0, 0.22)
+	if wizard_ghosted:
+		rope_color = Color(0.20, 0.72, 1.0, 0.34)
+		highlight_color = Color(0.62, 0.94, 1.0, 0.46)
+		outline_color = Color(0.05, 0.22, 0.42, 0.28)
+		shadow_color = Color(0.02, 0.15, 0.30, 0.12)
 
 	# Draw in separate passes so the square pieces merge into one outlined pixel rope.
 	for point in pixel_points:
-		draw_rect(Rect2(point - ROPE_PIXEL_OUTLINE_SIZE * 0.5 + Vector2(2.0, 3.0), ROPE_PIXEL_OUTLINE_SIZE), Color(0, 0, 0, 0.22))
+		draw_rect(Rect2(point - ROPE_PIXEL_OUTLINE_SIZE * 0.5 + Vector2(2.0, 3.0), ROPE_PIXEL_OUTLINE_SIZE), shadow_color)
 	for point in pixel_points:
 		draw_rect(Rect2(point - ROPE_PIXEL_OUTLINE_SIZE * 0.5, ROPE_PIXEL_OUTLINE_SIZE), outline_color)
 	for point in pixel_points:
@@ -732,12 +737,12 @@ func _draw_rope() -> void:
 	for i in range(0, pixel_points.size(), 3):
 		draw_rect(Rect2(pixel_points[i] + Vector2(-3.0, -3.0), Vector2(3.0, 3.0)), highlight_color)
 
-	_draw_pixel_rope_grip(LEFT_HAND)
-	_draw_pixel_rope_grip(RIGHT_HAND)
+	_draw_pixel_rope_grip(LEFT_HAND, wizard_ghosted)
+	_draw_pixel_rope_grip(RIGHT_HAND, wizard_ghosted)
 
 
-func _wizard_rope_is_visible() -> bool:
-	return turner_team != TurnerTeam.WIZARD or not wizard_rope_hidden or _is_jump_cue()
+func _wizard_rope_is_ghosted() -> bool:
+	return turner_team == TurnerTeam.WIZARD and wizard_rope_hidden and not _is_jump_cue()
 
 
 func _rope_midpoint_y(angle: float) -> float:
@@ -746,10 +751,13 @@ func _rope_midpoint_y(angle: float) -> float:
 	return LEFT_HAND.y + vertical_phase * radius
 
 
-func _draw_pixel_rope_grip(center: Vector2) -> void:
-	draw_rect(Rect2(center - Vector2(9.0, 9.0), Vector2(18.0, 18.0)), Color("3b2119"))
-	draw_rect(Rect2(center - Vector2(6.0, 6.0), Vector2(12.0, 12.0)), Color("f6b73c"))
-	draw_rect(Rect2(center + Vector2(-4.0, -4.0), Vector2(4.0, 4.0)), Color("ffe27a"))
+func _draw_pixel_rope_grip(center: Vector2, ghosted := false) -> void:
+	var outline := Color(0.05, 0.22, 0.42, 0.28) if ghosted else Color("3b2119")
+	var core := Color(0.20, 0.72, 1.0, 0.34) if ghosted else Color("f6b73c")
+	var shine := Color(0.62, 0.94, 1.0, 0.46) if ghosted else Color("ffe27a")
+	draw_rect(Rect2(center - Vector2(9.0, 9.0), Vector2(18.0, 18.0)), outline)
+	draw_rect(Rect2(center - Vector2(6.0, 6.0), Vector2(12.0, 12.0)), core)
+	draw_rect(Rect2(center + Vector2(-4.0, -4.0), Vector2(4.0, 4.0)), shine)
 
 
 func _draw_hit_feedback() -> void:
