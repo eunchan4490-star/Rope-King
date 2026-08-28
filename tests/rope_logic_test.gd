@@ -80,7 +80,14 @@ func _test_athlete_turner_pattern(game: Node) -> void:
 	_expect(bool(game.turner_transition_active), "athlete entrance transition did not start")
 	_expect(not bool(game.accepting_input), "jump input stayed active during athlete entrance")
 	_expect(is_equal_approx(game.rope_angle, PI), "rope was not moved behind the player for athlete entrance")
-	game._process(game.TURNER_TRANSITION_SECONDS + 0.01)
+	_expect(int(game.turner_transition_phase) == 1, "student exit was not the first transition phase")
+	game._process(game.TURNER_EXIT_SECONDS + 0.01)
+	_expect(bool(game.turner_transition_active), "transition ended before athlete entrance and countdown")
+	_expect(int(game.turner_transition_phase) == 2, "athlete entrance did not follow student exit")
+	game._process(game.COUNTDOWN_TOTAL_SECONDS - 0.02)
+	_expect(bool(game.turner_transition_active), "game resumed before GO held for one second")
+	_expect(not bool(game.accepting_input), "jump input resumed while GO was still visible")
+	game._process(0.02)
 	_expect(not bool(game.turner_transition_active), "athlete entrance transition did not finish")
 	_expect(bool(game.accepting_input), "jump input did not resume after athlete entrance")
 	game.score = 11
@@ -154,6 +161,13 @@ func _test_character_asset_system(game: Node) -> void:
 	_expect(ResourceLoader.exists("res://assets/ui/tap_to_start.png"), "tap-to-start prompt asset was not imported")
 	_expect(ResourceLoader.exists("res://assets/ui/coin_icon.png"), "coin icon asset was not imported")
 	_expect(ResourceLoader.exists("res://assets/ui/ruby_icon.png"), "ruby icon asset was not imported")
+	for countdown_name in ["3", "2", "1", "go"]:
+		var countdown_path := "res://assets/ui/countdown_%s.png" % countdown_name
+		_expect(ResourceLoader.exists(countdown_path), "countdown asset %s was not imported" % countdown_name)
+		var countdown_texture := load(countdown_path) as Texture2D
+		_expect(countdown_texture != null, "countdown texture %s did not load" % countdown_name)
+		if countdown_texture != null:
+			_expect(countdown_texture.get_image().get_pixel(0, 0).a < 0.01, "countdown asset %s background is not transparent" % countdown_name)
 	_expect(ResourceLoader.exists("res://assets/characters/default/idle.png"), "default idle asset path was not imported")
 	_expect(ResourceLoader.exists("res://assets/characters/default/jump_sheet.png"), "default jump asset path was not imported")
 	_expect(game._is_safe_character_id("default"), "default character id was rejected")

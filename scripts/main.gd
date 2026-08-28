@@ -2,6 +2,7 @@ extends Node2D
 
 enum GameState { TITLE, PLAYING, HIT, GAME_OVER }
 enum TurnerTeam { STUDENT, ATHLETE }
+enum TurnerTransitionPhase { NONE, STUDENT_EXIT, ATHLETE_ENTRY_COUNTDOWN }
 
 const DESIGN_SIZE := Vector2(720.0, 1280.0)
 const PLAYER_X := 360.0
@@ -19,7 +20,11 @@ const ROPE_PIXEL_CORE_SIZE := Vector2(8.0, 8.0)
 const HIT_REVEAL_SECONDS := 0.42
 const TURNER_CHANGE_INTERVAL := 10
 const ATHLETE_NORMAL_TURNS := 2
-const TURNER_TRANSITION_SECONDS := 1.0
+const TURNER_EXIT_SECONDS := 0.7
+const ATHLETE_ENTRY_SECONDS := 0.8
+const COUNTDOWN_NUMBER_SECONDS := 0.65
+const COUNTDOWN_GO_SECONDS := 1.0
+const COUNTDOWN_TOTAL_SECONDS := COUNTDOWN_NUMBER_SECONDS * 3.0 + COUNTDOWN_GO_SECONDS
 const LEFT_TURNER_FEET := Vector2(108.0, TURNER_GROUND_Y)
 const RIGHT_TURNER_FEET := Vector2(612.0, TURNER_GROUND_Y)
 const LEFT_TURNER_ENTRY_FEET := Vector2(-120.0, TURNER_GROUND_Y)
@@ -38,6 +43,12 @@ const RESOURCE_COUNTER_FRAME_PATH := "res://assets/ui/resource_counter_frame.png
 const TAP_PROMPT_PATH := "res://assets/ui/tap_to_start.png"
 const COIN_ICON_PATH := "res://assets/ui/coin_icon.png"
 const RUBY_ICON_PATH := "res://assets/ui/ruby_icon.png"
+const COUNTDOWN_PATHS := [
+	"res://assets/ui/countdown_3.png",
+	"res://assets/ui/countdown_2.png",
+	"res://assets/ui/countdown_1.png",
+	"res://assets/ui/countdown_go.png",
+]
 const DEFAULT_CHARACTER_ID := "default"
 const JUMP_FRAME_COUNT := 4
 const CHARACTERS_PER_PAGE := 3
@@ -99,6 +110,7 @@ var athlete_burst_turns_remaining := 0
 var athlete_next_burst_count := 2
 var turner_transition_active := false
 var turner_transition_time := 0.0
+var turner_transition_phase := TurnerTransitionPhase.NONE
 var flash_time := 0.0
 var message := "화면을 눌러 시작"
 var message_color := Color.WHITE
@@ -139,6 +151,8 @@ var resource_counter_frame_used_region := Rect2()
 var tap_prompt_used_region := Rect2()
 var coin_icon_used_region := Rect2()
 var ruby_icon_used_region := Rect2()
+var countdown_textures: Array[Texture2D] = []
+var countdown_used_regions: Array[Rect2] = []
 
 
 func _ready() -> void:
@@ -182,6 +196,7 @@ func _ready() -> void:
 	tap_prompt_used_region = _texture_used_region(tap_prompt_texture)
 	coin_icon_used_region = _texture_used_region(coin_icon_texture)
 	ruby_icon_used_region = _texture_used_region(ruby_icon_texture)
+	_prepare_countdown_visuals()
 	get_viewport().size_changed.connect(queue_redraw)
 	queue_redraw()
 
@@ -209,6 +224,15 @@ func _prepare_turner_visuals() -> void:
 			mirrored_athlete_turner_used_region = _texture_used_region(mirrored_athlete_turner_texture)
 
 
+func _prepare_countdown_visuals() -> void:
+	countdown_textures.clear()
+	countdown_used_regions.clear()
+	for path in COUNTDOWN_PATHS:
+		var texture := load(path) as Texture2D if ResourceLoader.exists(path) else null
+		countdown_textures.append(texture)
+		countdown_used_regions.append(_texture_used_region(texture))
+
+
 func _process(delta: float) -> void:
 	if game_state == GameState.PLAYING:
 		if is_jumping:
@@ -223,12 +247,7 @@ func _process(delta: float) -> void:
 				accepting_input = not turner_transition_active
 		if turner_transition_active:
 			accepting_input = false
-			turner_transition_time += delta
-			if turner_transition_time >= TURNER_TRANSITION_SECONDS:
-				turner_transition_active = false
-				turner_transition_time = TURNER_TRANSITION_SECONDS
-				rope_angle = PI
-				accepting_input = not is_jumping
+			_advance_turner_transition(delta)
 		else:
 			var previous_rope_angle := rope_angle
 			rope_angle = fposmod(rope_angle + _effective_rope_speed() * delta, TAU)
@@ -241,6 +260,19 @@ func _process(delta: float) -> void:
 	if flash_time > 0.0:
 		flash_time -= delta
 	queue_redraw()
+
+
+func _advance_turner_transition(delta: float) -> void:
+	turner_transition_time += delta
+	if turner_transition_phase == TurnerTransitionPhase.STUDENT_EXIT and turner_transition_time >= TURNER_EXIT_SECONDS:
+		turner_transition_time -= TURNER_EXIT_SECONDS
+		turner_transition_phase = TurnerTransitionPhase.ATHLETE_ENTRY_COUNTDOWN
+	if turner_transition_phase == TurnerTransitionPhase.ATHLETE_ENTRY_COUNTDOWN and turner_transition_time >= COUNTDOWN_TOTAL_SECONDS:
+		turner_transition_active = false
+		turner_transition_phase = TurnerTransitionPhase.NONE
+		turner_transition_time = 0.0
+		rope_angle = PI
+		accepting_input = not is_jumping
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -438,20 +470,50 @@ func _draw() -> void:
 		_draw_rope()
 	var left_turner_feet := LEFT_TURNER_FEET
 	var right_turner_feet := RIGHT_TURNER_FEET
-	if turner_transition_active:
-		var transition_progress := clampf(turner_transition_time / TURNER_TRANSITION_SECONDS, 0.0, 1.0)
-		var eased_progress := 1.0 - pow(1.0 - transition_progress, 3.0)
-		left_turner_feet = LEFT_TURNER_ENTRY_FEET.lerp(LEFT_TURNER_FEET, eased_progress)
-		right_turner_feet = RIGHT_TURNER_ENTRY_FEET.lerp(RIGHT_TURNER_FEET, eased_progress)
-	_draw_turner(left_turner_feet, false)
-	_draw_turner(right_turner_feet, true)
+	var visible_turner_team := -1
+	if turner_transition_phase == TurnerTransitionPhase.STUDENT_EXIT:
+		var exit_progress := clampf(turner_transition_time / TURNER_EXIT_SECONDS, 0.0, 1.0)
+		var eased_exit := exit_progress * exit_progress
+		left_turner_feet = LEFT_TURNER_FEET.lerp(LEFT_TURNER_ENTRY_FEET, eased_exit)
+		right_turner_feet = RIGHT_TURNER_FEET.lerp(RIGHT_TURNER_ENTRY_FEET, eased_exit)
+		visible_turner_team = TurnerTeam.STUDENT
+	elif turner_transition_phase == TurnerTransitionPhase.ATHLETE_ENTRY_COUNTDOWN:
+		var entry_progress := clampf(turner_transition_time / ATHLETE_ENTRY_SECONDS, 0.0, 1.0)
+		var eased_entry := 1.0 - pow(1.0 - entry_progress, 3.0)
+		left_turner_feet = LEFT_TURNER_ENTRY_FEET.lerp(LEFT_TURNER_FEET, eased_entry)
+		right_turner_feet = RIGHT_TURNER_ENTRY_FEET.lerp(RIGHT_TURNER_FEET, eased_entry)
+		visible_turner_team = TurnerTeam.ATHLETE
+	_draw_turner(left_turner_feet, false, visible_turner_team)
+	_draw_turner(right_turner_feet, true, visible_turner_team)
 	_draw_player()
+	if turner_transition_phase == TurnerTransitionPhase.ATHLETE_ENTRY_COUNTDOWN:
+		_draw_countdown_overlay()
 	# Draw the front half last so it visibly passes in front of the player.
 	if not turner_transition_active and not _rope_is_behind():
 		_draw_rope()
 	if game_state == GameState.HIT:
 		_draw_hit_feedback()
 	_draw_hud()
+
+
+func _draw_countdown_overlay() -> void:
+	var countdown_index := mini(3, int(turner_transition_time / COUNTDOWN_NUMBER_SECONDS))
+	if countdown_index < 0 or countdown_index >= countdown_textures.size():
+		return
+	var texture := countdown_textures[countdown_index]
+	var used_region := countdown_used_regions[countdown_index]
+	if texture == null or used_region.size.x <= 0.0 or used_region.size.y <= 0.0:
+		return
+	var target_size := Vector2(220.0, 220.0)
+	var center := Vector2(360.0, 470.0)
+	if countdown_index == 3:
+		target_size = Vector2(430.0, 240.0)
+		var go_time := turner_transition_time - COUNTDOWN_NUMBER_SECONDS * 3.0
+		center.x += roundf(sin(go_time * TAU * 14.0) * 11.0)
+	var scale_factor := minf(target_size.x / used_region.size.x, target_size.y / used_region.size.y)
+	var draw_size := used_region.size * scale_factor
+	var draw_rect := Rect2(center - draw_size * 0.5, draw_size)
+	draw_texture_rect_region(texture, draw_rect, used_region)
 
 
 func _draw_background() -> void:
@@ -593,13 +655,15 @@ func _reset_turner_run() -> void:
 	athlete_next_burst_count = 2
 	turner_transition_active = false
 	turner_transition_time = 0.0
+	turner_transition_phase = TurnerTransitionPhase.NONE
 
 
 func _start_turner_transition() -> void:
 	turner_transition_active = true
 	turner_transition_time = 0.0
+	turner_transition_phase = TurnerTransitionPhase.STUDENT_EXIT
 	accepting_input = false
-	# Resume with the rope safely behind the player after both athletes arrive.
+	# Resume with the rope safely behind the player after GO! finishes.
 	rope_angle = PI
 
 
@@ -635,14 +699,13 @@ func _angle_crossed(previous_angle: float, current_angle: float, target_angle: f
 	return target_distance > 0.0 and target_distance <= travelled
 
 
-func _draw_turner(feet: Vector2, faces_left: bool) -> void:
+func _draw_turner(feet: Vector2, faces_left: bool, display_team := -1) -> void:
 	var render_feet := feet
-	if turner_team == TurnerTeam.ATHLETE:
-		render_feet.x += -24.0 if faces_left else 24.0
-	var base_texture := athlete_turner_texture if turner_team == TurnerTeam.ATHLETE else turner_texture
-	var base_region := athlete_turner_used_region if turner_team == TurnerTeam.ATHLETE else turner_used_region
-	var mirror_texture := mirrored_athlete_turner_texture if turner_team == TurnerTeam.ATHLETE else mirrored_turner_texture
-	var mirror_region := mirrored_athlete_turner_used_region if turner_team == TurnerTeam.ATHLETE else mirrored_turner_used_region
+	var active_team := turner_team if display_team < 0 else display_team
+	var base_texture := athlete_turner_texture if active_team == TurnerTeam.ATHLETE else turner_texture
+	var base_region := athlete_turner_used_region if active_team == TurnerTeam.ATHLETE else turner_used_region
+	var mirror_texture := mirrored_athlete_turner_texture if active_team == TurnerTeam.ATHLETE else mirrored_turner_texture
+	var mirror_region := mirrored_athlete_turner_used_region if active_team == TurnerTeam.ATHLETE else mirrored_turner_used_region
 	if base_texture != null and base_region.size.x > 0.0:
 		var active_texture := mirror_texture if faces_left and mirror_texture != null else base_texture
 		var active_region := mirror_region if faces_left and mirror_texture != null else base_region
@@ -953,9 +1016,8 @@ func _draw_game_over_panel(font: Font) -> void:
 
 
 func _draw_main_menu(font: Font) -> void:
-	# Give every resource a readable name instead of relying on ambiguous initials.
-	_draw_resource_counter(font, Rect2(40.0, 22.0, 300.0, 62.0), "코인", coin_icon_texture, coin_icon_used_region, coins)
-	_draw_resource_counter(font, Rect2(380.0, 22.0, 300.0, 62.0), "루비", ruby_icon_texture, ruby_icon_used_region, gems)
+	_draw_resource_counter(font, Rect2(40.0, 22.0, 300.0, 62.0), coin_icon_texture, coin_icon_used_region, coins)
+	_draw_resource_counter(font, Rect2(380.0, 22.0, 300.0, 62.0), ruby_icon_texture, ruby_icon_used_region, gems)
 
 	_draw_main_menu_title(font)
 	var best_rect := Rect2(235.0, 306.0, 250.0, 64.0)
@@ -1049,7 +1111,7 @@ func _character_preview_texture(character_id: String) -> Texture2D:
 	return texture
 
 
-func _draw_resource_counter(font: Font, rect: Rect2, label: String, icon_texture: Texture2D, icon_region: Rect2, amount: int) -> void:
+func _draw_resource_counter(font: Font, rect: Rect2, icon_texture: Texture2D, icon_region: Rect2, amount: int) -> void:
 	if resource_counter_frame_texture != null and resource_counter_frame_used_region.size.x > 0.0:
 		draw_texture_rect_region(resource_counter_frame_texture, rect, resource_counter_frame_used_region)
 	else:
@@ -1058,8 +1120,12 @@ func _draw_resource_counter(font: Font, rect: Rect2, label: String, icon_texture
 	var icon_rect := Rect2(rect.position + Vector2(9.0, 7.0), Vector2(48.0, 48.0))
 	if icon_texture != null and icon_region.size.x > 0.0:
 		draw_texture_rect_region(icon_texture, icon_rect, icon_region)
-	draw_string(font, Vector2(rect.position.x + 61.0, rect.position.y + 25.0), label, HORIZONTAL_ALIGNMENT_LEFT, 70.0, 15, Color("f4d7a1"))
-	draw_string(font, Vector2(rect.position.x + 61.0, rect.position.y + 49.0), str(amount), HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 74.0, 24, Color.WHITE)
+	# The icon already identifies the resource. A single large number stays clear
+	# on narrow mobile screens and cannot collide with a second label line.
+	var amount_position := Vector2(rect.position.x + 76.0, rect.position.y + 43.0)
+	var amount_width := rect.size.x - 92.0
+	draw_string(font, amount_position + Vector2(2.0, 2.0), str(amount), HORIZONTAL_ALIGNMENT_LEFT, amount_width, 27, Color(0.12, 0.06, 0.03, 0.85))
+	draw_string(font, amount_position, str(amount), HORIZONTAL_ALIGNMENT_LEFT, amount_width, 27, Color.WHITE)
 
 
 func _draw_menu_asset_or_fallback(texture: Texture2D, used_region: Rect2, font: Font, rect: Rect2, title: String, subtitle: String, face_color: Color) -> void:
