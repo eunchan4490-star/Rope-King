@@ -1425,7 +1425,14 @@ func _image_visible_region(image: Image, search_rect: Rect2i, alpha_threshold: i
 func _scale_for_region(region: Rect2) -> float:
 	if region.size.x <= 0.0 or region.size.y <= 0.0:
 		return 1.0
-	return minf(player_sprite_max_size.y / region.size.y, player_sprite_max_size.x / region.size.x)
+	# Matching only the maximum height made narrow characters look much smaller
+	# than broad chibi characters. Normalize their visible area while preserving
+	# the source aspect ratio, then cap extreme widths and heights.
+	var target_area := player_sprite_max_size.x * player_sprite_max_size.y * 0.72
+	var area_scale := sqrt(target_area / (region.size.x * region.size.y))
+	var width_limit := player_sprite_max_size.x / region.size.x
+	var height_limit := player_sprite_max_size.y * 1.15 / region.size.y
+	return minf(area_scale, minf(width_limit, height_limit))
 
 
 func _character_asset_path(character_id: String, file_name: String) -> String:

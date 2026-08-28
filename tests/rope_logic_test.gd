@@ -309,6 +309,8 @@ func _test_coop_mode(game: Node) -> void:
 
 
 func _test_character_asset_system(game: Node) -> void:
+	var smallest_draw_area := INF
+	var largest_draw_area := 0.0
 	game._prepare_turner_visuals()
 	_expect(game.mirrored_turner_texture != null, "right rope turner mirror texture was not created")
 	_expect(game.mirrored_turner_used_region.size.x > 0.0, "right rope turner mirror region is empty")
@@ -370,6 +372,13 @@ func _test_character_asset_system(game: Node) -> void:
 		_expect(is_equal_approx(game.player_jump_scale.x, game.player_jump_scale.y), "%s jump sprite scale distorts the character aspect ratio" % character_id)
 		var idle_image := (load(idle_path) as Texture2D).get_image()
 		_expect(idle_image.get_pixel(0, 0).a < 0.01, "%s idle sprite background is not transparent" % character_id)
+	for character_id in game.character_ids:
+		_expect(game.set_player_character(character_id), "%s character could not be measured" % character_id)
+		var draw_size: Vector2 = game.player_base_region.size * game.player_base_scale
+		var draw_area := draw_size.x * draw_size.y
+		smallest_draw_area = minf(smallest_draw_area, draw_area)
+		largest_draw_area = maxf(largest_draw_area, draw_area)
+	_expect(largest_draw_area / smallest_draw_area < 1.4, "owned character display sizes differ too much")
 	_expect(game.set_player_character("default"), "default character could not be selected")
 
 
