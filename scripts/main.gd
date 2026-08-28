@@ -66,6 +66,7 @@ const RESOURCE_COUNTER_FRAME_PATH := "res://assets/ui/resource_counter_frame.png
 const TAP_PROMPT_PATH := "res://assets/ui/tap_to_start.png"
 const COIN_ICON_PATH := "res://assets/ui/coin_icon.png"
 const RUBY_ICON_PATH := "res://assets/ui/ruby_icon.png"
+const GAME_OVER_PANEL_PATH := "res://assets/ui/game_over_panel.png"
 const COUNTDOWN_PATHS := [
 	"res://assets/ui/countdown_3.png",
 	"res://assets/ui/countdown_2.png",
@@ -117,6 +118,7 @@ const CHARACTER_CARD_RECTS := [
 @export var tap_prompt_texture: Texture2D
 @export var coin_icon_texture: Texture2D
 @export var ruby_icon_texture: Texture2D
+@export var game_over_panel_texture: Texture2D
 @export_group("Game Balance")
 @export var balance: RopeGameBalance = DEFAULT_BALANCE
 
@@ -199,6 +201,7 @@ var resource_counter_frame_used_region := Rect2()
 var tap_prompt_used_region := Rect2()
 var coin_icon_used_region := Rect2()
 var ruby_icon_used_region := Rect2()
+var game_over_panel_used_region := Rect2()
 var countdown_textures: Array[Texture2D] = []
 var countdown_used_regions: Array[Rect2] = []
 var design_draw_offset := Vector2.ZERO
@@ -238,6 +241,8 @@ func _ready() -> void:
 		coin_icon_texture = load(COIN_ICON_PATH) as Texture2D
 	if ruby_icon_texture == null and ResourceLoader.exists(RUBY_ICON_PATH):
 		ruby_icon_texture = load(RUBY_ICON_PATH) as Texture2D
+	if game_over_panel_texture == null and ResourceLoader.exists(GAME_OVER_PANEL_PATH):
+		game_over_panel_texture = load(GAME_OVER_PANEL_PATH) as Texture2D
 	character_button_used_region = _texture_used_region(character_button_texture)
 	upgrade_button_used_region = _texture_used_region(upgrade_button_texture)
 	settings_button_used_region = _texture_used_region(settings_button_texture)
@@ -246,6 +251,7 @@ func _ready() -> void:
 	tap_prompt_used_region = _texture_used_region(tap_prompt_texture)
 	coin_icon_used_region = _texture_used_region(coin_icon_texture)
 	ruby_icon_used_region = _texture_used_region(ruby_icon_texture)
+	game_over_panel_used_region = _texture_used_region(game_over_panel_texture)
 	_prepare_countdown_visuals()
 	get_viewport().size_changed.connect(queue_redraw)
 	queue_redraw()
@@ -1286,14 +1292,17 @@ func _draw_hud() -> void:
 
 func _draw_game_over_panel(font: Font) -> void:
 	var panel := Rect2(95.0, 380.0, 530.0, 430.0)
-	draw_rect(panel, Color(0.035, 0.055, 0.10, 0.94), true)
-	draw_rect(panel, Color("fff0a6"), false, 7.0)
+	if game_over_panel_texture != null and game_over_panel_used_region.size.x > 0.0:
+		draw_texture_rect_region(game_over_panel_texture, panel, game_over_panel_used_region)
+	else:
+		draw_rect(panel, Color(0.035, 0.055, 0.10, 0.94), true)
+		draw_rect(panel, Color("fff0a6"), false, 7.0)
 	draw_circle(GAME_OVER_CLOSE_RECT.get_center(), 26.0, Color("ff4d67"))
 	draw_line(GAME_OVER_CLOSE_RECT.get_center() + Vector2(-9.0, -9.0), GAME_OVER_CLOSE_RECT.get_center() + Vector2(9.0, 9.0), Color.WHITE, 5.0, true)
 	draw_line(GAME_OVER_CLOSE_RECT.get_center() + Vector2(9.0, -9.0), GAME_OVER_CLOSE_RECT.get_center() + Vector2(-9.0, 9.0), Color.WHITE, 5.0, true)
-	draw_string(font, Vector2(panel.position.x, panel.position.y + 76.0), "GAME OVER", HORIZONTAL_ALIGNMENT_CENTER, panel.size.x, 54, Color("ff4d67"))
-	draw_string(font, Vector2(panel.position.x, panel.position.y + 146.0), "이번 기록  %d" % score, HORIZONTAL_ALIGNMENT_CENTER, panel.size.x, 34, Color.WHITE)
-	draw_string(font, Vector2(panel.position.x, panel.position.y + 198.0), "BEST  %d" % best_score, HORIZONTAL_ALIGNMENT_CENTER, panel.size.x, 28, Color("ffd166"))
+	draw_string(font, Vector2(panel.position.x, panel.position.y + 140.0), "GAME OVER", HORIZONTAL_ALIGNMENT_CENTER, panel.size.x, 46, Color("ff4d67"))
+	draw_string(font, Vector2(panel.position.x, panel.position.y + 190.0), "이번 기록  %d" % score, HORIZONTAL_ALIGNMENT_CENTER, panel.size.x, 30, Color.WHITE)
+	draw_string(font, Vector2(panel.position.x, panel.position.y + 230.0), "BEST  %d" % best_score, HORIZONTAL_ALIGNMENT_CENTER, panel.size.x, 26, Color("ffd166"))
 	var record_message := ""
 	if new_best_this_run:
 		record_message = "새 최고 기록!"
@@ -1301,12 +1310,12 @@ func _draw_game_over_panel(font: Font) -> void:
 		record_message = "최고 기록과 같아요!"
 	else:
 		record_message = "최고 기록까지 %d회" % maxi(1, run_start_best - score)
-	draw_string(font, Vector2(panel.position.x, panel.position.y + 252.0), record_message, HORIZONTAL_ALIGNMENT_CENTER, panel.size.x, 27, Color("73f7b4"))
-	draw_string(font, Vector2(panel.position.x, panel.position.y + 300.0), "코인  +%d" % run_coins_earned, HORIZONTAL_ALIGNMENT_CENTER, panel.size.x, 25, Color("ffd166"))
-	var retry_rect := Rect2(panel.position + Vector2(75.0, 330.0), Vector2(380.0, 72.0))
+	draw_string(font, Vector2(panel.position.x, panel.position.y + 270.0), record_message, HORIZONTAL_ALIGNMENT_CENTER, panel.size.x, 24, Color("73f7b4"))
+	draw_string(font, Vector2(panel.position.x, panel.position.y + 305.0), "코인  +%d" % run_coins_earned, HORIZONTAL_ALIGNMENT_CENTER, panel.size.x, 23, Color("ffd166"))
+	var retry_rect := Rect2(panel.position + Vector2(75.0, 330.0), Vector2(380.0, 64.0))
 	draw_rect(retry_rect, Color("ffd23f"), true)
 	draw_rect(retry_rect, Color("fff0a6"), false, 5.0)
-	draw_string(font, Vector2(retry_rect.position.x, retry_rect.position.y + 48.0), "화면을 눌러 다시 도전", HORIZONTAL_ALIGNMENT_CENTER, retry_rect.size.x, 25, Color("633913"))
+	draw_string(font, Vector2(retry_rect.position.x, retry_rect.position.y + 43.0), "화면을 눌러 다시 도전", HORIZONTAL_ALIGNMENT_CENTER, retry_rect.size.x, 24, Color("633913"))
 
 
 func _draw_main_menu(font: Font) -> void:
