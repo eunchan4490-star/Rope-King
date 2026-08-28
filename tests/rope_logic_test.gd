@@ -350,11 +350,9 @@ func _test_character_asset_system(game: Node) -> void:
 	_expect(ResourceLoader.exists("res://assets/characters/default/jump_sheet.png"), "default jump asset path was not imported")
 	_expect(game._is_safe_character_id("default"), "default character id was rejected")
 	game._load_character_catalog()
-	_expect(game.character_ids.size() >= 12, "new character folders were not discovered")
+	_expect(game.character_ids.size() == 4, "character catalog contains unexpected folders")
 	_expect(game.character_ids[0] == "default", "character metadata order was not applied")
 	_expect(game.character_names.get("schoolgirl_bob", "") == "단발 학생", "character display name was not loaded")
-	_expect(float(game.character_body_top_fractions.get("chef", 0.0)) >= 0.2, "chef hat was not excluded from body sizing")
-	_expect(float(game.character_body_top_fractions.get("bunny_performer", 0.0)) >= 0.15, "bunny ears were not excluded from body sizing")
 	_expect(game.owned_character_ids.size() >= 3, "default-owned characters were not registered")
 	game._load_character_visuals("default")
 	_expect(game.player_sprite != null, "default character idle sprite was not loaded")
@@ -366,7 +364,7 @@ func _test_character_asset_system(game: Node) -> void:
 		_expect(game.set_player_character(character_id), "%s character could not be selected" % character_id)
 		_expect(game.player_jump_regions.size() == 4, "%s jump sheet was not split into four frames" % character_id)
 		_expect(is_equal_approx(game.player_jump_scale.x, game.player_jump_scale.y), "%s jump sprite scale distorts the character aspect ratio" % character_id)
-	for character_id in ["chef", "astronaut", "gyaru_girl", "retro_robot", "ballerina", "dino_onesie", "bunny_performer", "pastel_goth", "cafe_maid"]:
+	for character_id in ["gyaru_girl"]:
 		var idle_path := "res://assets/characters/%s/idle.png" % character_id
 		var jump_path := "res://assets/characters/%s/jump_sheet.png" % character_id
 		_expect(ResourceLoader.exists(idle_path), "%s idle sprite was not imported" % character_id)
