@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://bvb4i1qct11yc"
-path="res://.godot/imported/idle.png-fe99171f96e00fe09d4a8f5bbaf3e51e.ctex"
+uid="uid://flwkg8jd8af2"
+path="res://.godot/imported/idle.png-200f8339360cd8b8f5aa00dc5c8fb6ac.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/characters/grandma_hiker/idle.png"
-dest_files=["res://.godot/imported/idle.png-fe99171f96e00fe09d4a8f5bbaf3e51e.ctex"]
+source_file="res://assets/characters/ninja_student/idle.png"
+dest_files=["res://.godot/imported/idle.png-200f8339360cd8b8f5aa00dc5c8fb6ac.ctex"]
 
 [params]
 

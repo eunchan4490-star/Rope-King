@@ -116,6 +116,9 @@ public static class RopeKingCharacterSheet
         {
             if (sheet.Width < 5 || sheet.Height < 1)
                 throw new InvalidDataException("The source sheet is too small.");
+            if (sheet.GetPixel(0, 0).A != 0 || sheet.GetPixel(sheet.Width - 1, 0).A != 0 ||
+                sheet.GetPixel(0, sheet.Height - 1).A != 0 || sheet.GetPixel(sheet.Width - 1, sheet.Height - 1).A != 0)
+                throw new InvalidDataException("The source sheet must have a transparent background at all four corners.");
             int cellWidth = sheet.Width / 5;
 
             using (var idle = new Bitmap(cellWidth, sheet.Height, PixelFormat.Format32bppArgb))

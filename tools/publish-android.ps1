@@ -18,7 +18,7 @@ foreach ($file in $Files) {
     if ([string]::IsNullOrWhiteSpace($file) -or $file -match '(^|[\\/])\.\.?([\\/]|$)') {
         throw "안전하지 않은 파일 경로입니다: $file"
     }
-    if (-not (Test-Path -LiteralPath $file)) {
+    if (-not (Test-Path -LiteralPath $file) -and -not (git ls-files --error-unmatch -- $file 2>$null)) {
         throw "커밋할 파일을 찾을 수 없습니다: $file"
     }
 }
