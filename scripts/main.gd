@@ -1,7 +1,7 @@
 extends Node2D
 
 enum GameState { TITLE, PLAYING, HIT, GAME_OVER }
-enum TurnerTeam { STUDENT, ATHLETE, SLEEPY }
+enum TurnerTeam { STUDENT, ATHLETE, SLEEPY, PRANKSTER }
 enum TurnerTransitionPhase { NONE, TURNER_EXIT, TURNER_ENTRY_COUNTDOWN }
 
 const DESIGN_SIZE := Vector2(720.0, 1280.0)
@@ -22,10 +22,15 @@ const TURNER_CHANGE_INTERVAL := 10
 const ATHLETE_NORMAL_TURNS := 2
 const ATHLETE_MAX_BURST_TURNS := 2
 const SLEEPY_START_SCORE := 30
-const SLEEPY_SLOW_TURNS := 2
+const SLEEPY_MIN_SLOW_TURNS := 1
+const SLEEPY_MAX_SLOW_TURNS := 3
 const SLEEPY_WAKE_WARNING_SECONDS := 1.0
 const SLEEPY_SLOW_MULTIPLIER := 0.34
 const SLEEPY_FAST_MULTIPLIER := 2.0
+const PRANKSTER_START_SCORE := 50
+const PRANKSTER_FAKE_HOLD_SECONDS := 0.65
+const PRANKSTER_MIN_NORMAL_TURNS := 1
+const PRANKSTER_MAX_NORMAL_TURNS := 3
 const TURNER_EXIT_SECONDS := 0.7
 const ATHLETE_ENTRY_SECONDS := 0.8
 const COUNTDOWN_NUMBER_SECONDS := 0.65
@@ -41,6 +46,7 @@ const DEFAULT_TURNER_PATH := "res://assets/turners/bowl_cut_student.png"
 const ATHLETE_TURNER_PATH := "res://assets/turners/athlete_student.png"
 const SLEEPY_TURNER_ASLEEP_PATH := "res://assets/turners/sleepy_student_asleep.png"
 const SLEEPY_TURNER_AWAKE_PATH := "res://assets/turners/sleepy_student_awake.png"
+const PRANKSTER_TURNER_PATH := "res://assets/turners/prankster_student.png"
 const MENU_CHARACTER_TEXTURE_PATH := "res://assets/ui/menu_character.png"
 const MENU_UPGRADE_TEXTURE_PATH := "res://assets/ui/menu_upgrade.png"
 const MENU_SETTINGS_TEXTURE_PATH := "res://assets/ui/menu_settings.png"
@@ -87,6 +93,7 @@ const CHARACTER_CARD_RECTS := [
 @export var athlete_turner_texture: Texture2D
 @export var sleepy_turner_asleep_texture: Texture2D
 @export var sleepy_turner_awake_texture: Texture2D
+@export var prankster_turner_texture: Texture2D
 @export_group("Menu Button Assets")
 @export var character_button_texture: Texture2D
 @export var upgrade_button_texture: Texture2D
@@ -120,6 +127,9 @@ var athlete_burst_turns_remaining := 0
 var sleepy_slow_turns_remaining := 0
 var sleepy_wake_warning_time := 0.0
 var sleepy_fast_turns_remaining := 0
+var prankster_normal_turns_remaining := 0
+var prankster_fake_pending := false
+var prankster_fake_hold_time := 0.0
 var turner_transition_active := false
 var turner_transition_time := 0.0
 var turner_transition_phase := TurnerTransitionPhase.NONE
@@ -162,6 +172,9 @@ var mirrored_sleepy_turner_asleep_used_region := Rect2()
 var sleepy_turner_awake_used_region := Rect2()
 var mirrored_sleepy_turner_awake_texture: Texture2D
 var mirrored_sleepy_turner_awake_used_region := Rect2()
+var prankster_turner_used_region := Rect2()
+var mirrored_prankster_turner_texture: Texture2D
+var mirrored_prankster_turner_used_region := Rect2()
 var character_button_used_region := Rect2()
 var upgrade_button_used_region := Rect2()
 var settings_button_used_region := Rect2()
@@ -263,6 +276,16 @@ func _prepare_turner_visuals() -> void:
 			mirrored_awake_image.flip_x()
 			mirrored_sleepy_turner_awake_texture = ImageTexture.create_from_image(mirrored_awake_image)
 			mirrored_sleepy_turner_awake_used_region = _texture_used_region(mirrored_sleepy_turner_awake_texture)
+	if prankster_turner_texture == null and ResourceLoader.exists(PRANKSTER_TURNER_PATH):
+		prankster_turner_texture = load(PRANKSTER_TURNER_PATH) as Texture2D
+	if prankster_turner_texture != null:
+		prankster_turner_used_region = _texture_used_region(prankster_turner_texture)
+		var prankster_image := prankster_turner_texture.get_image()
+		if prankster_image != null and not prankster_image.is_empty():
+			var mirrored_prankster_image := prankster_image.duplicate()
+			mirrored_prankster_image.flip_x()
+			mirrored_prankster_turner_texture = ImageTexture.create_from_image(mirrored_prankster_image)
+			mirrored_prankster_turner_used_region = _texture_used_region(mirrored_prankster_turner_texture)
 
 
 func _prepare_countdown_visuals() -> void:
@@ -291,6 +314,9 @@ func _process(delta: float) -> void:
 			_advance_turner_transition(delta)
 		else:
 			_update_sleepy_warning(delta)
+			if _update_prankster_fake(delta):
+				queue_redraw()
+				return
 			var previous_rope_angle := rope_angle
 			rope_angle = fposmod(rope_angle + _effective_rope_speed() * delta, TAU)
 			if _angle_crossed(previous_rope_angle, rope_angle, ROPE_CROSSING_ANGLE):
@@ -389,7 +415,13 @@ func _resolve_rope_crossing() -> void:
 		var team_changed := _update_turner_team_and_pattern()
 		if team_changed:
 			_start_turner_transition(previous_team)
-			message = "운동부 등장!  기본 2회 뒤 급가속!" if turner_team == TurnerTeam.ATHLETE else "졸보 등장!  깨면 1초 뒤 초고속!"
+			match turner_team:
+				TurnerTeam.ATHLETE:
+					message = "운동부 등장!  기본 2회 뒤 급가속!"
+				TurnerTeam.SLEEPY:
+					message = "졸보 등장!  깨면 1초 뒤 초고속!"
+				TurnerTeam.PRANKSTER:
+					message = "장난꾸러기 등장!  멈추는 척을 조심!"
 		elif turner_team == TurnerTeam.SLEEPY and sleepy_wake_warning_time > 0.0:
 			message = "번쩍!  1초 뒤 초고속!"
 		elif turner_team == TurnerTeam.ATHLETE and challenge_pattern == 2:
@@ -703,6 +735,8 @@ func _base_speed_for_score(current_score: int) -> float:
 	# rising baseline. Hold the score-10 baseline until the sleepy team enters.
 	if current_score >= TURNER_CHANGE_INTERVAL and current_score < SLEEPY_START_SCORE:
 		return balance.speed_for_score(TURNER_CHANGE_INTERVAL)
+	if current_score >= PRANKSTER_START_SCORE:
+		return balance.speed_for_score(TURNER_CHANGE_INTERVAL)
 	return balance.speed_for_score(current_score)
 
 
@@ -714,6 +748,9 @@ func _reset_turner_run() -> void:
 	sleepy_slow_turns_remaining = 0
 	sleepy_wake_warning_time = 0.0
 	sleepy_fast_turns_remaining = 0
+	prankster_normal_turns_remaining = 0
+	prankster_fake_pending = false
+	prankster_fake_hold_time = 0.0
 	turner_transition_active = false
 	turner_transition_time = 0.0
 	turner_transition_phase = TurnerTransitionPhase.NONE
@@ -743,19 +780,35 @@ func _update_turner_team_and_pattern() -> bool:
 	if turner_team == TurnerTeam.ATHLETE and score >= SLEEPY_START_SCORE:
 		turner_team = TurnerTeam.SLEEPY
 		challenge_pattern = 0
-		sleepy_slow_turns_remaining = SLEEPY_SLOW_TURNS
+		sleepy_slow_turns_remaining = _roll_sleepy_slow_turns()
 		sleepy_wake_warning_time = 0.0
 		sleepy_fast_turns_remaining = 0
+		return true
+	if turner_team == TurnerTeam.SLEEPY and score >= PRANKSTER_START_SCORE:
+		turner_team = TurnerTeam.PRANKSTER
+		challenge_pattern = 0
+		sleepy_wake_warning_time = 0.0
+		sleepy_fast_turns_remaining = 0
+		prankster_normal_turns_remaining = _roll_prankster_normal_turns()
+		prankster_fake_pending = false
+		prankster_fake_hold_time = 0.0
 		return true
 	if turner_team == TurnerTeam.SLEEPY:
 		if sleepy_fast_turns_remaining > 0:
 			sleepy_fast_turns_remaining -= 1
 			if sleepy_fast_turns_remaining <= 0:
-				sleepy_slow_turns_remaining = SLEEPY_SLOW_TURNS
+				# Always return to at least one sleeping turn, so awake/fast
+				# turns can never occur twice in a row.
+				sleepy_slow_turns_remaining = _roll_sleepy_slow_turns()
 		elif sleepy_wake_warning_time <= 0.0:
 			sleepy_slow_turns_remaining -= 1
 			if sleepy_slow_turns_remaining <= 0:
 				sleepy_wake_warning_time = SLEEPY_WAKE_WARNING_SECONDS
+		return false
+	if turner_team == TurnerTeam.PRANKSTER:
+		prankster_normal_turns_remaining -= 1
+		if prankster_normal_turns_remaining <= 0:
+			prankster_fake_pending = true
 		return false
 
 	if challenge_pattern == 2:
@@ -781,6 +834,33 @@ func _update_sleepy_warning(delta: float) -> void:
 		sleepy_fast_turns_remaining = 1
 		message = "지금!"
 		message_color = Color("ff5c65")
+
+
+func _roll_sleepy_slow_turns() -> int:
+	return randi_range(SLEEPY_MIN_SLOW_TURNS, SLEEPY_MAX_SLOW_TURNS)
+
+
+func _roll_prankster_normal_turns() -> int:
+	return randi_range(PRANKSTER_MIN_NORMAL_TURNS, PRANKSTER_MAX_NORMAL_TURNS)
+
+
+func _update_prankster_fake(delta: float) -> bool:
+	if turner_team != TurnerTeam.PRANKSTER:
+		return false
+	if prankster_fake_hold_time > 0.0:
+		prankster_fake_hold_time = maxf(0.0, prankster_fake_hold_time - delta)
+		if prankster_fake_hold_time <= 0.0:
+			prankster_fake_pending = false
+			prankster_normal_turns_remaining = _roll_prankster_normal_turns()
+			message = "다시 돈다!"
+			message_color = Color("73f7b4")
+		return true
+	if prankster_fake_pending and _rope_is_behind():
+		prankster_fake_hold_time = PRANKSTER_FAKE_HOLD_SECONDS
+		message = "페이크!"
+		message_color = Color("ffd84a")
+		return true
+	return false
 
 
 func _sleepy_is_awake() -> bool:
@@ -811,6 +891,11 @@ func _draw_turner(feet: Vector2, faces_left: bool, display_team := -1) -> void:
 		base_region = sleepy_turner_awake_used_region if awake else sleepy_turner_asleep_used_region
 		mirror_texture = mirrored_sleepy_turner_awake_texture if awake else mirrored_sleepy_turner_asleep_texture
 		mirror_region = mirrored_sleepy_turner_awake_used_region if awake else mirrored_sleepy_turner_asleep_used_region
+	elif active_team == TurnerTeam.PRANKSTER:
+		base_texture = prankster_turner_texture
+		base_region = prankster_turner_used_region
+		mirror_texture = mirrored_prankster_turner_texture
+		mirror_region = mirrored_prankster_turner_used_region
 	if base_texture != null and base_region.size.x > 0.0:
 		var active_texture := mirror_texture if faces_left and mirror_texture != null else base_texture
 		var active_region := mirror_region if faces_left and mirror_texture != null else base_region

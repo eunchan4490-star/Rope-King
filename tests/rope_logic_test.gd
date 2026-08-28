@@ -16,6 +16,7 @@ func _init() -> void:
 	_test_red_cue_matches_timing(game)
 	_test_athlete_turner_pattern(game)
 	_test_sleepy_turner_pattern(game)
+	_test_prankster_turner_pattern(game)
 	_test_physical_clearance_wins(game)
 	_test_visible_contact_loses(game)
 	_test_character_asset_system(game)
@@ -152,7 +153,8 @@ func _test_sleepy_turner_pattern(game: Node) -> void:
 	game.score = 30
 	_expect(game._update_turner_team_and_pattern(), "sleepy student did not enter at total score 30")
 	_expect(int(game.turner_team) == int(game.TurnerTeam.SLEEPY), "sleepy student team was not activated")
-	_expect(int(game.sleepy_slow_turns_remaining) == 2, "sleepy student did not begin with two slow turns")
+	_expect(int(game.sleepy_slow_turns_remaining) >= game.SLEEPY_MIN_SLOW_TURNS, "sleepy student began without a sleeping turn")
+	_expect(int(game.sleepy_slow_turns_remaining) <= game.SLEEPY_MAX_SLOW_TURNS, "sleepy student's initial random sleep exceeded its cap")
 	game._start_turner_transition(game.TurnerTeam.ATHLETE)
 	_expect(int(game.departing_turner_team) == int(game.TurnerTeam.ATHLETE), "athlete was not retained as the departing team")
 	game._process(game.TURNER_EXIT_SECONDS + game.COUNTDOWN_TOTAL_SECONDS + 0.01)
@@ -160,6 +162,7 @@ func _test_sleepy_turner_pattern(game: Node) -> void:
 	game.rope_speed = 4.0
 	game.rope_angle = PI
 	_expect(is_equal_approx(game._effective_rope_speed(), 4.0 * game.SLEEPY_SLOW_MULTIPLIER), "sleepy student's sleeping speed was not very slow")
+	game.sleepy_slow_turns_remaining = 2
 	game._update_turner_team_and_pattern()
 	_expect(int(game.sleepy_slow_turns_remaining) == 1, "sleepy slow phase ended before two turns")
 	game._update_turner_team_and_pattern()
@@ -172,7 +175,35 @@ func _test_sleepy_turner_pattern(game: Node) -> void:
 	_expect(is_equal_approx(game._effective_rope_speed(), 4.0 * game.SLEEPY_FAST_MULTIPLIER), "sleepy student's wake-up turn was not extremely fast")
 	game._update_turner_team_and_pattern()
 	_expect(int(game.sleepy_fast_turns_remaining) == 0, "sleepy fast phase lasted more than one turn")
-	_expect(int(game.sleepy_slow_turns_remaining) == 2, "sleepy pattern did not reset to two slow turns")
+	_expect(int(game.sleepy_slow_turns_remaining) >= 1, "sleepy pattern allowed two awake turns in a row")
+	_expect(int(game.sleepy_slow_turns_remaining) <= 3, "sleepy random sleep phase exceeded three turns")
+	for sample in range(100):
+		var sleep_turns: int = game._roll_sleepy_slow_turns()
+		_expect(sleep_turns >= 1 and sleep_turns <= 3, "sleepy random wake timing escaped the 1-to-3-turn range")
+
+
+func _test_prankster_turner_pattern(game: Node) -> void:
+	game._reset_turner_run()
+	game.turner_team = game.TurnerTeam.SLEEPY
+	game.score = 49
+	_expect(not game._update_turner_team_and_pattern(), "prankster entered before score 50")
+	game.score = 50
+	_expect(game._update_turner_team_and_pattern(), "prankster did not enter at score 50")
+	_expect(int(game.turner_team) == int(game.TurnerTeam.PRANKSTER), "prankster team was not activated")
+	_expect(int(game.prankster_normal_turns_remaining) >= 1 and int(game.prankster_normal_turns_remaining) <= 3, "prankster initial fake timing was outside 1-to-3 turns")
+	game.prankster_normal_turns_remaining = 1
+	game._update_turner_team_and_pattern()
+	_expect(bool(game.prankster_fake_pending), "prankster did not schedule a fake after its normal turns")
+	game.rope_angle = PI
+	_expect(game._update_prankster_fake(0.01), "prankster fake did not begin while the rope was behind")
+	_expect(is_equal_approx(game.prankster_fake_hold_time, game.PRANKSTER_FAKE_HOLD_SECONDS), "prankster fake hold duration was incorrect")
+	_expect(game._update_prankster_fake(game.PRANKSTER_FAKE_HOLD_SECONDS + 0.01), "prankster fake did not consume its hold frame")
+	_expect(not bool(game.prankster_fake_pending), "prankster fake stayed pending after the hold")
+	_expect(int(game.prankster_normal_turns_remaining) >= 1, "prankster allowed two fake holds in a row")
+	for sample in range(100):
+		var normal_turns: int = game._roll_prankster_normal_turns()
+		_expect(normal_turns >= 1 and normal_turns <= 3, "prankster random fake timing escaped the 1-to-3-turn range")
+	_expect(is_equal_approx(game._base_speed_for_score(50), BALANCE.speed_for_score(10)), "prankster baseline was not kept at the readable score-10 speed")
 
 
 func _test_physical_clearance_wins(game: Node) -> void:
@@ -217,6 +248,9 @@ func _test_character_asset_system(game: Node) -> void:
 	_expect(game.sleepy_turner_awake_texture != null, "sleepy awake texture was not loaded")
 	_expect(game.mirrored_sleepy_turner_asleep_texture != null, "right sleepy asleep mirror texture was not created")
 	_expect(game.mirrored_sleepy_turner_awake_texture != null, "right sleepy awake mirror texture was not created")
+	_expect(ResourceLoader.exists("res://assets/turners/prankster_student.png"), "prankster turner asset was not imported")
+	_expect(game.prankster_turner_texture != null, "prankster turner texture was not loaded")
+	_expect(game.mirrored_prankster_turner_texture != null, "right prankster mirror texture was not created")
 	_expect(ResourceLoader.exists("res://assets/ui/title_frame.png"), "HUD title frame asset was not imported")
 	_expect(ResourceLoader.exists("res://assets/ui/title_logo.png"), "HUD title logo asset was not imported")
 	_expect(ResourceLoader.exists("res://assets/ui/best_score_frame.png"), "best score frame asset was not imported")
