@@ -232,7 +232,10 @@ var design_draw_scale := 1.0
 
 
 func _ready() -> void:
-	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	# Character cutouts are supplied at a much higher resolution than their
+	# on-screen size. Linear sampling keeps their alpha edge clean while they
+	# are reduced, instead of exposing stair-stepped fringe pixels.
+	texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
 	feedback = RopeFeedbackManager.new()
 	add_child(feedback)
 	save_manager = RopeSaveManager.new()
@@ -1381,12 +1384,11 @@ func _prepare_character_regions() -> void:
 			used = cell_rect
 		player_jump_regions.append(Rect2(used))
 	if not player_jump_regions.is_empty():
-		var base_draw_size := player_base_region.size * player_base_scale
 		var jump_reference_size := player_jump_regions[0].size
-		player_jump_scale = Vector2(
-			base_draw_size.x / jump_reference_size.x,
-			base_draw_size.y / jump_reference_size.y
-		)
+		# Use one scale on both axes. The former per-axis fit forced every jump
+		# pose into the idle pose's bounding box, visibly squeezing wide poses.
+		var uniform_jump_scale := player_base_region.size.y * player_base_scale / jump_reference_size.y
+		player_jump_scale = Vector2.ONE * uniform_jump_scale
 
 
 func _texture_used_region(texture: Texture2D) -> Rect2:

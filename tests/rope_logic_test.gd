@@ -354,10 +354,12 @@ func _test_character_asset_system(game: Node) -> void:
 	_expect(game.player_sprite != null, "default character idle sprite was not loaded")
 	_expect(game.player_jump_regions.size() == 4, "jump sheet was not split into four frames")
 	_expect(game.player_jump_scale.x > 0.0 and game.player_jump_scale.y > 0.0, "character scale was not calculated")
+	_expect(is_equal_approx(game.player_jump_scale.x, game.player_jump_scale.y), "jump sprite scale distorts the character aspect ratio")
 	_expect(not game.set_player_character("../unsafe"), "unsafe character id was accepted")
 	for character_id in ["schoolgirl_ponytail", "schoolgirl_bob"]:
 		_expect(game.set_player_character(character_id), "%s character could not be selected" % character_id)
 		_expect(game.player_jump_regions.size() == 4, "%s jump sheet was not split into four frames" % character_id)
+		_expect(is_equal_approx(game.player_jump_scale.x, game.player_jump_scale.y), "%s jump sprite scale distorts the character aspect ratio" % character_id)
 	for character_id in ["chef", "astronaut", "grandma_hiker", "retro_robot", "ballerina", "dino_onesie", "bunny_performer", "pastel_goth", "cafe_maid"]:
 		var idle_path := "res://assets/characters/%s/idle.png" % character_id
 		var jump_path := "res://assets/characters/%s/jump_sheet.png" % character_id
@@ -365,6 +367,7 @@ func _test_character_asset_system(game: Node) -> void:
 		_expect(ResourceLoader.exists(jump_path), "%s jump sheet was not imported" % character_id)
 		_expect(game.set_player_character(character_id), "%s character could not be selected" % character_id)
 		_expect(game.player_jump_regions.size() == 4, "%s jump sheet was not split into four frames" % character_id)
+		_expect(is_equal_approx(game.player_jump_scale.x, game.player_jump_scale.y), "%s jump sprite scale distorts the character aspect ratio" % character_id)
 		var idle_image := (load(idle_path) as Texture2D).get_image()
 		_expect(idle_image.get_pixel(0, 0).a < 0.01, "%s idle sprite background is not transparent" % character_id)
 	_expect(game.set_player_character("default"), "default character could not be selected")
