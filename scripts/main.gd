@@ -38,7 +38,8 @@ const WIZARD_START_SCORE := 70
 const WIZARD_GHOST_CORE_ALPHA := 0.04
 const WIZARD_GHOST_HIGHLIGHT_ALPHA := 0.07
 const WIZARD_GHOST_OUTLINE_ALPHA := 0.02
-const WIZARD_ILLUSION_ANGLE_OFFSET := PI / 6.0
+const WIZARD_ILLUSION_PHASES := [PI / 6.0, PI / 3.0]
+const WIZARD_ILLUSION_LATERAL_SWAY := 28.0
 const TURNER_EXIT_SECONDS := 0.7
 const ATHLETE_ENTRY_SECONDS := 0.8
 const COUNTDOWN_NUMBER_SECONDS := 0.65
@@ -602,9 +603,10 @@ func _draw() -> void:
 
 	_draw_background()
 	_draw_ground()
-	# Draw the rear half first so only the parts covered by people are hidden.
-	if not turner_transition_active and _rope_is_behind():
-		_draw_rope()
+	# Each wizard illusion has its own phase and depth, so rear ropes are drawn
+	# independently instead of sharing the real rope's layer.
+	if not turner_transition_active:
+		_draw_rope_layer(true)
 	var left_turner_feet := LEFT_TURNER_FEET
 	var right_turner_feet := RIGHT_TURNER_FEET
 	var visible_turner_team := -1
@@ -625,9 +627,10 @@ func _draw() -> void:
 	_draw_player()
 	if turner_transition_phase == TurnerTransitionPhase.TURNER_ENTRY_COUNTDOWN:
 		_draw_countdown_overlay()
-	# Draw the front half last so it visibly passes in front of the player.
-	if not turner_transition_active and not _rope_is_behind():
-		_draw_rope()
+	# Front ropes pass over the character visually, but only the real rope owns
+	# the crossing/game-over rule.
+	if not turner_transition_active:
+		_draw_rope_layer(false)
 	if game_state == GameState.HIT:
 		_draw_hit_feedback()
 	_draw_hud()
@@ -703,7 +706,7 @@ func _draw_cover_texture(texture: Texture2D, target: Rect2) -> void:
 	draw_texture_rect_region(texture, target, source_rect)
 
 
-func _draw_rope() -> void:
+func _draw_rope_layer(draw_behind: bool) -> void:
 	var show_jump_cue := _is_jump_cue()
 	var wizard_ghosted := _wizard_rope_is_ghosted()
 	var rope_color := Color("ff334f") if show_jump_cue else Color("f6b73c")
@@ -715,23 +718,25 @@ func _draw_rope() -> void:
 		highlight_color = Color(0.62, 0.94, 1.0, WIZARD_GHOST_HIGHLIGHT_ALPHA)
 		outline_color = Color(0.05, 0.22, 0.42, WIZARD_GHOST_OUTLINE_ALPHA)
 		shadow_color = Color(0.02, 0.15, 0.30, 0.0)
+	if _wizard_illusions_are_active():
 		var illusion_core := Color(0.20, 0.72, 1.0, WIZARD_GHOST_CORE_ALPHA * 0.55)
 		var illusion_highlight := Color(0.62, 0.94, 1.0, WIZARD_GHOST_HIGHLIGHT_ALPHA * 0.45)
 		var illusion_outline := Color(0.05, 0.22, 0.42, WIZARD_GHOST_OUTLINE_ALPHA * 0.45)
-		_draw_rope_curve(rope_angle - WIZARD_ILLUSION_ANGLE_OFFSET, illusion_core, illusion_highlight, illusion_outline, Color.TRANSPARENT)
-		_draw_rope_curve(rope_angle + WIZARD_ILLUSION_ANGLE_OFFSET, illusion_core, illusion_highlight, illusion_outline, Color.TRANSPARENT)
+		for illusion_angle in _wizard_illusion_angles():
+			if _rope_angle_is_behind(illusion_angle) == draw_behind:
+				_draw_rope_curve(illusion_angle, illusion_core, illusion_highlight, illusion_outline, Color.TRANSPARENT, cos(illusion_angle) * WIZARD_ILLUSION_LATERAL_SWAY)
+	if _rope_angle_is_behind(rope_angle) == draw_behind:
+		_draw_rope_curve(rope_angle, rope_color, highlight_color, outline_color, shadow_color)
+		_draw_pixel_rope_grip(LEFT_HAND, wizard_ghosted)
+		_draw_pixel_rope_grip(RIGHT_HAND, wizard_ghosted)
 
-	_draw_rope_curve(rope_angle, rope_color, highlight_color, outline_color, shadow_color)
-	_draw_pixel_rope_grip(LEFT_HAND, wizard_ghosted)
-	_draw_pixel_rope_grip(RIGHT_HAND, wizard_ghosted)
 
-
-func _draw_rope_curve(curve_angle: float, rope_color: Color, highlight_color: Color, outline_color: Color, shadow_color: Color) -> void:
+func _draw_rope_curve(curve_angle: float, rope_color: Color, highlight_color: Color, outline_color: Color, shadow_color: Color, lateral_offset := 0.0) -> void:
 	var midpoint_y := _rope_midpoint_y(curve_angle)
 	var pixel_points := PackedVector2Array()
 	for i in range(97):
 		var t := float(i) / 96.0
-		var x := lerpf(LEFT_HAND.x, RIGHT_HAND.x, t)
+		var x := lerpf(LEFT_HAND.x, RIGHT_HAND.x, t) + 4.0 * t * (1.0 - t) * lateral_offset
 		# 4t(1-t) is zero at both hands and one at the middle.
 		var y := lerpf(LEFT_HAND.y, RIGHT_HAND.y, t) + 4.0 * t * (1.0 - t) * (midpoint_y - LEFT_HAND.y)
 		var pixel_point := Vector2(
@@ -754,6 +759,21 @@ func _draw_rope_curve(curve_angle: float, rope_color: Color, highlight_color: Co
 
 func _wizard_rope_is_ghosted() -> bool:
 	return turner_team == TurnerTeam.WIZARD and wizard_rope_hidden and not _is_jump_cue()
+
+
+func _wizard_illusions_are_active() -> bool:
+	return turner_team == TurnerTeam.WIZARD and wizard_rope_hidden
+
+
+func _wizard_illusion_angles() -> PackedFloat32Array:
+	var angles := PackedFloat32Array()
+	for phase in WIZARD_ILLUSION_PHASES:
+		angles.append(fposmod(rope_angle + phase, TAU))
+	return angles
+
+
+func _rope_angle_is_behind(angle: float) -> bool:
+	return cos(angle) < 0.0
 
 
 func _rope_midpoint_y(angle: float) -> float:
@@ -1278,8 +1298,10 @@ func _draw_hud() -> void:
 			_draw_character_menu(font)
 		return
 	draw_string(font, Vector2(42, 82), "줄넘킹", HORIZONTAL_ALIGNMENT_LEFT, -1, 34, Color("91a4cc"))
-	draw_string(font, Vector2(42, 158), str(score), HORIZONTAL_ALIGNMENT_LEFT, -1, 76, Color.WHITE)
-	draw_string(font, Vector2(480, 83), "BEST  %d" % best_score, HORIZONTAL_ALIGNMENT_LEFT, -1, 26, Color("ffd166"))
+	var score_cell_size := 10.0 + clampf(flash_time / 0.22, 0.0, 1.0) * 2.0
+	_draw_pixel_number(str(score), Vector2(42.0, 102.0), score_cell_size, Color.WHITE, Color("263a57"))
+	draw_string(font, Vector2(480, 82), "BEST", HORIZONTAL_ALIGNMENT_LEFT, -1, 24, Color("fff0a6"))
+	_draw_pixel_number(str(best_score), Vector2(570.0, 58.0), 4.0, Color("ffd23f"), Color("633913"))
 	if game_state != GameState.GAME_OVER:
 		draw_string(font, Vector2(0, 1120), message, HORIZONTAL_ALIGNMENT_CENTER, DESIGN_SIZE.x, 31, message_color)
 	var control_text := "화면 터치 · 마우스 클릭 · SPACE"
@@ -1328,7 +1350,8 @@ func _draw_main_menu(font: Font) -> void:
 		draw_texture_rect_region(best_score_frame_texture, best_rect, best_score_frame_used_region)
 	else:
 		draw_rect(best_rect, Color(0.23, 0.14, 0.09, 0.88), true)
-	draw_string(font, Vector2(284.0, 347.0), "최고 기록  %d" % best_score, HORIZONTAL_ALIGNMENT_CENTER, 178.0, 23, Color("fff0a6"))
+	draw_string(font, Vector2(278.0, 347.0), "최고 기록", HORIZONTAL_ALIGNMENT_CENTER, 105.0, 21, Color("fff0a6"))
+	_draw_pixel_number(str(best_score), Vector2(394.0, 324.0), 4.0, Color("ffd23f"), Color("633913"), 62.0, HORIZONTAL_ALIGNMENT_CENTER)
 
 	var prompt_alpha := 0.78 + sin(Time.get_ticks_msec() * 0.004) * 0.18
 	var prompt_rect := Rect2(225.0, 505.0, 340.0, 128.0)
@@ -1441,10 +1464,53 @@ func _draw_resource_counter(font: Font, rect: Rect2, icon_texture: Texture2D, ic
 		draw_texture_rect_region(icon_texture, icon_rect, icon_region)
 	# The icon already identifies the resource. A single large number stays clear
 	# on narrow mobile screens and cannot collide with a second label line.
-	var amount_position := Vector2(rect.position.x + 76.0, rect.position.y + 43.0)
-	var amount_width := rect.size.x - 92.0
-	draw_string(font, amount_position + Vector2(2.0, 2.0), str(amount), HORIZONTAL_ALIGNMENT_LEFT, amount_width, 27, Color(0.12, 0.06, 0.03, 0.85))
-	draw_string(font, amount_position, str(amount), HORIZONTAL_ALIGNMENT_LEFT, amount_width, 27, Color.WHITE)
+	var amount_position := Vector2(rect.position.x + 76.0, rect.position.y + 19.0)
+	_draw_pixel_number(str(amount), amount_position, 4.0, Color.WHITE, Color("3b2119"))
+
+
+func _draw_pixel_number(text: String, position: Vector2, cell_size: float, face_color: Color, outline_color: Color, align_width := 0.0, alignment := HORIZONTAL_ALIGNMENT_LEFT) -> void:
+	var glyph_width := cell_size * 5.0
+	var glyph_gap := cell_size
+	var total_width := _pixel_number_width(text, cell_size)
+	var start_x := position.x
+	if alignment == HORIZONTAL_ALIGNMENT_CENTER:
+		start_x += (align_width - total_width) * 0.5
+	elif alignment == HORIZONTAL_ALIGNMENT_RIGHT:
+		start_x += align_width - total_width
+	for glyph_index in range(text.length()):
+		var rows := _pixel_number_glyph(text[glyph_index])
+		var glyph_x := start_x + glyph_index * (glyph_width + glyph_gap)
+		for row in range(rows.size()):
+			for column in range(rows[row].length()):
+				if rows[row][column] != "1":
+					continue
+				var cell_position := Vector2(glyph_x + column * cell_size, position.y + row * cell_size)
+				draw_rect(Rect2(cell_position - Vector2.ONE, Vector2.ONE * (cell_size + 2.0)), outline_color)
+				draw_rect(Rect2(cell_position, Vector2.ONE * cell_size), face_color)
+				var shine_size := maxf(1.0, floorf(cell_size * 0.25))
+				draw_rect(Rect2(cell_position, Vector2.ONE * shine_size), face_color.lightened(0.32))
+
+
+func _pixel_number_width(text: String, cell_size: float) -> float:
+	if text.is_empty():
+		return 0.0
+	return text.length() * cell_size * 5.0 + (text.length() - 1) * cell_size
+
+
+func _pixel_number_glyph(character: String) -> PackedStringArray:
+	match character:
+		"0": return PackedStringArray(["11111", "10001", "10011", "10101", "11001", "10001", "11111"])
+		"1": return PackedStringArray(["00100", "01100", "00100", "00100", "00100", "00100", "01110"])
+		"2": return PackedStringArray(["11110", "00001", "00001", "11110", "10000", "10000", "11111"])
+		"3": return PackedStringArray(["11110", "00001", "00001", "01110", "00001", "00001", "11110"])
+		"4": return PackedStringArray(["10010", "10010", "10010", "11111", "00010", "00010", "00010"])
+		"5": return PackedStringArray(["11111", "10000", "10000", "11110", "00001", "00001", "11110"])
+		"6": return PackedStringArray(["01111", "10000", "10000", "11110", "10001", "10001", "01110"])
+		"7": return PackedStringArray(["11111", "00001", "00010", "00100", "01000", "01000", "01000"])
+		"8": return PackedStringArray(["01110", "10001", "10001", "01110", "10001", "10001", "01110"])
+		"9": return PackedStringArray(["01110", "10001", "10001", "01111", "00001", "00001", "11110"])
+		"+": return PackedStringArray(["00000", "00100", "00100", "11111", "00100", "00100", "00000"])
+		_: return PackedStringArray(["00000", "00000", "00000", "00000", "00000", "00000", "00000"])
 
 
 func _draw_menu_asset_or_fallback(texture: Texture2D, used_region: Rect2, font: Font, rect: Rect2, title: String, subtitle: String, face_color: Color) -> void:
