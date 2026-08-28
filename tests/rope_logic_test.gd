@@ -108,8 +108,22 @@ func _test_athlete_turner_pattern(game: Node) -> void:
 	game._update_turner_team_and_pattern()
 	_expect(int(game.challenge_pattern) == 2, "athlete alternating three-turn burst did not begin")
 	_expect(int(game.athlete_burst_turns_remaining) == 3, "athlete burst did not alternate from two to three turns")
+	var consecutive_bursts := 0
+	var maximum_consecutive_bursts := 0
+	for simulated_turn in range(40):
+		if int(game.challenge_pattern) == 2:
+			consecutive_bursts += 1
+			maximum_consecutive_bursts = maxi(maximum_consecutive_bursts, consecutive_bursts)
+		else:
+			consecutive_bursts = 0
+		_expect(int(game.athlete_burst_turns_remaining) <= game.ATHLETE_MAX_BURST_TURNS, "athlete burst counter exceeded its hard cap")
+		game.score += 1
+		game._update_turner_team_and_pattern()
+	_expect(maximum_consecutive_bursts <= 3, "athlete stayed at burst speed for more than three consecutive turns")
 
 	game.game_state = 1
+	game.challenge_pattern = 2
+	game.athlete_burst_turns_remaining = game.ATHLETE_MAX_BURST_TURNS
 	game.rope_speed = 3.0
 	game.rope_angle = PI
 	_expect(is_equal_approx(game._effective_rope_speed(), 3.0 * BALANCE.athlete_burst_multiplier), "athlete burst multiplier was not applied")

@@ -20,6 +20,7 @@ const ROPE_PIXEL_CORE_SIZE := Vector2(8.0, 8.0)
 const HIT_REVEAL_SECONDS := 0.42
 const TURNER_CHANGE_INTERVAL := 10
 const ATHLETE_NORMAL_TURNS := 2
+const ATHLETE_MAX_BURST_TURNS := 3
 const TURNER_EXIT_SECONDS := 0.7
 const ATHLETE_ENTRY_SECONDS := 0.8
 const COUNTDOWN_NUMBER_SECONDS := 0.65
@@ -153,6 +154,8 @@ var coin_icon_used_region := Rect2()
 var ruby_icon_used_region := Rect2()
 var countdown_textures: Array[Texture2D] = []
 var countdown_used_regions: Array[Rect2] = []
+var design_draw_offset := Vector2.ZERO
+var design_draw_scale := 1.0
 
 
 func _ready() -> void:
@@ -461,6 +464,8 @@ func _draw() -> void:
 	var viewport_size := get_viewport_rect().size
 	var scale_factor: float = minf(viewport_size.x / DESIGN_SIZE.x, viewport_size.y / DESIGN_SIZE.y)
 	var offset := (viewport_size - DESIGN_SIZE * scale_factor) * 0.5
+	design_draw_offset = offset
+	design_draw_scale = scale_factor
 	draw_set_transform(offset, 0.0, Vector2.ONE * scale_factor)
 
 	_draw_background()
@@ -688,7 +693,9 @@ func _update_turner_team_and_pattern() -> bool:
 		athlete_normal_turns_remaining -= 1
 		if athlete_normal_turns_remaining <= 0:
 			challenge_pattern = 2
-			athlete_burst_turns_remaining = athlete_next_burst_count
+			# Never exceed three consecutive high-speed turns; longer bursts are
+			# not realistically reactable on a mobile touch screen.
+			athlete_burst_turns_remaining = mini(athlete_next_burst_count, ATHLETE_MAX_BURST_TURNS)
 			athlete_next_burst_count = 3 if athlete_next_burst_count == 2 else 2
 	return false
 
@@ -1028,9 +1035,9 @@ func _draw_main_menu(font: Font) -> void:
 	draw_string(font, Vector2(284.0, 347.0), "최고 기록  %d" % best_score, HORIZONTAL_ALIGNMENT_CENTER, 178.0, 23, Color("fff0a6"))
 
 	var prompt_alpha := 0.78 + sin(Time.get_ticks_msec() * 0.004) * 0.18
-	var prompt_rect := Rect2(190.0, 505.0, 340.0, 128.0)
+	var prompt_rect := Rect2(225.0, 505.0, 340.0, 128.0)
 	if tap_prompt_texture != null and tap_prompt_used_region.size.x > 0.0:
-		draw_texture_rect_region(tap_prompt_texture, prompt_rect, tap_prompt_used_region, Color(1.0, 1.0, 1.0, prompt_alpha))
+		_draw_rotated_texture_region(tap_prompt_texture, prompt_rect, tap_prompt_used_region, 0.12, Color(1.0, 1.0, 1.0, prompt_alpha))
 	else:
 		draw_string(font, Vector2(prompt_rect.position.x, 980.0), "TAP TO START", HORIZONTAL_ALIGNMENT_CENTER, prompt_rect.size.x, 30, Color(1.0, 1.0, 1.0, prompt_alpha))
 
@@ -1039,6 +1046,13 @@ func _draw_main_menu(font: Font) -> void:
 	_draw_menu_asset_or_fallback(settings_button_texture, settings_button_used_region, font, SETTINGS_BUTTON_RECT, "SETTINGS", "설정", Color("9b8bea"))
 	if not menu_notice.is_empty():
 		draw_string(font, Vector2(0, 925), menu_notice, HORIZONTAL_ALIGNMENT_CENTER, DESIGN_SIZE.x, 22, Color("ffd166"))
+
+
+func _draw_rotated_texture_region(texture: Texture2D, target: Rect2, source: Rect2, rotation: float, modulate: Color = Color.WHITE) -> void:
+	var center := target.get_center()
+	draw_set_transform(design_draw_offset + center * design_draw_scale, rotation, Vector2.ONE * design_draw_scale)
+	draw_texture_rect_region(texture, Rect2(-target.size * 0.5, target.size), source, modulate)
+	draw_set_transform(design_draw_offset, 0.0, Vector2.ONE * design_draw_scale)
 
 
 func _draw_main_menu_title(font: Font) -> void:
