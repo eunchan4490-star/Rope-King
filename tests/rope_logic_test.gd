@@ -14,6 +14,7 @@ func _init() -> void:
 	_test_high_speed_crossings(game)
 	_test_red_cue_matches_timing(game)
 	_test_athlete_turner_pattern(game)
+	_test_sleepy_turner_pattern(game)
 	_test_physical_clearance_wins(game)
 	_test_visible_contact_loses(game)
 	_test_character_asset_system(game)
@@ -76,7 +77,7 @@ func _test_athlete_turner_pattern(game: Node) -> void:
 	_expect(int(game.challenge_pattern) == 0, "athlete started with an unfair immediate burst")
 	game.is_jumping = false
 	game.accepting_input = true
-	game._start_turner_transition()
+	game._start_turner_transition(game.TurnerTeam.STUDENT)
 	_expect(bool(game.turner_transition_active), "athlete entrance transition did not start")
 	_expect(not bool(game.accepting_input), "jump input stayed active during athlete entrance")
 	_expect(is_equal_approx(game.rope_angle, PI), "rope was not moved behind the player for athlete entrance")
@@ -106,11 +107,11 @@ func _test_athlete_turner_pattern(game: Node) -> void:
 	game._update_turner_team_and_pattern()
 	game.score = 16
 	game._update_turner_team_and_pattern()
-	_expect(int(game.challenge_pattern) == 2, "athlete alternating three-turn burst did not begin")
-	_expect(int(game.athlete_burst_turns_remaining) == 3, "athlete burst did not alternate from two to three turns")
+	_expect(int(game.challenge_pattern) == 2, "athlete second two-turn burst did not begin")
+	_expect(int(game.athlete_burst_turns_remaining) == 2, "athlete burst was not capped at two turns")
 	var consecutive_bursts := 0
 	var maximum_consecutive_bursts := 0
-	for simulated_turn in range(40):
+	for simulated_turn in range(12):
 		if int(game.challenge_pattern) == 2:
 			consecutive_bursts += 1
 			maximum_consecutive_bursts = maxi(maximum_consecutive_bursts, consecutive_bursts)
@@ -119,7 +120,7 @@ func _test_athlete_turner_pattern(game: Node) -> void:
 		_expect(int(game.athlete_burst_turns_remaining) <= game.ATHLETE_MAX_BURST_TURNS, "athlete burst counter exceeded its hard cap")
 		game.score += 1
 		game._update_turner_team_and_pattern()
-	_expect(maximum_consecutive_bursts <= 3, "athlete stayed at burst speed for more than three consecutive turns")
+	_expect(maximum_consecutive_bursts <= 2, "athlete stayed at burst speed for more than two consecutive turns")
 
 	game.game_state = 1
 	game.challenge_pattern = 2
@@ -130,6 +131,38 @@ func _test_athlete_turner_pattern(game: Node) -> void:
 	game.rope_angle = fposmod(TARGET_ANGLE - game.rope_speed * BALANCE.jump_cue_seconds * 0.5, TAU)
 	_expect(game._is_jump_cue(), "athlete red cue test did not enter the cue window")
 	_expect(is_equal_approx(game._effective_rope_speed(), game.rope_speed), "athlete burst changed speed during the red cue")
+
+
+func _test_sleepy_turner_pattern(game: Node) -> void:
+	game._reset_turner_run()
+	game.score = 10
+	game._update_turner_team_and_pattern()
+	game.score = 29
+	_expect(not game._update_turner_team_and_pattern(), "sleepy student entered before total score 30")
+	game.score = 30
+	_expect(game._update_turner_team_and_pattern(), "sleepy student did not enter at total score 30")
+	_expect(int(game.turner_team) == int(game.TurnerTeam.SLEEPY), "sleepy student team was not activated")
+	_expect(int(game.sleepy_slow_turns_remaining) == 2, "sleepy student did not begin with two slow turns")
+	game._start_turner_transition(game.TurnerTeam.ATHLETE)
+	_expect(int(game.departing_turner_team) == int(game.TurnerTeam.ATHLETE), "athlete was not retained as the departing team")
+	game._process(game.TURNER_EXIT_SECONDS + game.COUNTDOWN_TOTAL_SECONDS + 0.01)
+	_expect(not bool(game.turner_transition_active), "sleepy student entrance transition did not finish")
+	game.rope_speed = 4.0
+	game.rope_angle = PI
+	_expect(is_equal_approx(game._effective_rope_speed(), 4.0 * game.SLEEPY_SLOW_MULTIPLIER), "sleepy student's sleeping speed was not very slow")
+	game._update_turner_team_and_pattern()
+	_expect(int(game.sleepy_slow_turns_remaining) == 1, "sleepy slow phase ended before two turns")
+	game._update_turner_team_and_pattern()
+	_expect(is_equal_approx(game.sleepy_wake_warning_time, 1.0), "sleepy wake warning was not exactly one second")
+	_expect(game._sleepy_is_awake(), "awake sprite did not activate during the warning")
+	game._update_sleepy_warning(0.99)
+	_expect(int(game.sleepy_fast_turns_remaining) == 0, "fast turn started before the full one-second warning")
+	game._update_sleepy_warning(0.02)
+	_expect(int(game.sleepy_fast_turns_remaining) == 1, "fast turn did not start after the warning")
+	_expect(is_equal_approx(game._effective_rope_speed(), 4.0 * game.SLEEPY_FAST_MULTIPLIER), "sleepy student's wake-up turn was not extremely fast")
+	game._update_turner_team_and_pattern()
+	_expect(int(game.sleepy_fast_turns_remaining) == 0, "sleepy fast phase lasted more than one turn")
+	_expect(int(game.sleepy_slow_turns_remaining) == 2, "sleepy pattern did not reset to two slow turns")
 
 
 func _test_physical_clearance_wins(game: Node) -> void:
@@ -168,6 +201,12 @@ func _test_character_asset_system(game: Node) -> void:
 	_expect(game.athlete_turner_texture != null, "athlete turner texture was not loaded")
 	_expect(game.mirrored_athlete_turner_texture != null, "right athlete turner mirror texture was not created")
 	_expect(game.mirrored_athlete_turner_used_region.size.x > 0.0, "right athlete turner mirror region is empty")
+	_expect(ResourceLoader.exists("res://assets/turners/sleepy_student_asleep.png"), "sleepy asleep asset was not imported")
+	_expect(ResourceLoader.exists("res://assets/turners/sleepy_student_awake.png"), "sleepy awake asset was not imported")
+	_expect(game.sleepy_turner_asleep_texture != null, "sleepy asleep texture was not loaded")
+	_expect(game.sleepy_turner_awake_texture != null, "sleepy awake texture was not loaded")
+	_expect(game.mirrored_sleepy_turner_asleep_texture != null, "right sleepy asleep mirror texture was not created")
+	_expect(game.mirrored_sleepy_turner_awake_texture != null, "right sleepy awake mirror texture was not created")
 	_expect(ResourceLoader.exists("res://assets/ui/title_frame.png"), "HUD title frame asset was not imported")
 	_expect(ResourceLoader.exists("res://assets/ui/title_logo.png"), "HUD title logo asset was not imported")
 	_expect(ResourceLoader.exists("res://assets/ui/best_score_frame.png"), "best score frame asset was not imported")

@@ -1,8 +1,8 @@
 extends Node2D
 
 enum GameState { TITLE, PLAYING, HIT, GAME_OVER }
-enum TurnerTeam { STUDENT, ATHLETE }
-enum TurnerTransitionPhase { NONE, STUDENT_EXIT, ATHLETE_ENTRY_COUNTDOWN }
+enum TurnerTeam { STUDENT, ATHLETE, SLEEPY }
+enum TurnerTransitionPhase { NONE, TURNER_EXIT, TURNER_ENTRY_COUNTDOWN }
 
 const DESIGN_SIZE := Vector2(720.0, 1280.0)
 const PLAYER_X := 360.0
@@ -20,7 +20,12 @@ const ROPE_PIXEL_CORE_SIZE := Vector2(8.0, 8.0)
 const HIT_REVEAL_SECONDS := 0.42
 const TURNER_CHANGE_INTERVAL := 10
 const ATHLETE_NORMAL_TURNS := 2
-const ATHLETE_MAX_BURST_TURNS := 3
+const ATHLETE_MAX_BURST_TURNS := 2
+const SLEEPY_START_SCORE := 30
+const SLEEPY_SLOW_TURNS := 2
+const SLEEPY_WAKE_WARNING_SECONDS := 1.0
+const SLEEPY_SLOW_MULTIPLIER := 0.34
+const SLEEPY_FAST_MULTIPLIER := 2.0
 const TURNER_EXIT_SECONDS := 0.7
 const ATHLETE_ENTRY_SECONDS := 0.8
 const COUNTDOWN_NUMBER_SECONDS := 0.65
@@ -34,6 +39,8 @@ const CHARACTER_ASSET_ROOT := "res://assets/characters"
 const DEFAULT_BACKGROUND_PATH := "res://assets/backgrounds/neighborhood.png"
 const DEFAULT_TURNER_PATH := "res://assets/turners/bowl_cut_student.png"
 const ATHLETE_TURNER_PATH := "res://assets/turners/athlete_student.png"
+const SLEEPY_TURNER_ASLEEP_PATH := "res://assets/turners/sleepy_student_asleep.png"
+const SLEEPY_TURNER_AWAKE_PATH := "res://assets/turners/sleepy_student_awake.png"
 const MENU_CHARACTER_TEXTURE_PATH := "res://assets/ui/menu_character.png"
 const MENU_UPGRADE_TEXTURE_PATH := "res://assets/ui/menu_upgrade.png"
 const MENU_SETTINGS_TEXTURE_PATH := "res://assets/ui/menu_settings.png"
@@ -78,6 +85,8 @@ const CHARACTER_CARD_RECTS := [
 @export_group("Rope Turner")
 @export var turner_texture: Texture2D
 @export var athlete_turner_texture: Texture2D
+@export var sleepy_turner_asleep_texture: Texture2D
+@export var sleepy_turner_awake_texture: Texture2D
 @export_group("Menu Button Assets")
 @export var character_button_texture: Texture2D
 @export var upgrade_button_texture: Texture2D
@@ -108,10 +117,13 @@ var challenge_pattern := 0
 var turner_team := TurnerTeam.STUDENT
 var athlete_normal_turns_remaining := 0
 var athlete_burst_turns_remaining := 0
-var athlete_next_burst_count := 2
+var sleepy_slow_turns_remaining := 0
+var sleepy_wake_warning_time := 0.0
+var sleepy_fast_turns_remaining := 0
 var turner_transition_active := false
 var turner_transition_time := 0.0
 var turner_transition_phase := TurnerTransitionPhase.NONE
+var departing_turner_team := TurnerTeam.STUDENT
 var flash_time := 0.0
 var message := "화면을 눌러 시작"
 var message_color := Color.WHITE
@@ -144,6 +156,12 @@ var mirrored_turner_used_region := Rect2()
 var athlete_turner_used_region := Rect2()
 var mirrored_athlete_turner_texture: Texture2D
 var mirrored_athlete_turner_used_region := Rect2()
+var sleepy_turner_asleep_used_region := Rect2()
+var mirrored_sleepy_turner_asleep_texture: Texture2D
+var mirrored_sleepy_turner_asleep_used_region := Rect2()
+var sleepy_turner_awake_used_region := Rect2()
+var mirrored_sleepy_turner_awake_texture: Texture2D
+var mirrored_sleepy_turner_awake_used_region := Rect2()
 var character_button_used_region := Rect2()
 var upgrade_button_used_region := Rect2()
 var settings_button_used_region := Rect2()
@@ -225,6 +243,26 @@ func _prepare_turner_visuals() -> void:
 			mirrored_athlete_image.flip_x()
 			mirrored_athlete_turner_texture = ImageTexture.create_from_image(mirrored_athlete_image)
 			mirrored_athlete_turner_used_region = _texture_used_region(mirrored_athlete_turner_texture)
+	if sleepy_turner_asleep_texture == null and ResourceLoader.exists(SLEEPY_TURNER_ASLEEP_PATH):
+		sleepy_turner_asleep_texture = load(SLEEPY_TURNER_ASLEEP_PATH) as Texture2D
+	if sleepy_turner_asleep_texture != null:
+		sleepy_turner_asleep_used_region = _texture_used_region(sleepy_turner_asleep_texture)
+		var asleep_image := sleepy_turner_asleep_texture.get_image()
+		if asleep_image != null and not asleep_image.is_empty():
+			var mirrored_asleep_image := asleep_image.duplicate()
+			mirrored_asleep_image.flip_x()
+			mirrored_sleepy_turner_asleep_texture = ImageTexture.create_from_image(mirrored_asleep_image)
+			mirrored_sleepy_turner_asleep_used_region = _texture_used_region(mirrored_sleepy_turner_asleep_texture)
+	if sleepy_turner_awake_texture == null and ResourceLoader.exists(SLEEPY_TURNER_AWAKE_PATH):
+		sleepy_turner_awake_texture = load(SLEEPY_TURNER_AWAKE_PATH) as Texture2D
+	if sleepy_turner_awake_texture != null:
+		sleepy_turner_awake_used_region = _texture_used_region(sleepy_turner_awake_texture)
+		var awake_image := sleepy_turner_awake_texture.get_image()
+		if awake_image != null and not awake_image.is_empty():
+			var mirrored_awake_image := awake_image.duplicate()
+			mirrored_awake_image.flip_x()
+			mirrored_sleepy_turner_awake_texture = ImageTexture.create_from_image(mirrored_awake_image)
+			mirrored_sleepy_turner_awake_used_region = _texture_used_region(mirrored_sleepy_turner_awake_texture)
 
 
 func _prepare_countdown_visuals() -> void:
@@ -252,6 +290,7 @@ func _process(delta: float) -> void:
 			accepting_input = false
 			_advance_turner_transition(delta)
 		else:
+			_update_sleepy_warning(delta)
 			var previous_rope_angle := rope_angle
 			rope_angle = fposmod(rope_angle + _effective_rope_speed() * delta, TAU)
 			if _angle_crossed(previous_rope_angle, rope_angle, ROPE_CROSSING_ANGLE):
@@ -267,10 +306,10 @@ func _process(delta: float) -> void:
 
 func _advance_turner_transition(delta: float) -> void:
 	turner_transition_time += delta
-	if turner_transition_phase == TurnerTransitionPhase.STUDENT_EXIT and turner_transition_time >= TURNER_EXIT_SECONDS:
+	if turner_transition_phase == TurnerTransitionPhase.TURNER_EXIT and turner_transition_time >= TURNER_EXIT_SECONDS:
 		turner_transition_time -= TURNER_EXIT_SECONDS
-		turner_transition_phase = TurnerTransitionPhase.ATHLETE_ENTRY_COUNTDOWN
-	if turner_transition_phase == TurnerTransitionPhase.ATHLETE_ENTRY_COUNTDOWN and turner_transition_time >= COUNTDOWN_TOTAL_SECONDS:
+		turner_transition_phase = TurnerTransitionPhase.TURNER_ENTRY_COUNTDOWN
+	if turner_transition_phase == TurnerTransitionPhase.TURNER_ENTRY_COUNTDOWN and turner_transition_time >= COUNTDOWN_TOTAL_SECONDS:
 		turner_transition_active = false
 		turner_transition_phase = TurnerTransitionPhase.NONE
 		turner_transition_time = 0.0
@@ -346,10 +385,13 @@ func _resolve_rope_crossing() -> void:
 			new_best_this_run = true
 		rope_speed = balance.speed_for_score(score)
 		total_success += 1
+		var previous_team := turner_team
 		var team_changed := _update_turner_team_and_pattern()
 		if team_changed:
-			_start_turner_transition()
-			message = "운동부 등장!  기본 2회 뒤 급가속!"
+			_start_turner_transition(previous_team)
+			message = "운동부 등장!  기본 2회 뒤 급가속!" if turner_team == TurnerTeam.ATHLETE else "졸보 등장!  깨면 1초 뒤 초고속!"
+		elif turner_team == TurnerTeam.SLEEPY and sleepy_wake_warning_time > 0.0:
+			message = "번쩍!  1초 뒤 초고속!"
 		elif turner_team == TurnerTeam.ATHLETE and challenge_pattern == 2:
 			message = "운동부 급가속!"
 		else:
@@ -476,22 +518,22 @@ func _draw() -> void:
 	var left_turner_feet := LEFT_TURNER_FEET
 	var right_turner_feet := RIGHT_TURNER_FEET
 	var visible_turner_team := -1
-	if turner_transition_phase == TurnerTransitionPhase.STUDENT_EXIT:
+	if turner_transition_phase == TurnerTransitionPhase.TURNER_EXIT:
 		var exit_progress := clampf(turner_transition_time / TURNER_EXIT_SECONDS, 0.0, 1.0)
 		var eased_exit := exit_progress * exit_progress
 		left_turner_feet = LEFT_TURNER_FEET.lerp(LEFT_TURNER_ENTRY_FEET, eased_exit)
 		right_turner_feet = RIGHT_TURNER_FEET.lerp(RIGHT_TURNER_ENTRY_FEET, eased_exit)
-		visible_turner_team = TurnerTeam.STUDENT
-	elif turner_transition_phase == TurnerTransitionPhase.ATHLETE_ENTRY_COUNTDOWN:
+		visible_turner_team = departing_turner_team
+	elif turner_transition_phase == TurnerTransitionPhase.TURNER_ENTRY_COUNTDOWN:
 		var entry_progress := clampf(turner_transition_time / ATHLETE_ENTRY_SECONDS, 0.0, 1.0)
 		var eased_entry := 1.0 - pow(1.0 - entry_progress, 3.0)
 		left_turner_feet = LEFT_TURNER_ENTRY_FEET.lerp(LEFT_TURNER_FEET, eased_entry)
 		right_turner_feet = RIGHT_TURNER_ENTRY_FEET.lerp(RIGHT_TURNER_FEET, eased_entry)
-		visible_turner_team = TurnerTeam.ATHLETE
+		visible_turner_team = turner_team
 	_draw_turner(left_turner_feet, false, visible_turner_team)
 	_draw_turner(right_turner_feet, true, visible_turner_team)
 	_draw_player()
-	if turner_transition_phase == TurnerTransitionPhase.ATHLETE_ENTRY_COUNTDOWN:
+	if turner_transition_phase == TurnerTransitionPhase.TURNER_ENTRY_COUNTDOWN:
 		_draw_countdown_overlay()
 	# Draw the front half last so it visibly passes in front of the player.
 	if not turner_transition_active and not _rope_is_behind():
@@ -637,6 +679,10 @@ func _is_jump_cue() -> bool:
 
 
 func _effective_rope_speed() -> float:
+	if turner_team == TurnerTeam.SLEEPY:
+		if sleepy_fast_turns_remaining > 0:
+			return rope_speed if _is_jump_cue() else rope_speed * SLEEPY_FAST_MULTIPLIER
+		return rope_speed * SLEEPY_SLOW_MULTIPLIER
 	# Keep a stable, fair speed throughout the red input window.
 	if challenge_pattern == 0 or _is_jump_cue():
 		return rope_speed
@@ -657,16 +703,20 @@ func _reset_turner_run() -> void:
 	challenge_pattern = 0
 	athlete_normal_turns_remaining = 0
 	athlete_burst_turns_remaining = 0
-	athlete_next_burst_count = 2
+	sleepy_slow_turns_remaining = 0
+	sleepy_wake_warning_time = 0.0
+	sleepy_fast_turns_remaining = 0
 	turner_transition_active = false
 	turner_transition_time = 0.0
 	turner_transition_phase = TurnerTransitionPhase.NONE
+	departing_turner_team = TurnerTeam.STUDENT
 
 
-func _start_turner_transition() -> void:
+func _start_turner_transition(previous_team := TurnerTeam.STUDENT) -> void:
 	turner_transition_active = true
 	turner_transition_time = 0.0
-	turner_transition_phase = TurnerTransitionPhase.STUDENT_EXIT
+	turner_transition_phase = TurnerTransitionPhase.TURNER_EXIT
+	departing_turner_team = previous_team
 	accepting_input = false
 	# Resume with the rope safely behind the player after GO! finishes.
 	rope_angle = PI
@@ -681,8 +731,24 @@ func _update_turner_team_and_pattern() -> bool:
 		challenge_pattern = 0
 		athlete_normal_turns_remaining = ATHLETE_NORMAL_TURNS
 		athlete_burst_turns_remaining = 0
-		athlete_next_burst_count = 2
 		return true
+	if turner_team == TurnerTeam.ATHLETE and score >= SLEEPY_START_SCORE:
+		turner_team = TurnerTeam.SLEEPY
+		challenge_pattern = 0
+		sleepy_slow_turns_remaining = SLEEPY_SLOW_TURNS
+		sleepy_wake_warning_time = 0.0
+		sleepy_fast_turns_remaining = 0
+		return true
+	if turner_team == TurnerTeam.SLEEPY:
+		if sleepy_fast_turns_remaining > 0:
+			sleepy_fast_turns_remaining -= 1
+			if sleepy_fast_turns_remaining <= 0:
+				sleepy_slow_turns_remaining = SLEEPY_SLOW_TURNS
+		elif sleepy_wake_warning_time <= 0.0:
+			sleepy_slow_turns_remaining -= 1
+			if sleepy_slow_turns_remaining <= 0:
+				sleepy_wake_warning_time = SLEEPY_WAKE_WARNING_SECONDS
+		return false
 
 	if challenge_pattern == 2:
 		athlete_burst_turns_remaining -= 1
@@ -693,11 +759,24 @@ func _update_turner_team_and_pattern() -> bool:
 		athlete_normal_turns_remaining -= 1
 		if athlete_normal_turns_remaining <= 0:
 			challenge_pattern = 2
-			# Never exceed three consecutive high-speed turns; longer bursts are
+			# Never exceed two consecutive high-speed turns; longer bursts are
 			# not realistically reactable on a mobile touch screen.
-			athlete_burst_turns_remaining = mini(athlete_next_burst_count, ATHLETE_MAX_BURST_TURNS)
-			athlete_next_burst_count = 3 if athlete_next_burst_count == 2 else 2
+			athlete_burst_turns_remaining = ATHLETE_MAX_BURST_TURNS
 	return false
+
+
+func _update_sleepy_warning(delta: float) -> void:
+	if turner_team != TurnerTeam.SLEEPY or sleepy_wake_warning_time <= 0.0:
+		return
+	sleepy_wake_warning_time = maxf(0.0, sleepy_wake_warning_time - delta)
+	if sleepy_wake_warning_time <= 0.0:
+		sleepy_fast_turns_remaining = 1
+		message = "지금!"
+		message_color = Color("ff5c65")
+
+
+func _sleepy_is_awake() -> bool:
+	return sleepy_wake_warning_time > 0.0 or sleepy_fast_turns_remaining > 0
 
 
 func _angle_crossed(previous_angle: float, current_angle: float, target_angle: float) -> bool:
@@ -709,10 +788,21 @@ func _angle_crossed(previous_angle: float, current_angle: float, target_angle: f
 func _draw_turner(feet: Vector2, faces_left: bool, display_team := -1) -> void:
 	var render_feet := feet
 	var active_team := turner_team if display_team < 0 else display_team
-	var base_texture := athlete_turner_texture if active_team == TurnerTeam.ATHLETE else turner_texture
-	var base_region := athlete_turner_used_region if active_team == TurnerTeam.ATHLETE else turner_used_region
-	var mirror_texture := mirrored_athlete_turner_texture if active_team == TurnerTeam.ATHLETE else mirrored_turner_texture
-	var mirror_region := mirrored_athlete_turner_used_region if active_team == TurnerTeam.ATHLETE else mirrored_turner_used_region
+	var base_texture := turner_texture
+	var base_region := turner_used_region
+	var mirror_texture := mirrored_turner_texture
+	var mirror_region := mirrored_turner_used_region
+	if active_team == TurnerTeam.ATHLETE:
+		base_texture = athlete_turner_texture
+		base_region = athlete_turner_used_region
+		mirror_texture = mirrored_athlete_turner_texture
+		mirror_region = mirrored_athlete_turner_used_region
+	elif active_team == TurnerTeam.SLEEPY:
+		var awake := _sleepy_is_awake()
+		base_texture = sleepy_turner_awake_texture if awake else sleepy_turner_asleep_texture
+		base_region = sleepy_turner_awake_used_region if awake else sleepy_turner_asleep_used_region
+		mirror_texture = mirrored_sleepy_turner_awake_texture if awake else mirrored_sleepy_turner_asleep_texture
+		mirror_region = mirrored_sleepy_turner_awake_used_region if awake else mirrored_sleepy_turner_asleep_used_region
 	if base_texture != null and base_region.size.x > 0.0:
 		var active_texture := mirror_texture if faces_left and mirror_texture != null else base_texture
 		var active_region := mirror_region if faces_left and mirror_texture != null else base_region
