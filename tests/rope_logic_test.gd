@@ -233,38 +233,24 @@ func _test_wizard_turner_pattern(game: Node) -> void:
 	_expect(game._update_turner_team_and_pattern(), "wizard did not enter at score 70")
 	_expect(int(game.turner_team) == int(game.TurnerTeam.WIZARD), "wizard team was not activated")
 	_expect(not bool(game.wizard_rope_hidden), "wizard began with an invisible turn instead of a normal turn")
-	_expect(int(game.wizard_speed_turns_remaining) == 2, "wizard random speed did not begin as a two-turn pair")
-	_expect(is_equal_approx(game.WIZARD_BASE_SPEED_MULTIPLIER, 0.60), "wizard base speed was not slowed down enough")
-	_expect(float(game.wizard_speed_multiplier) >= 0.75 and float(game.wizard_speed_multiplier) <= 1.8, "wizard random speed began outside the safe range")
-	var first_pair_speed: float = game.wizard_speed_multiplier
-	var first_pair_size: float = game.wizard_rope_size_multiplier
-	_expect(first_pair_size >= 0.80 and first_pair_size <= 1.25, "wizard rope size began outside the safe range")
+	_expect(is_equal_approx(game._base_speed_for_score(70), BALANCE.speed_for_score(10)), "wizard speed was not fixed to the score-10 speed")
 	game._update_turner_team_and_pattern()
 	_expect(bool(game.wizard_rope_hidden), "wizard's second turn did not become invisible")
-	_expect(int(game.wizard_speed_turns_remaining) == 1, "wizard speed changed before both turns in the pair completed")
-	_expect(is_equal_approx(game.wizard_speed_multiplier, first_pair_speed), "wizard speed changed between visible and invisible turns")
-	_expect(is_equal_approx(game.wizard_rope_size_multiplier, first_pair_size), "wizard rope size changed inside a two-turn pair")
 	game.game_state = game.GameState.PLAYING
 	game.rope_speed = BALANCE.speed_for_score(10)
 	game.rope_angle = PI
 	_expect(game._wizard_rope_is_ghosted(), "wizard's hidden turn did not switch to the blue translucent rope")
 	_expect(game.WIZARD_GHOST_CORE_ALPHA <= 0.04, "wizard ghost rope remained too visible")
 	_expect(game.WIZARD_GHOST_OUTLINE_ALPHA <= 0.02, "wizard ghost rope outline remained too visible")
+	_expect(is_equal_approx(game.WIZARD_ILLUSION_ANGLE_OFFSET, PI / 12.0), "wizard illusion ropes were not offset by 15 degrees")
 	game.rope_angle = fposmod(TARGET_ANGLE - game.rope_speed * BALANCE.jump_cue_seconds * 0.5, TAU)
 	_expect(game._is_jump_cue(), "wizard visibility test did not enter the red cue")
 	_expect(not game._wizard_rope_is_ghosted(), "wizard's translucent rope did not become solid for the red cue")
 	game._update_turner_team_and_pattern()
 	_expect(not bool(game.wizard_rope_hidden), "wizard rope did not return to a normal visible turn")
-	_expect(int(game.wizard_speed_turns_remaining) == 2, "wizard speed pair counter did not reset")
-	_expect(not is_equal_approx(game.wizard_speed_multiplier, first_pair_speed), "wizard randomly repeated the same speed on consecutive pairs")
-	_expect(not is_equal_approx(game.wizard_rope_size_multiplier, first_pair_size), "wizard randomly repeated the same rope size on consecutive pairs")
-	_expect(float(game.wizard_speed_multiplier) <= 1.8, "wizard random speed exceeded 1.8x")
 	game.rope_angle = PI
-	_expect(is_equal_approx(game._effective_rope_speed(), game.rope_speed * game.WIZARD_BASE_SPEED_MULTIPLIER * game.wizard_speed_multiplier), "wizard random multiplier was not applied to rope movement")
-	game.wizard_rope_size_multiplier = 1.25
-	_expect(game._rope_midpoint_y(PI * 1.5) < game.LEFT_HAND.y - game.ROPE_OVERHEAD_RADIUS, "wizard large rope did not expand the overhead curve")
-	game.wizard_rope_size_multiplier = 0.80
-	_expect(game._rope_midpoint_y(PI * 1.5) > game.LEFT_HAND.y - game.ROPE_OVERHEAD_RADIUS, "wizard small rope did not shrink the overhead curve")
+	_expect(is_equal_approx(game._effective_rope_speed(), game.rope_speed), "wizard speed changed away from its fixed baseline")
+	_expect(is_equal_approx(game._rope_midpoint_y(PI * 1.5), game.LEFT_HAND.y - game.ROPE_OVERHEAD_RADIUS), "wizard rope size still changed")
 
 
 func _test_physical_clearance_wins(game: Node) -> void:

@@ -35,13 +35,10 @@ const PRANKSTER_REVERSE_SPEED_MULTIPLIER := 0.45
 const PRANKSTER_MIN_NORMAL_TURNS := 1
 const PRANKSTER_MAX_NORMAL_TURNS := 3
 const WIZARD_START_SCORE := 70
-const WIZARD_BASE_SPEED_MULTIPLIER := 0.60
-const WIZARD_SPEED_MULTIPLIERS := [0.75, 1.0, 1.35, 1.8]
-const WIZARD_SPEED_PAIR_TURNS := 2
-const WIZARD_SIZE_MULTIPLIERS := [0.80, 1.0, 1.25]
 const WIZARD_GHOST_CORE_ALPHA := 0.04
 const WIZARD_GHOST_HIGHLIGHT_ALPHA := 0.07
 const WIZARD_GHOST_OUTLINE_ALPHA := 0.02
+const WIZARD_ILLUSION_ANGLE_OFFSET := PI / 12.0
 const TURNER_EXIT_SECONDS := 0.7
 const ATHLETE_ENTRY_SECONDS := 0.8
 const COUNTDOWN_NUMBER_SECONDS := 0.65
@@ -146,9 +143,6 @@ var prankster_fake_pending := false
 var prankster_fake_mode := 0
 var prankster_fake_time := 0.0
 var wizard_rope_hidden := false
-var wizard_speed_multiplier := 1.0
-var wizard_speed_turns_remaining := 0
-var wizard_rope_size_multiplier := 1.0
 var turner_transition_active := false
 var turner_transition_time := 0.0
 var turner_transition_phase := TurnerTransitionPhase.NONE
@@ -524,9 +518,6 @@ func _start_game_at_score(start_score: int) -> void:
 	if score >= WIZARD_START_SCORE:
 		turner_team = TurnerTeam.WIZARD
 		wizard_rope_hidden = false
-		wizard_speed_multiplier = _roll_wizard_speed_multiplier()
-		wizard_speed_turns_remaining = WIZARD_SPEED_PAIR_TURNS
-		wizard_rope_size_multiplier = _roll_wizard_rope_size_multiplier()
 	elif score >= PRANKSTER_START_SCORE:
 		turner_team = TurnerTeam.PRANKSTER
 		prankster_normal_turns_remaining = _roll_prankster_normal_turns()
@@ -707,7 +698,30 @@ func _draw_cover_texture(texture: Texture2D, target: Rect2) -> void:
 
 
 func _draw_rope() -> void:
-	var midpoint_y := _rope_midpoint_y(rope_angle)
+	var show_jump_cue := _is_jump_cue()
+	var wizard_ghosted := _wizard_rope_is_ghosted()
+	var rope_color := Color("ff334f") if show_jump_cue else Color("f6b73c")
+	var highlight_color := Color("ff9a8d") if show_jump_cue else Color("ffe27a")
+	var outline_color := Color("3b2119")
+	var shadow_color := Color(0, 0, 0, 0.22)
+	if wizard_ghosted:
+		rope_color = Color(0.20, 0.72, 1.0, WIZARD_GHOST_CORE_ALPHA)
+		highlight_color = Color(0.62, 0.94, 1.0, WIZARD_GHOST_HIGHLIGHT_ALPHA)
+		outline_color = Color(0.05, 0.22, 0.42, WIZARD_GHOST_OUTLINE_ALPHA)
+		shadow_color = Color(0.02, 0.15, 0.30, 0.0)
+		var illusion_core := Color(0.20, 0.72, 1.0, WIZARD_GHOST_CORE_ALPHA * 0.55)
+		var illusion_highlight := Color(0.62, 0.94, 1.0, WIZARD_GHOST_HIGHLIGHT_ALPHA * 0.45)
+		var illusion_outline := Color(0.05, 0.22, 0.42, WIZARD_GHOST_OUTLINE_ALPHA * 0.45)
+		_draw_rope_curve(rope_angle - WIZARD_ILLUSION_ANGLE_OFFSET, illusion_core, illusion_highlight, illusion_outline, Color.TRANSPARENT)
+		_draw_rope_curve(rope_angle + WIZARD_ILLUSION_ANGLE_OFFSET, illusion_core, illusion_highlight, illusion_outline, Color.TRANSPARENT)
+
+	_draw_rope_curve(rope_angle, rope_color, highlight_color, outline_color, shadow_color)
+	_draw_pixel_rope_grip(LEFT_HAND, wizard_ghosted)
+	_draw_pixel_rope_grip(RIGHT_HAND, wizard_ghosted)
+
+
+func _draw_rope_curve(curve_angle: float, rope_color: Color, highlight_color: Color, outline_color: Color, shadow_color: Color) -> void:
+	var midpoint_y := _rope_midpoint_y(curve_angle)
 	var pixel_points := PackedVector2Array()
 	for i in range(97):
 		var t := float(i) / 96.0
@@ -721,18 +735,6 @@ func _draw_rope() -> void:
 		if pixel_points.is_empty() or pixel_points[-1] != pixel_point:
 			pixel_points.append(pixel_point)
 
-	var show_jump_cue := _is_jump_cue()
-	var wizard_ghosted := _wizard_rope_is_ghosted()
-	var rope_color := Color("ff334f") if show_jump_cue else Color("f6b73c")
-	var highlight_color := Color("ff9a8d") if show_jump_cue else Color("ffe27a")
-	var outline_color := Color("3b2119")
-	var shadow_color := Color(0, 0, 0, 0.22)
-	if wizard_ghosted:
-		rope_color = Color(0.20, 0.72, 1.0, WIZARD_GHOST_CORE_ALPHA)
-		highlight_color = Color(0.62, 0.94, 1.0, WIZARD_GHOST_HIGHLIGHT_ALPHA)
-		outline_color = Color(0.05, 0.22, 0.42, WIZARD_GHOST_OUTLINE_ALPHA)
-		shadow_color = Color(0.02, 0.15, 0.30, 0.0)
-
 	# Draw in separate passes so the square pieces merge into one outlined pixel rope.
 	for point in pixel_points:
 		draw_rect(Rect2(point - ROPE_PIXEL_OUTLINE_SIZE * 0.5 + Vector2(2.0, 3.0), ROPE_PIXEL_OUTLINE_SIZE), shadow_color)
@@ -743,9 +745,6 @@ func _draw_rope() -> void:
 	for i in range(0, pixel_points.size(), 3):
 		draw_rect(Rect2(pixel_points[i] + Vector2(-3.0, -3.0), Vector2(3.0, 3.0)), highlight_color)
 
-	_draw_pixel_rope_grip(LEFT_HAND, wizard_ghosted)
-	_draw_pixel_rope_grip(RIGHT_HAND, wizard_ghosted)
-
 
 func _wizard_rope_is_ghosted() -> bool:
 	return turner_team == TurnerTeam.WIZARD and wizard_rope_hidden and not _is_jump_cue()
@@ -754,8 +753,6 @@ func _wizard_rope_is_ghosted() -> bool:
 func _rope_midpoint_y(angle: float) -> float:
 	var vertical_phase := sin(angle)
 	var radius := ROPE_GROUND_RADIUS if vertical_phase >= 0.0 else ROPE_OVERHEAD_RADIUS
-	if turner_team == TurnerTeam.WIZARD:
-		radius *= wizard_rope_size_multiplier
 	return LEFT_HAND.y + vertical_phase * radius
 
 
@@ -783,19 +780,11 @@ func _rope_is_behind() -> bool:
 func _is_jump_cue() -> bool:
 	if game_state != GameState.PLAYING or rope_speed <= 0.0 or _rope_is_behind():
 		return false
-	var seconds_until_crossing := fposmod(ROPE_CROSSING_ANGLE - rope_angle, TAU) / _cue_reference_speed()
+	var seconds_until_crossing := fposmod(ROPE_CROSSING_ANGLE - rope_angle, TAU) / rope_speed
 	return seconds_until_crossing <= balance.jump_cue_seconds
 
 
-func _cue_reference_speed() -> float:
-	if turner_team == TurnerTeam.WIZARD:
-		return rope_speed * WIZARD_BASE_SPEED_MULTIPLIER * wizard_speed_multiplier
-	return rope_speed
-
-
 func _effective_rope_speed() -> float:
-	if turner_team == TurnerTeam.WIZARD:
-		return rope_speed * WIZARD_BASE_SPEED_MULTIPLIER * wizard_speed_multiplier
 	if turner_team == TurnerTeam.SLEEPY:
 		if sleepy_fast_turns_remaining > 0:
 			return rope_speed if _is_jump_cue() else rope_speed * SLEEPY_FAST_MULTIPLIER
@@ -838,9 +827,6 @@ func _reset_turner_run() -> void:
 	prankster_fake_mode = 0
 	prankster_fake_time = 0.0
 	wizard_rope_hidden = false
-	wizard_speed_multiplier = 1.0
-	wizard_speed_turns_remaining = 0
-	wizard_rope_size_multiplier = 1.0
 	turner_transition_active = false
 	turner_transition_time = 0.0
 	turner_transition_phase = TurnerTransitionPhase.NONE
@@ -891,9 +877,6 @@ func _update_turner_team_and_pattern() -> bool:
 		prankster_fake_mode = 0
 		prankster_fake_time = 0.0
 		wizard_rope_hidden = false
-		wizard_speed_multiplier = _roll_wizard_speed_multiplier()
-		wizard_speed_turns_remaining = WIZARD_SPEED_PAIR_TURNS
-		wizard_rope_size_multiplier = _roll_wizard_rope_size_multiplier()
 		return true
 	if turner_team == TurnerTeam.SLEEPY:
 		if sleepy_fast_turns_remaining > 0:
@@ -914,11 +897,6 @@ func _update_turner_team_and_pattern() -> bool:
 		return false
 	if turner_team == TurnerTeam.WIZARD:
 		wizard_rope_hidden = not wizard_rope_hidden
-		wizard_speed_turns_remaining -= 1
-		if wizard_speed_turns_remaining <= 0:
-			wizard_speed_multiplier = _roll_wizard_speed_multiplier(wizard_speed_multiplier)
-			wizard_rope_size_multiplier = _roll_wizard_rope_size_multiplier(wizard_rope_size_multiplier)
-			wizard_speed_turns_remaining = WIZARD_SPEED_PAIR_TURNS
 		return false
 
 	if challenge_pattern == 2:
@@ -952,22 +930,6 @@ func _roll_sleepy_slow_turns() -> int:
 
 func _roll_prankster_normal_turns() -> int:
 	return randi_range(PRANKSTER_MIN_NORMAL_TURNS, PRANKSTER_MAX_NORMAL_TURNS)
-
-
-func _roll_wizard_speed_multiplier(previous_multiplier := -1.0) -> float:
-	var candidates := WIZARD_SPEED_MULTIPLIERS.duplicate()
-	for index in range(candidates.size() - 1, -1, -1):
-		if is_equal_approx(float(candidates[index]), previous_multiplier):
-			candidates.remove_at(index)
-	return float(candidates[randi_range(0, candidates.size() - 1)])
-
-
-func _roll_wizard_rope_size_multiplier(previous_multiplier := -1.0) -> float:
-	var candidates := WIZARD_SIZE_MULTIPLIERS.duplicate()
-	for index in range(candidates.size() - 1, -1, -1):
-		if is_equal_approx(float(candidates[index]), previous_multiplier):
-			candidates.remove_at(index)
-	return float(candidates[randi_range(0, candidates.size() - 1)])
 
 
 func _update_prankster_fake(delta: float) -> bool:
