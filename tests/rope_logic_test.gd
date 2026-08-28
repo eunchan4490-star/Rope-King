@@ -242,7 +242,7 @@ func _test_wizard_turner_pattern(game: Node) -> void:
 	_expect(game._wizard_rope_is_ghosted(), "wizard's hidden turn did not switch to the blue translucent rope")
 	_expect(game.WIZARD_GHOST_CORE_ALPHA <= 0.04, "wizard ghost rope remained too visible")
 	_expect(game.WIZARD_GHOST_OUTLINE_ALPHA <= 0.02, "wizard ghost rope outline remained too visible")
-	_expect(is_equal_approx(game.WIZARD_ILLUSION_ANGLE_OFFSET, PI / 12.0), "wizard illusion ropes were not offset by 15 degrees")
+	_expect(is_equal_approx(game.WIZARD_ILLUSION_ANGLE_OFFSET, PI / 6.0), "wizard illusion ropes were not offset by 30 degrees")
 	game.rope_angle = fposmod(TARGET_ANGLE - game.rope_speed * BALANCE.jump_cue_seconds * 0.5, TAU)
 	_expect(game._is_jump_cue(), "wizard visibility test did not enter the red cue")
 	_expect(not game._wizard_rope_is_ghosted(), "wizard's translucent rope did not become solid for the red cue")
