@@ -237,10 +237,13 @@ func _test_wizard_turner_pattern(game: Node) -> void:
 	_expect(is_equal_approx(game.WIZARD_BASE_SPEED_MULTIPLIER, 0.60), "wizard base speed was not slowed down enough")
 	_expect(float(game.wizard_speed_multiplier) >= 0.75 and float(game.wizard_speed_multiplier) <= 1.8, "wizard random speed began outside the safe range")
 	var first_pair_speed: float = game.wizard_speed_multiplier
+	var first_pair_size: float = game.wizard_rope_size_multiplier
+	_expect(first_pair_size >= 0.80 and first_pair_size <= 1.25, "wizard rope size began outside the safe range")
 	game._update_turner_team_and_pattern()
 	_expect(bool(game.wizard_rope_hidden), "wizard's second turn did not become invisible")
 	_expect(int(game.wizard_speed_turns_remaining) == 1, "wizard speed changed before both turns in the pair completed")
 	_expect(is_equal_approx(game.wizard_speed_multiplier, first_pair_speed), "wizard speed changed between visible and invisible turns")
+	_expect(is_equal_approx(game.wizard_rope_size_multiplier, first_pair_size), "wizard rope size changed inside a two-turn pair")
 	game.game_state = game.GameState.PLAYING
 	game.rope_speed = BALANCE.speed_for_score(10)
 	game.rope_angle = PI
@@ -252,12 +255,18 @@ func _test_wizard_turner_pattern(game: Node) -> void:
 	_expect(not bool(game.wizard_rope_hidden), "wizard rope did not return to a normal visible turn")
 	_expect(int(game.wizard_speed_turns_remaining) == 2, "wizard speed pair counter did not reset")
 	_expect(not is_equal_approx(game.wizard_speed_multiplier, first_pair_speed), "wizard randomly repeated the same speed on consecutive pairs")
+	_expect(not is_equal_approx(game.wizard_rope_size_multiplier, first_pair_size), "wizard randomly repeated the same rope size on consecutive pairs")
 	_expect(float(game.wizard_speed_multiplier) <= 1.8, "wizard random speed exceeded 1.8x")
 	game.rope_angle = PI
 	_expect(is_equal_approx(game._effective_rope_speed(), game.rope_speed * game.WIZARD_BASE_SPEED_MULTIPLIER * game.wizard_speed_multiplier), "wizard random multiplier was not applied to rope movement")
+	game.wizard_rope_size_multiplier = 1.25
+	_expect(game._rope_midpoint_y(PI * 1.5) < game.LEFT_HAND.y - game.ROPE_OVERHEAD_RADIUS, "wizard large rope did not expand the overhead curve")
+	game.wizard_rope_size_multiplier = 0.80
+	_expect(game._rope_midpoint_y(PI * 1.5) > game.LEFT_HAND.y - game.ROPE_OVERHEAD_RADIUS, "wizard small rope did not shrink the overhead curve")
 
 
 func _test_physical_clearance_wins(game: Node) -> void:
+	game._reset_turner_run()
 	if game.feedback == null:
 		game.feedback = RopeFeedbackManager.new()
 		game.add_child(game.feedback)
@@ -273,6 +282,7 @@ func _test_physical_clearance_wins(game: Node) -> void:
 
 
 func _test_visible_contact_loses(game: Node) -> void:
+	game._reset_turner_run()
 	game.game_state = 1
 	game.is_jumping = true
 	game.jump_height = -3.0

@@ -38,6 +38,7 @@ const WIZARD_START_SCORE := 70
 const WIZARD_BASE_SPEED_MULTIPLIER := 0.60
 const WIZARD_SPEED_MULTIPLIERS := [0.75, 1.0, 1.35, 1.8]
 const WIZARD_SPEED_PAIR_TURNS := 2
+const WIZARD_SIZE_MULTIPLIERS := [0.80, 1.0, 1.25]
 const TURNER_EXIT_SECONDS := 0.7
 const ATHLETE_ENTRY_SECONDS := 0.8
 const COUNTDOWN_NUMBER_SECONDS := 0.65
@@ -144,6 +145,7 @@ var prankster_fake_time := 0.0
 var wizard_rope_hidden := false
 var wizard_speed_multiplier := 1.0
 var wizard_speed_turns_remaining := 0
+var wizard_rope_size_multiplier := 1.0
 var turner_transition_active := false
 var turner_transition_time := 0.0
 var turner_transition_phase := TurnerTransitionPhase.NONE
@@ -521,6 +523,7 @@ func _start_game_at_score(start_score: int) -> void:
 		wizard_rope_hidden = false
 		wizard_speed_multiplier = _roll_wizard_speed_multiplier()
 		wizard_speed_turns_remaining = WIZARD_SPEED_PAIR_TURNS
+		wizard_rope_size_multiplier = _roll_wizard_rope_size_multiplier()
 	elif score >= PRANKSTER_START_SCORE:
 		turner_team = TurnerTeam.PRANKSTER
 		prankster_normal_turns_remaining = _roll_prankster_normal_turns()
@@ -748,6 +751,8 @@ func _wizard_rope_is_ghosted() -> bool:
 func _rope_midpoint_y(angle: float) -> float:
 	var vertical_phase := sin(angle)
 	var radius := ROPE_GROUND_RADIUS if vertical_phase >= 0.0 else ROPE_OVERHEAD_RADIUS
+	if turner_team == TurnerTeam.WIZARD:
+		radius *= wizard_rope_size_multiplier
 	return LEFT_HAND.y + vertical_phase * radius
 
 
@@ -832,6 +837,7 @@ func _reset_turner_run() -> void:
 	wizard_rope_hidden = false
 	wizard_speed_multiplier = 1.0
 	wizard_speed_turns_remaining = 0
+	wizard_rope_size_multiplier = 1.0
 	turner_transition_active = false
 	turner_transition_time = 0.0
 	turner_transition_phase = TurnerTransitionPhase.NONE
@@ -884,6 +890,7 @@ func _update_turner_team_and_pattern() -> bool:
 		wizard_rope_hidden = false
 		wizard_speed_multiplier = _roll_wizard_speed_multiplier()
 		wizard_speed_turns_remaining = WIZARD_SPEED_PAIR_TURNS
+		wizard_rope_size_multiplier = _roll_wizard_rope_size_multiplier()
 		return true
 	if turner_team == TurnerTeam.SLEEPY:
 		if sleepy_fast_turns_remaining > 0:
@@ -907,6 +914,7 @@ func _update_turner_team_and_pattern() -> bool:
 		wizard_speed_turns_remaining -= 1
 		if wizard_speed_turns_remaining <= 0:
 			wizard_speed_multiplier = _roll_wizard_speed_multiplier(wizard_speed_multiplier)
+			wizard_rope_size_multiplier = _roll_wizard_rope_size_multiplier(wizard_rope_size_multiplier)
 			wizard_speed_turns_remaining = WIZARD_SPEED_PAIR_TURNS
 		return false
 
@@ -945,6 +953,14 @@ func _roll_prankster_normal_turns() -> int:
 
 func _roll_wizard_speed_multiplier(previous_multiplier := -1.0) -> float:
 	var candidates := WIZARD_SPEED_MULTIPLIERS.duplicate()
+	for index in range(candidates.size() - 1, -1, -1):
+		if is_equal_approx(float(candidates[index]), previous_multiplier):
+			candidates.remove_at(index)
+	return float(candidates[randi_range(0, candidates.size() - 1)])
+
+
+func _roll_wizard_rope_size_multiplier(previous_multiplier := -1.0) -> float:
+	var candidates := WIZARD_SIZE_MULTIPLIERS.duplicate()
 	for index in range(candidates.size() - 1, -1, -1):
 		if is_equal_approx(float(candidates[index]), previous_multiplier):
 			candidates.remove_at(index)
