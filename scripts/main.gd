@@ -235,10 +235,10 @@ var design_draw_scale := 1.0
 
 
 func _ready() -> void:
-	# Character cutouts are supplied at a much higher resolution than their
-	# on-screen size. Linear sampling keeps their alpha edge clean while they
-	# are reduced, instead of exposing stair-stepped fringe pixels.
-	texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+	# Character art is pixel-based. Nearest sampling prevents transparent
+	# white matte pixels from being blended into the silhouette when previews
+	# and in-game sprites are reduced to their display size.
+	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	feedback = RopeFeedbackManager.new()
 	add_child(feedback)
 	save_manager = RopeSaveManager.new()
