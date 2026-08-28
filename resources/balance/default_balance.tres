@@ -5,7 +5,7 @@
 [resource]
 script = ExtResource("1_balance")
 base_rope_speed = 2.85
-speed_gain_per_score = 0.11
+speed_gain_per_score = 0.15
 jump_cue_seconds = 0.34
 required_jump_height = 36.0
 challenge_start_score = 10

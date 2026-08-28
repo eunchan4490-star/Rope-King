@@ -11,6 +11,7 @@ func _init() -> void:
 	var game := MAIN_SCENE.instantiate()
 	root.add_child(game)
 	_test_speed_curve(game)
+	_test_athlete_base_speed_stays_fixed(game)
 	_test_high_speed_crossings(game)
 	_test_red_cue_matches_timing(game)
 	_test_athlete_turner_pattern(game)
@@ -36,6 +37,15 @@ func _test_speed_curve(game: Node) -> void:
 		game.score = score
 		game.rope_speed = expected
 		_expect(is_equal_approx(game.rope_speed, expected), "speed curve failed at score %d" % score)
+
+
+func _test_athlete_base_speed_stays_fixed(game: Node) -> void:
+	var athlete_base: float = BALANCE.speed_for_score(10)
+	_expect(is_equal_approx(BALANCE.speed_gain_per_score, 0.15), "student speed gain was not raised to 0.15 per score")
+	for score in [10, 11, 20, 29]:
+		_expect(is_equal_approx(game._base_speed_for_score(score), athlete_base), "athlete base speed increased at score %d" % score)
+	_expect(is_equal_approx(game._base_speed_for_score(9), BALANCE.speed_for_score(9)), "student speed curve changed before athlete entry")
+	_expect(is_equal_approx(game._base_speed_for_score(30), BALANCE.speed_for_score(30)), "sleepy student speed curve did not resume at score 30")
 
 
 func _test_high_speed_crossings(game: Node) -> void:

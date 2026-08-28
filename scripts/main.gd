@@ -383,7 +383,7 @@ func _resolve_rope_crossing() -> void:
 		if score > best_score:
 			best_score = score
 			new_best_this_run = true
-		rope_speed = balance.speed_for_score(score)
+		rope_speed = _base_speed_for_score(score)
 		total_success += 1
 		var previous_team := turner_team
 		var team_changed := _update_turner_team_and_pattern()
@@ -696,6 +696,14 @@ func _effective_rope_speed() -> float:
 		3: # Wave: repeatedly changes tempo during one turn.
 			speed_multiplier = balance.wave_min_multiplier + balance.wave_range * (0.5 + 0.5 * sin(rope_angle * 3.0))
 	return rope_speed * speed_multiplier
+
+
+func _base_speed_for_score(current_score: int) -> float:
+	# The athlete's difficulty comes from its burst pattern, not a constantly
+	# rising baseline. Hold the score-10 baseline until the sleepy team enters.
+	if current_score >= TURNER_CHANGE_INTERVAL and current_score < SLEEPY_START_SCORE:
+		return balance.speed_for_score(TURNER_CHANGE_INTERVAL)
+	return balance.speed_for_score(current_score)
 
 
 func _reset_turner_run() -> void:
