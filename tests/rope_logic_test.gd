@@ -234,7 +234,7 @@ func _test_wizard_turner_pattern(game: Node) -> void:
 	_expect(int(game.turner_team) == int(game.TurnerTeam.WIZARD), "wizard team was not activated")
 	_expect(not bool(game.wizard_rope_hidden), "wizard began with an invisible turn instead of a normal turn")
 	_expect(int(game.wizard_speed_turns_remaining) == 2, "wizard random speed did not begin as a two-turn pair")
-	_expect(is_equal_approx(game.WIZARD_BASE_SPEED_MULTIPLIER, 0.72), "wizard base speed was not slowed down")
+	_expect(is_equal_approx(game.WIZARD_BASE_SPEED_MULTIPLIER, 0.60), "wizard base speed was not slowed down enough")
 	_expect(float(game.wizard_speed_multiplier) >= 0.75 and float(game.wizard_speed_multiplier) <= 1.8, "wizard random speed began outside the safe range")
 	var first_pair_speed: float = game.wizard_speed_multiplier
 	game._update_turner_team_and_pattern()
