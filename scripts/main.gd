@@ -28,7 +28,10 @@ const SLEEPY_WAKE_WARNING_SECONDS := 1.0
 const SLEEPY_SLOW_MULTIPLIER := 0.34
 const SLEEPY_FAST_MULTIPLIER := 2.0
 const PRANKSTER_START_SCORE := 50
-const PRANKSTER_FAKE_HOLD_SECONDS := 0.65
+const ROPE_OVERHEAD_ANGLE := PI * 1.5
+const PRANKSTER_STOP_SECONDS := 1.0
+const PRANKSTER_REVERSE_SECONDS := 1.0
+const PRANKSTER_REVERSE_SPEED_MULTIPLIER := 0.45
 const PRANKSTER_MIN_NORMAL_TURNS := 1
 const PRANKSTER_MAX_NORMAL_TURNS := 3
 const TURNER_EXIT_SECONDS := 0.7
@@ -129,7 +132,8 @@ var sleepy_wake_warning_time := 0.0
 var sleepy_fast_turns_remaining := 0
 var prankster_normal_turns_remaining := 0
 var prankster_fake_pending := false
-var prankster_fake_hold_time := 0.0
+var prankster_fake_mode := 0
+var prankster_fake_time := 0.0
 var turner_transition_active := false
 var turner_transition_time := 0.0
 var turner_transition_phase := TurnerTransitionPhase.NONE
@@ -750,7 +754,8 @@ func _reset_turner_run() -> void:
 	sleepy_fast_turns_remaining = 0
 	prankster_normal_turns_remaining = 0
 	prankster_fake_pending = false
-	prankster_fake_hold_time = 0.0
+	prankster_fake_mode = 0
+	prankster_fake_time = 0.0
 	turner_transition_active = false
 	turner_transition_time = 0.0
 	turner_transition_phase = TurnerTransitionPhase.NONE
@@ -791,7 +796,8 @@ func _update_turner_team_and_pattern() -> bool:
 		sleepy_fast_turns_remaining = 0
 		prankster_normal_turns_remaining = _roll_prankster_normal_turns()
 		prankster_fake_pending = false
-		prankster_fake_hold_time = 0.0
+		prankster_fake_mode = 0
+		prankster_fake_time = 0.0
 		return true
 	if turner_team == TurnerTeam.SLEEPY:
 		if sleepy_fast_turns_remaining > 0:
@@ -847,17 +853,28 @@ func _roll_prankster_normal_turns() -> int:
 func _update_prankster_fake(delta: float) -> bool:
 	if turner_team != TurnerTeam.PRANKSTER:
 		return false
-	if prankster_fake_hold_time > 0.0:
-		prankster_fake_hold_time = maxf(0.0, prankster_fake_hold_time - delta)
-		if prankster_fake_hold_time <= 0.0:
+	if prankster_fake_time > 0.0:
+		if prankster_fake_mode == 2:
+			# A short visible rewind at the top makes the fake readable without
+			# ever reversing through the player's collision point.
+			var reverse_delta := minf(delta, prankster_fake_time)
+			rope_angle = fposmod(rope_angle - rope_speed * PRANKSTER_REVERSE_SPEED_MULTIPLIER * reverse_delta, TAU)
+		prankster_fake_time = maxf(0.0, prankster_fake_time - delta)
+		if prankster_fake_time <= 0.0:
+			prankster_fake_mode = 0
 			prankster_fake_pending = false
 			prankster_normal_turns_remaining = _roll_prankster_normal_turns()
 			message = "다시 돈다!"
 			message_color = Color("73f7b4")
 		return true
-	if prankster_fake_pending and _rope_is_behind():
-		prankster_fake_hold_time = PRANKSTER_FAKE_HOLD_SECONDS
-		message = "페이크!"
+	if prankster_fake_pending:
+		var projected_angle := fposmod(rope_angle + _effective_rope_speed() * delta, TAU)
+		if not _angle_crossed(rope_angle, projected_angle, ROPE_OVERHEAD_ANGLE):
+			return false
+		rope_angle = ROPE_OVERHEAD_ANGLE
+		prankster_fake_mode = randi_range(1, 2)
+		prankster_fake_time = PRANKSTER_STOP_SECONDS if prankster_fake_mode == 1 else PRANKSTER_REVERSE_SECONDS
+		message = "멈칫!" if prankster_fake_mode == 1 else "역회전!"
 		message_color = Color("ffd84a")
 		return true
 	return false

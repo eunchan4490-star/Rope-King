@@ -194,12 +194,28 @@ func _test_prankster_turner_pattern(game: Node) -> void:
 	game.prankster_normal_turns_remaining = 1
 	game._update_turner_team_and_pattern()
 	_expect(bool(game.prankster_fake_pending), "prankster did not schedule a fake after its normal turns")
-	game.rope_angle = PI
-	_expect(game._update_prankster_fake(0.01), "prankster fake did not begin while the rope was behind")
-	_expect(is_equal_approx(game.prankster_fake_hold_time, game.PRANKSTER_FAKE_HOLD_SECONDS), "prankster fake hold duration was incorrect")
-	_expect(game._update_prankster_fake(game.PRANKSTER_FAKE_HOLD_SECONDS + 0.01), "prankster fake did not consume its hold frame")
+	game.rope_speed = 4.0
+	game.rope_angle = game.ROPE_OVERHEAD_ANGLE - 0.02
+	_expect(game._update_prankster_fake(0.01), "prankster fake did not begin at the rope's highest point")
+	_expect(is_equal_approx(game.rope_angle, game.ROPE_OVERHEAD_ANGLE), "prankster fake did not lock onto the exact overhead point")
+	_expect(int(game.prankster_fake_mode) == 1 or int(game.prankster_fake_mode) == 2, "prankster did not choose stop or reverse")
+	_expect(is_equal_approx(game.PRANKSTER_STOP_SECONDS, 1.0), "prankster stop fake was not extended to one second")
+	_expect(is_equal_approx(game.PRANKSTER_REVERSE_SECONDS, 1.0), "prankster reverse fake was not extended to one second")
+	var chosen_fake_mode: int = game.prankster_fake_mode
+	var fake_duration: float = game.PRANKSTER_STOP_SECONDS if int(game.prankster_fake_mode) == 1 else game.PRANKSTER_REVERSE_SECONDS
+	var angle_at_fake_start: float = game.rope_angle
+	_expect(game._update_prankster_fake(fake_duration + 0.01), "prankster fake did not consume its active frame")
+	if chosen_fake_mode == 2:
+		_expect(game.rope_angle != angle_at_fake_start, "prankster reverse fake did not move the rope backward")
 	_expect(not bool(game.prankster_fake_pending), "prankster fake stayed pending after the hold")
 	_expect(int(game.prankster_normal_turns_remaining) >= 1, "prankster allowed two fake holds in a row")
+	game.prankster_fake_pending = true
+	game.prankster_fake_mode = 2
+	game.prankster_fake_time = 0.1
+	game.rope_angle = game.ROPE_OVERHEAD_ANGLE
+	game._update_prankster_fake(0.05)
+	_expect(game.rope_angle < game.ROPE_OVERHEAD_ANGLE, "forced reverse fake did not rotate backward from the highest point")
+	game._update_prankster_fake(0.06)
 	for sample in range(100):
 		var normal_turns: int = game._roll_prankster_normal_turns()
 		_expect(normal_turns >= 1 and normal_turns <= 3, "prankster random fake timing escaped the 1-to-3-turn range")
