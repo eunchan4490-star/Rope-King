@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://flwkg8jd8af2"
-path="res://.godot/imported/idle.png-200f8339360cd8b8f5aa00dc5c8fb6ac.ctex"
+uid="uid://cb0kupcoww7vt"
+path="res://.godot/imported/jump_sheet.png-d57919fd65436c4151f5368f70daf52c.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/characters/ninja_student/idle.png"
-dest_files=["res://.godot/imported/idle.png-200f8339360cd8b8f5aa00dc5c8fb6ac.ctex"]
+source_file="res://assets/characters/gyaru_girl/jump_sheet.png"
+dest_files=["res://.godot/imported/jump_sheet.png-d57919fd65436c4151f5368f70daf52c.ctex"]
 
 [params]
 

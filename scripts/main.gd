@@ -1615,6 +1615,10 @@ func _draw_character_card(font: Font, character_id: String, card: Rect2) -> void
 	if texture != null:
 		var source: Rect2 = character_preview_regions.get(character_id, Rect2(Vector2.ZERO, texture.get_size()))
 		var scale := minf(preview_rect.size.x / source.size.x, preview_rect.size.y / source.size.y)
+		# The ninja hood is intentionally wide; fit it by height so it does not
+		# look shorter than the other characters in the selection cards.
+		if character_id == "gyaru_girl":
+			scale = preview_rect.size.y / source.size.y
 		var size := source.size * scale
 		var position := Vector2(preview_rect.get_center().x - size.x * 0.5, preview_rect.end.y - size.y)
 		draw_texture_rect_region(texture, Rect2(position, size), source)
