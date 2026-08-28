@@ -1,7 +1,7 @@
 extends Node2D
 
 enum GameState { TITLE, PLAYING, HIT, GAME_OVER }
-enum TurnerTeam { STUDENT, ATHLETE, SLEEPY, PRANKSTER }
+enum TurnerTeam { STUDENT, ATHLETE, SLEEPY, PRANKSTER, WIZARD }
 enum TurnerTransitionPhase { NONE, TURNER_EXIT, TURNER_ENTRY_COUNTDOWN }
 
 const DESIGN_SIZE := Vector2(720.0, 1280.0)
@@ -34,6 +34,7 @@ const PRANKSTER_REVERSE_SECONDS := 1.0
 const PRANKSTER_REVERSE_SPEED_MULTIPLIER := 0.45
 const PRANKSTER_MIN_NORMAL_TURNS := 1
 const PRANKSTER_MAX_NORMAL_TURNS := 3
+const WIZARD_START_SCORE := 70
 const TURNER_EXIT_SECONDS := 0.7
 const ATHLETE_ENTRY_SECONDS := 0.8
 const COUNTDOWN_NUMBER_SECONDS := 0.65
@@ -50,6 +51,7 @@ const ATHLETE_TURNER_PATH := "res://assets/turners/athlete_student.png"
 const SLEEPY_TURNER_ASLEEP_PATH := "res://assets/turners/sleepy_student_asleep.png"
 const SLEEPY_TURNER_AWAKE_PATH := "res://assets/turners/sleepy_student_awake.png"
 const PRANKSTER_TURNER_PATH := "res://assets/turners/prankster_student.png"
+const WIZARD_TURNER_PATH := "res://assets/turners/wizard_student.png"
 const MENU_CHARACTER_TEXTURE_PATH := "res://assets/ui/menu_character.png"
 const MENU_UPGRADE_TEXTURE_PATH := "res://assets/ui/menu_upgrade.png"
 const MENU_SETTINGS_TEXTURE_PATH := "res://assets/ui/menu_settings.png"
@@ -97,6 +99,7 @@ const CHARACTER_CARD_RECTS := [
 @export var sleepy_turner_asleep_texture: Texture2D
 @export var sleepy_turner_awake_texture: Texture2D
 @export var prankster_turner_texture: Texture2D
+@export var wizard_turner_texture: Texture2D
 @export_group("Menu Button Assets")
 @export var character_button_texture: Texture2D
 @export var upgrade_button_texture: Texture2D
@@ -134,6 +137,7 @@ var prankster_normal_turns_remaining := 0
 var prankster_fake_pending := false
 var prankster_fake_mode := 0
 var prankster_fake_time := 0.0
+var wizard_rope_hidden := false
 var turner_transition_active := false
 var turner_transition_time := 0.0
 var turner_transition_phase := TurnerTransitionPhase.NONE
@@ -179,6 +183,9 @@ var mirrored_sleepy_turner_awake_used_region := Rect2()
 var prankster_turner_used_region := Rect2()
 var mirrored_prankster_turner_texture: Texture2D
 var mirrored_prankster_turner_used_region := Rect2()
+var wizard_turner_used_region := Rect2()
+var mirrored_wizard_turner_texture: Texture2D
+var mirrored_wizard_turner_used_region := Rect2()
 var character_button_used_region := Rect2()
 var upgrade_button_used_region := Rect2()
 var settings_button_used_region := Rect2()
@@ -290,6 +297,16 @@ func _prepare_turner_visuals() -> void:
 			mirrored_prankster_image.flip_x()
 			mirrored_prankster_turner_texture = ImageTexture.create_from_image(mirrored_prankster_image)
 			mirrored_prankster_turner_used_region = _texture_used_region(mirrored_prankster_turner_texture)
+	if wizard_turner_texture == null and ResourceLoader.exists(WIZARD_TURNER_PATH):
+		wizard_turner_texture = load(WIZARD_TURNER_PATH) as Texture2D
+	if wizard_turner_texture != null:
+		wizard_turner_used_region = _texture_used_region(wizard_turner_texture)
+		var wizard_image := wizard_turner_texture.get_image()
+		if wizard_image != null and not wizard_image.is_empty():
+			var mirrored_wizard_image := wizard_image.duplicate()
+			mirrored_wizard_image.flip_x()
+			mirrored_wizard_turner_texture = ImageTexture.create_from_image(mirrored_wizard_image)
+			mirrored_wizard_turner_used_region = _texture_used_region(mirrored_wizard_turner_texture)
 
 
 func _prepare_countdown_visuals() -> void:
@@ -426,6 +443,8 @@ func _resolve_rope_crossing() -> void:
 					message = "졸보 등장!  깨면 1초 뒤 초고속!"
 				TurnerTeam.PRANKSTER:
 					message = "장난꾸러기 등장!  멈추는 척을 조심!"
+				TurnerTeam.WIZARD:
+					message = "마법사 등장!  사라진 줄은 빨간색을 봐!"
 		elif turner_team == TurnerTeam.SLEEPY and sleepy_wake_warning_time > 0.0:
 			message = "번쩍!  1초 뒤 초고속!"
 		elif turner_team == TurnerTeam.ATHLETE and challenge_pattern == 2:
@@ -650,6 +669,8 @@ func _draw_cover_texture(texture: Texture2D, target: Rect2) -> void:
 
 
 func _draw_rope() -> void:
+	if not _wizard_rope_is_visible():
+		return
 	var midpoint_y := _rope_midpoint_y(rope_angle)
 	var pixel_points := PackedVector2Array()
 	for i in range(97):
@@ -681,6 +702,10 @@ func _draw_rope() -> void:
 
 	_draw_pixel_rope_grip(LEFT_HAND)
 	_draw_pixel_rope_grip(RIGHT_HAND)
+
+
+func _wizard_rope_is_visible() -> bool:
+	return turner_team != TurnerTeam.WIZARD or not wizard_rope_hidden or _is_jump_cue()
 
 
 func _rope_midpoint_y(angle: float) -> float:
@@ -756,6 +781,7 @@ func _reset_turner_run() -> void:
 	prankster_fake_pending = false
 	prankster_fake_mode = 0
 	prankster_fake_time = 0.0
+	wizard_rope_hidden = false
 	turner_transition_active = false
 	turner_transition_time = 0.0
 	turner_transition_phase = TurnerTransitionPhase.NONE
@@ -799,6 +825,14 @@ func _update_turner_team_and_pattern() -> bool:
 		prankster_fake_mode = 0
 		prankster_fake_time = 0.0
 		return true
+	if turner_team == TurnerTeam.PRANKSTER and score >= WIZARD_START_SCORE:
+		turner_team = TurnerTeam.WIZARD
+		challenge_pattern = 0
+		prankster_fake_pending = false
+		prankster_fake_mode = 0
+		prankster_fake_time = 0.0
+		wizard_rope_hidden = false
+		return true
 	if turner_team == TurnerTeam.SLEEPY:
 		if sleepy_fast_turns_remaining > 0:
 			sleepy_fast_turns_remaining -= 1
@@ -815,6 +849,9 @@ func _update_turner_team_and_pattern() -> bool:
 		prankster_normal_turns_remaining -= 1
 		if prankster_normal_turns_remaining <= 0:
 			prankster_fake_pending = true
+		return false
+	if turner_team == TurnerTeam.WIZARD:
+		wizard_rope_hidden = not wizard_rope_hidden
 		return false
 
 	if challenge_pattern == 2:
@@ -913,6 +950,11 @@ func _draw_turner(feet: Vector2, faces_left: bool, display_team := -1) -> void:
 		base_region = prankster_turner_used_region
 		mirror_texture = mirrored_prankster_turner_texture
 		mirror_region = mirrored_prankster_turner_used_region
+	elif active_team == TurnerTeam.WIZARD:
+		base_texture = wizard_turner_texture
+		base_region = wizard_turner_used_region
+		mirror_texture = mirrored_wizard_turner_texture
+		mirror_region = mirrored_wizard_turner_used_region
 	if base_texture != null and base_region.size.x > 0.0:
 		var active_texture := mirror_texture if faces_left and mirror_texture != null else base_texture
 		var active_region := mirror_region if faces_left and mirror_texture != null else base_region

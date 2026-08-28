@@ -17,6 +17,7 @@ func _init() -> void:
 	_test_athlete_turner_pattern(game)
 	_test_sleepy_turner_pattern(game)
 	_test_prankster_turner_pattern(game)
+	_test_wizard_turner_pattern(game)
 	_test_physical_clearance_wins(game)
 	_test_visible_contact_loses(game)
 	_test_character_asset_system(game)
@@ -222,6 +223,28 @@ func _test_prankster_turner_pattern(game: Node) -> void:
 	_expect(is_equal_approx(game._base_speed_for_score(50), BALANCE.speed_for_score(10)), "prankster baseline was not kept at the readable score-10 speed")
 
 
+func _test_wizard_turner_pattern(game: Node) -> void:
+	game._reset_turner_run()
+	game.turner_team = game.TurnerTeam.PRANKSTER
+	game.score = 69
+	_expect(not game._update_turner_team_and_pattern(), "wizard entered before score 70")
+	game.score = 70
+	_expect(game._update_turner_team_and_pattern(), "wizard did not enter at score 70")
+	_expect(int(game.turner_team) == int(game.TurnerTeam.WIZARD), "wizard team was not activated")
+	_expect(not bool(game.wizard_rope_hidden), "wizard began with an invisible turn instead of a normal turn")
+	game._update_turner_team_and_pattern()
+	_expect(bool(game.wizard_rope_hidden), "wizard's second turn did not become invisible")
+	game.game_state = game.GameState.PLAYING
+	game.rope_speed = BALANCE.speed_for_score(10)
+	game.rope_angle = PI
+	_expect(not game._wizard_rope_is_visible(), "wizard's hidden rope remained visible outside the red cue")
+	game.rope_angle = fposmod(TARGET_ANGLE - game.rope_speed * BALANCE.jump_cue_seconds * 0.5, TAU)
+	_expect(game._is_jump_cue(), "wizard visibility test did not enter the red cue")
+	_expect(game._wizard_rope_is_visible(), "wizard's invisible rope did not reappear for the red cue")
+	game._update_turner_team_and_pattern()
+	_expect(not bool(game.wizard_rope_hidden), "wizard rope did not return to a normal visible turn")
+
+
 func _test_physical_clearance_wins(game: Node) -> void:
 	if game.feedback == null:
 		game.feedback = RopeFeedbackManager.new()
@@ -267,6 +290,9 @@ func _test_character_asset_system(game: Node) -> void:
 	_expect(ResourceLoader.exists("res://assets/turners/prankster_student.png"), "prankster turner asset was not imported")
 	_expect(game.prankster_turner_texture != null, "prankster turner texture was not loaded")
 	_expect(game.mirrored_prankster_turner_texture != null, "right prankster mirror texture was not created")
+	_expect(ResourceLoader.exists("res://assets/turners/wizard_student.png"), "wizard turner asset was not imported")
+	_expect(game.wizard_turner_texture != null, "wizard turner texture was not loaded")
+	_expect(game.mirrored_wizard_turner_texture != null, "right wizard mirror texture was not created")
 	_expect(ResourceLoader.exists("res://assets/ui/title_frame.png"), "HUD title frame asset was not imported")
 	_expect(ResourceLoader.exists("res://assets/ui/title_logo.png"), "HUD title logo asset was not imported")
 	_expect(ResourceLoader.exists("res://assets/ui/best_score_frame.png"), "best score frame asset was not imported")
