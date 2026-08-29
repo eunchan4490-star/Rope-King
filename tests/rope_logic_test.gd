@@ -350,17 +350,25 @@ func _test_character_asset_system(game: Node) -> void:
 	_expect(ResourceLoader.exists("res://assets/characters/default/jump_sheet.png"), "default jump asset path was not imported")
 	_expect(game._is_safe_character_id("default"), "default character id was rejected")
 	game._load_character_catalog()
-	_expect(game.character_ids.size() == 1, "only the default character should remain")
+	_expect(game.character_ids.has("default"), "default character should be available")
 	_expect(game.character_ids[0] == "default", "character metadata order was not applied")
-	_expect(game.owned_character_ids == ["default"], "only the default character should be owned")
+	_expect(game.owned_character_ids.has("default"), "default character should be owned")
 	game._load_character_visuals("default")
 	_expect(game.player_sprite != null, "default character idle sprite was not loaded")
-	_expect(game.player_jump_regions.size() == 4, "jump sheet was not split into four frames")
+	_expect(game.player_jump_regions.size() == 2, "jump sheet was not split into the air/mid pose pair")
 	_expect(game.player_jump_scale.x > 0.0 and game.player_jump_scale.y > 0.0, "character scale was not calculated")
 	_expect(is_equal_approx(game.player_jump_scale.x, game.player_jump_scale.y), "jump sprite scale distorts the character aspect ratio")
 	_expect(not game.set_player_character("../unsafe"), "unsafe character id was accepted")
 	for character_id in game.character_ids:
 		_expect(game.set_player_character(character_id), "%s character could not be measured" % character_id)
+		for asset_name in ["idle.png", "jump_sheet.png"]:
+			var asset_texture := load("res://assets/characters/%s/%s" % [character_id, asset_name]) as Texture2D
+			if asset_texture != null:
+				var asset_image := asset_texture.get_image()
+				var last_x := asset_image.get_width() - 1
+				var last_y := asset_image.get_height() - 1
+				for corner in [Vector2i.ZERO, Vector2i(last_x, 0), Vector2i(0, last_y), Vector2i(last_x, last_y)]:
+					_expect(asset_image.get_pixelv(corner).a < 0.02, "%s %s corner is not transparent" % [character_id, asset_name])
 		var body_top_fraction := float(game.character_body_top_fractions.get(character_id, 0.0))
 		var body_height: float = game.player_base_region.size.y * (1.0 - body_top_fraction) * game.player_base_scale
 		smallest_body_height = minf(smallest_body_height, body_height)

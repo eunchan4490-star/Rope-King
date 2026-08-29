@@ -48,7 +48,10 @@ public static class RopeKingCharacterSheet
         if (a == 0) return true;
         int min = Math.Min(r, Math.Min(g, b));
         int max = Math.Max(r, Math.Max(g, b));
-        return min > 218 && max - min < 24;
+        // Generated sheets may contain a checkerboard matte. Treat bright,
+        // near-neutral pixels as background so isolated checker squares do
+        // not survive around or between the character's limbs.
+        return min > 178 && max - min < 42;
     }
 
     public static Bitmap RemoveConnectedBackground(string path)
@@ -98,10 +101,16 @@ public static class RopeKingCharacterSheet
                 int x = index % bitmap.Width;
                 int y = index / bitmap.Width;
                 pixels[y * stride + x * 4 + 3] = 0;
+                // 8-connected flood fill also removes checkerboard squares
+                // that only touch diagonally.
                 enqueue(x - 1, y);
                 enqueue(x + 1, y);
                 enqueue(x, y - 1);
                 enqueue(x, y + 1);
+                enqueue(x - 1, y - 1);
+                enqueue(x + 1, y - 1);
+                enqueue(x - 1, y + 1);
+                enqueue(x + 1, y + 1);
             }
 
             Marshal.Copy(pixels, 0, data.Scan0, pixels.Length);
@@ -114,12 +123,13 @@ public static class RopeKingCharacterSheet
     {
         using (var sheet = RemoveConnectedBackground(sourcePath))
         {
-            if (sheet.Width < 5 || sheet.Height < 1)
+            if (sheet.Width < 3 || sheet.Height < 1)
                 throw new InvalidDataException("The source sheet is too small.");
             if (sheet.GetPixel(0, 0).A != 0 || sheet.GetPixel(sheet.Width - 1, 0).A != 0 ||
                 sheet.GetPixel(0, sheet.Height - 1).A != 0 || sheet.GetPixel(sheet.Width - 1, sheet.Height - 1).A != 0)
                 throw new InvalidDataException("The source sheet must have a transparent background at all four corners.");
-            int cellWidth = sheet.Width / 5;
+            // Source layout: [1 idle] [2 air/apex] [3 mid-transition].
+            int cellWidth = sheet.Width / 3;
 
             using (var idle = new Bitmap(cellWidth, sheet.Height, PixelFormat.Format32bppArgb))
             using (var graphics = Graphics.FromImage(idle))
@@ -129,11 +139,11 @@ public static class RopeKingCharacterSheet
                 idle.Save(idlePath, ImageFormat.Png);
             }
 
-            using (var jump = new Bitmap(cellWidth * 4, sheet.Height, PixelFormat.Format32bppArgb))
+            using (var jump = new Bitmap(cellWidth * 2, sheet.Height, PixelFormat.Format32bppArgb))
             using (var graphics = Graphics.FromImage(jump))
             {
                 graphics.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceCopy;
-                graphics.DrawImage(sheet, new Rectangle(0, 0, cellWidth * 4, sheet.Height), new Rectangle(cellWidth, 0, cellWidth * 4, sheet.Height), GraphicsUnit.Pixel);
+                graphics.DrawImage(sheet, new Rectangle(0, 0, cellWidth * 2, sheet.Height), new Rectangle(cellWidth, 0, cellWidth * 2, sheet.Height), GraphicsUnit.Pixel);
                 jump.Save(jumpPath, ImageFormat.Png);
             }
         }

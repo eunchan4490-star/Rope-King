@@ -1,0 +1,8 @@
+{
+  "display_name": "드링크중독소년",
+  "order": 28,
+  "unlocked_by_default": true,
+  "scale_multiplier": 1.1,
+  "gameplay_scale_multiplier": 1.1,
+  "disable_jump_rescale": true
+}

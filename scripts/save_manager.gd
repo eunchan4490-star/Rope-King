@@ -3,6 +3,8 @@ extends Node
 
 const SAVE_VERSION := 1
 const DEFAULT_SAVE_PATH := "user://rope_king_save.json"
+const DEFAULT_NICKNAME := "플레이어"
+const NICKNAME_MAX_LENGTH := 10
 
 var save_path := DEFAULT_SAVE_PATH
 
@@ -42,6 +44,7 @@ func default_data() -> Dictionary:
 		"gems": 0,
 		"selected_character": "default",
 		"owned_characters": ["default"],
+		"nickname": DEFAULT_NICKNAME,
 		"settings": {
 			"sound": true,
 			"vibration": true,
@@ -60,6 +63,11 @@ func _sanitize(source: Dictionary, defaults: Dictionary) -> Dictionary:
 	var owned: Array = owned_source if owned_source is Array else defaults.owned_characters
 	if owned.is_empty():
 		owned = ["default"]
+	var nickname := str(source.get("nickname", defaults.nickname)).strip_edges()
+	if nickname.is_empty():
+		nickname = DEFAULT_NICKNAME
+	elif nickname.length() > NICKNAME_MAX_LENGTH:
+		nickname = nickname.substr(0, NICKNAME_MAX_LENGTH)
 	return {
 		"save_version": SAVE_VERSION,
 		"best_score": maxi(0, int(source.get("best_score", defaults.best_score))),
@@ -67,6 +75,7 @@ func _sanitize(source: Dictionary, defaults: Dictionary) -> Dictionary:
 		"gems": maxi(0, int(source.get("gems", defaults.gems))),
 		"selected_character": str(source.get("selected_character", defaults.selected_character)),
 		"owned_characters": owned,
+		"nickname": nickname,
 		"settings": {
 			"sound": bool(settings_source.get("sound", defaults.settings.sound)),
 			"vibration": bool(settings_source.get("vibration", defaults.settings.vibration)),

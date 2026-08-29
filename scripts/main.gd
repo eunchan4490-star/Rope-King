@@ -4,6 +4,9 @@ enum GameState { TITLE, PLAYING, HIT, GAME_OVER }
 enum TurnerTeam { STUDENT, ATHLETE, SLEEPY, PRANKSTER, WIZARD }
 enum TurnerTransitionPhase { NONE, TURNER_EXIT, TURNER_ENTRY_COUNTDOWN }
 
+const SUPABASE_URL := "https://zjluakxiiynlzbfxztrl.supabase.co"
+const SUPABASE_ANON_KEY := "sb_publishable_oFUSCvNA6oyZCHP5vNuqXw_gfYXFD_e"
+const LEADERBOARD_TOP_N := 10
 const DESIGN_SIZE := Vector2(720.0, 1280.0)
 const PLAYER_X := 360.0
 const COOP_LEFT_PLAYER_X := 240.0
@@ -65,7 +68,6 @@ const PRANKSTER_TURNER_PATH := "res://assets/turners/prankster_student.png"
 const WIZARD_TURNER_PATH := "res://assets/turners/wizard_student.png"
 const MENU_CHARACTER_TEXTURE_PATH := "res://assets/ui/menu_character.png"
 const MENU_COOP_TEXTURE_PATH := "res://assets/ui/menu_coop.png"
-const MENU_UPGRADE_TEXTURE_PATH := "res://assets/ui/menu_upgrade.png"
 const MENU_SETTINGS_TEXTURE_PATH := "res://assets/ui/menu_settings.png"
 const HUD_TITLE_FRAME_PATH := "res://assets/ui/title_frame.png"
 const HUD_TITLE_LOGO_PATH := "res://assets/ui/title_logo.png"
@@ -85,28 +87,51 @@ const COUNTDOWN_PATHS := [
 	"res://assets/ui/countdown_go.png",
 ]
 const DEFAULT_CHARACTER_ID := "default"
-const JUMP_FRAME_COUNT := 4
+const JUMP_FRAME_COUNT := 2
+const JUMP_FRAME_AIR := 0
+const JUMP_FRAME_MID := 1
+const JUMP_APEX_VELOCITY_BAND := 180.0
 const CHARACTERS_PER_PAGE := 3
 const DEFAULT_BALANCE := preload("res://resources/balance/default_balance.tres")
 const CHARACTER_BUTTON_RECT := Rect2(25.0, 1055.0, 210.0, 195.0)
-const UPGRADE_BUTTON_RECT := Rect2(255.0, 1055.0, 210.0, 195.0)
+const COOP_BUTTON_RECT := Rect2(255.0, 1055.0, 210.0, 195.0)
 const SETTINGS_BUTTON_RECT := Rect2(485.0, 1055.0, 210.0, 195.0)
 const TEST_START_50_RECT := Rect2(555.0, 670.0, 145.0, 82.0)
 const GAME_OVER_CLOSE_RECT := Rect2(548.0, 394.0, 58.0, 58.0)
-const CHARACTER_PANEL_RECT := Rect2(30.0, 185.0, 660.0, 700.0)
-const CHARACTER_PANEL_CLOSE_RECT := Rect2(616.0, 205.0, 52.0, 52.0)
+const CHARACTER_PANEL_RECT := Rect2(30.0, 100.0, 660.0, 785.0)
+const CHARACTER_PANEL_CLOSE_RECT := Rect2(616.0, 120.0, 52.0, 52.0)
 const CHARACTER_PAGE_PREV_RECT := Rect2(242.0, 785.0, 70.0, 58.0)
 const CHARACTER_PAGE_NEXT_RECT := Rect2(408.0, 785.0, 70.0, 58.0)
+# Cards extend 85px further up than their text/bottom layout would otherwise
+# need, so a character whose select-card preview is enlarged via
+# scale_multiplier (e.g. tall ears at 1.3x) has headroom instead of poking
+# out above the card border. The card BOTTOM (and therefore the name/보유/선택
+# text, via matching +85 offsets in _draw_character_card) is unchanged.
 const CHARACTER_CARD_RECTS := [
-	Rect2(52.0, 330.0, 190.0, 400.0),
-	Rect2(265.0, 330.0, 190.0, 400.0),
-	Rect2(478.0, 330.0, 190.0, 400.0),
+	Rect2(52.0, 245.0, 190.0, 485.0),
+	Rect2(265.0, 245.0, 190.0, 485.0),
+	Rect2(478.0, 245.0, 190.0, 485.0),
 ]
+const SETTINGS_PANEL_RECT := Rect2(30.0, 100.0, 660.0, 785.0)
+const SETTINGS_PANEL_CLOSE_RECT := Rect2(616.0, 120.0, 52.0, 52.0)
+const SOUND_TOGGLE_RECT := Rect2(70.0, 280.0, 520.0, 80.0)
+const VIBRATION_TOGGLE_RECT := Rect2(70.0, 380.0, 520.0, 80.0)
+const NICKNAME_ROW_RECT := Rect2(70.0, 480.0, 520.0, 70.0)
+const NICKNAME_FIELD_RECT := Rect2(200.0, 480.0, 260.0, 70.0)
+const NICKNAME_SAVE_BUTTON_RECT := Rect2(470.0, 480.0, 120.0, 70.0)
+const CODE_ROW_RECT := Rect2(70.0, 570.0, 520.0, 70.0)
+const CODE_FIELD_RECT := Rect2(200.0, 570.0, 260.0, 70.0)
+const CODE_SUBMIT_BUTTON_RECT := Rect2(470.0, 570.0, 120.0, 70.0)
+const RANKING_BUTTON_RECT := Rect2(70.0, 660.0, 520.0, 80.0)
+const RANKING_PANEL_RECT := Rect2(30.0, 100.0, 660.0, 785.0)
+const RANKING_PANEL_CLOSE_RECT := Rect2(616.0, 120.0, 52.0, 52.0)
+const RANKING_LIST_RECT := Rect2(70.0, 280.0, 520.0, 480.0)
+const RANKING_ROW_HEIGHT := 60.0
 
 @export_group("Player Sprite")
 @export var player_sprite: Texture2D
 @export var player_jump_sprite: Texture2D
-@export var player_sprite_max_size := Vector2(160.0, 160.0)
+@export var player_sprite_max_size := Vector2(176.0, 176.0)
 @export var player_sprite_ground_offset := Vector2.ZERO
 @export_group("Background")
 @export var background_texture: Texture2D
@@ -120,7 +145,6 @@ const CHARACTER_CARD_RECTS := [
 @export_group("Menu Button Assets")
 @export var character_button_texture: Texture2D
 @export var coop_button_texture: Texture2D
-@export var upgrade_button_texture: Texture2D
 @export var settings_button_texture: Texture2D
 @export_group("HUD Title Assets")
 @export var hud_title_frame_texture: Texture2D
@@ -192,11 +216,26 @@ var player_jump_regions: Array[Rect2] = []
 var player_base_scale := 1.0
 var player_jump_scale := Vector2.ONE
 var character_menu_open := false
+var settings_menu_open := false
+var nickname := RopeSaveManager.DEFAULT_NICKNAME
+var nickname_edit: LineEdit
+var code_edit: LineEdit
+var settings_message := ""
+var ranking_menu_open := false
+var ranking_loading := false
+var ranking_error := ""
+var ranking_entries: Array = []
+var leaderboard_submit_request: HTTPRequest
+var leaderboard_fetch_request: HTTPRequest
 var character_preview_textures: Dictionary = {}
 var character_preview_regions: Dictionary = {}
 var character_ids: Array[String] = []
 var character_names: Dictionary = {}
 var character_body_top_fractions: Dictionary = {}
+var character_scale_multipliers: Dictionary = {}
+var character_gameplay_scale_multipliers: Dictionary = {}
+var character_air_pose_scale_multipliers: Dictionary = {}
+var character_disable_jump_rescale: Dictionary = {}
 var owned_character_ids: Array[String] = []
 var character_page := 0
 var turner_used_region := Rect2()
@@ -219,7 +258,6 @@ var mirrored_wizard_turner_texture: Texture2D
 var mirrored_wizard_turner_used_region := Rect2()
 var character_button_used_region := Rect2()
 var coop_button_used_region := Rect2()
-var upgrade_button_used_region := Rect2()
 var settings_button_used_region := Rect2()
 var best_score_frame_used_region := Rect2()
 var resource_counter_frame_used_region := Rect2()
@@ -254,8 +292,6 @@ func _ready() -> void:
 		character_button_texture = load(MENU_CHARACTER_TEXTURE_PATH) as Texture2D
 	if coop_button_texture == null and ResourceLoader.exists(MENU_COOP_TEXTURE_PATH):
 		coop_button_texture = load(MENU_COOP_TEXTURE_PATH) as Texture2D
-	if upgrade_button_texture == null and ResourceLoader.exists(MENU_UPGRADE_TEXTURE_PATH):
-		upgrade_button_texture = load(MENU_UPGRADE_TEXTURE_PATH) as Texture2D
 	if settings_button_texture == null and ResourceLoader.exists(MENU_SETTINGS_TEXTURE_PATH):
 		settings_button_texture = load(MENU_SETTINGS_TEXTURE_PATH) as Texture2D
 	if hud_title_frame_texture == null and ResourceLoader.exists(HUD_TITLE_FRAME_PATH):
@@ -278,7 +314,6 @@ func _ready() -> void:
 		gold_digit_sheet_texture = load(GOLD_DIGIT_SHEET_PATH) as Texture2D
 	character_button_used_region = _texture_used_region(character_button_texture)
 	coop_button_used_region = _texture_used_region(coop_button_texture)
-	upgrade_button_used_region = _texture_used_region(upgrade_button_texture)
 	settings_button_used_region = _texture_used_region(settings_button_texture)
 	best_score_frame_used_region = _texture_used_region(best_score_frame_texture)
 	resource_counter_frame_used_region = _texture_used_region(resource_counter_frame_texture)
@@ -394,6 +429,7 @@ func _process(delta: float) -> void:
 		hit_reveal_time -= delta
 		if hit_reveal_time <= 0.0:
 			game_state = GameState.GAME_OVER
+			_submit_score(score)
 	if flash_time > 0.0:
 		flash_time -= delta
 	queue_redraw()
@@ -433,6 +469,14 @@ func _unhandled_input(event: InputEvent) -> void:
 				_handle_character_menu_input(design_position)
 				get_viewport().set_input_as_handled()
 				return
+			if ranking_menu_open:
+				_handle_ranking_menu_input(design_position)
+				get_viewport().set_input_as_handled()
+				return
+			if settings_menu_open:
+				_handle_settings_menu_input(design_position)
+				get_viewport().set_input_as_handled()
+				return
 			if TEST_START_50_RECT.has_point(design_position):
 				_start_game_at_score(50)
 				get_viewport().set_input_as_handled()
@@ -441,12 +485,12 @@ func _unhandled_input(event: InputEvent) -> void:
 				character_menu_open = true
 				get_viewport().set_input_as_handled()
 				return
-			if UPGRADE_BUTTON_RECT.has_point(design_position):
+			if COOP_BUTTON_RECT.has_point(design_position):
 				_start_coop_game()
 				get_viewport().set_input_as_handled()
 				return
 			if SETTINGS_BUTTON_RECT.has_point(design_position):
-				menu_notice = "설정 메뉴 준비 중"
+				_open_settings_menu()
 				get_viewport().set_input_as_handled()
 				return
 		if coop_mode:
@@ -699,6 +743,7 @@ func _load_saved_progress() -> void:
 	selected_character_id = saved_character if owned_character_ids.has(saved_character) else DEFAULT_CHARACTER_ID
 	feedback.sound_enabled = bool(data.settings.sound)
 	feedback.vibration_enabled = bool(data.settings.vibration)
+	nickname = str(data.nickname)
 
 
 func _save_progress() -> void:
@@ -709,6 +754,7 @@ func _save_progress() -> void:
 		"gems": gems,
 		"selected_character": selected_character_id,
 		"owned_characters": owned_character_ids,
+		"nickname": nickname,
 		"settings": {
 			"sound": feedback.sound_enabled,
 			"vibration": feedback.vibration_enabled,
@@ -1253,22 +1299,26 @@ func _draw_player_sprite(feet_position: Vector2, jumping: bool, velocity: float)
 	if jumping and player_jump_sprite != null and player_jump_regions.size() == JUMP_FRAME_COUNT:
 		using_jump_sheet = true
 		active_texture = player_jump_sprite
-		# Jump sequence: frame 2 (takeoff) -> 1 (up) -> 2 (down) -> 4 (land).
-		# The idle texture is frame 4, so a non-jumping character remains still
-		# on the final pose while the velocity bands drive the four jump poses.
-		var frame := 3
-		if velocity < -650.0:
-			frame = 1
-		elif velocity < -150.0:
-			frame = 0
-		elif velocity < 180.0:
-			frame = 1
+		# Jump sequence: idle -> mid -> air -> mid -> idle (1-3-2-3-1).
+		# Idle (the still texture) plays before takeoff and after landing;
+		# the mid pose plays on the way up and down, with the air pose only
+		# at the velocity-near-zero apex.
+		var frame := JUMP_FRAME_MID
+		if absf(velocity) < JUMP_APEX_VELOCITY_BAND:
+			frame = JUMP_FRAME_AIR
 		source_rect = player_jump_regions[frame]
 	var texture_size := source_rect.size
 	if texture_size.x <= 0.0 or texture_size.y <= 0.0:
 		_draw_default_player(feet_position)
 		return
 	var draw_size := texture_size * player_jump_scale if using_jump_sheet else texture_size * player_base_scale
+	if using_jump_sheet and absf(velocity) < JUMP_APEX_VELOCITY_BAND:
+		# Per-character correction for the air/apex pose specifically — some
+		# source art has its arms flung wide in this pose, which (with jump
+		# rescale disabled) reads as visibly bigger than the other frames even
+		# though it's shorter in height. See air_pose_scale_multiplier in
+		# character.json.
+		draw_size *= float(character_air_pose_scale_multipliers.get(selected_character_id, 1.0))
 	var anchored_feet := feet_position + player_sprite_ground_offset
 	var draw_position := anchored_feet - Vector2(draw_size.x * 0.5, draw_size.y)
 	draw_texture_rect_region(active_texture, Rect2(draw_position, draw_size), source_rect)
@@ -1309,10 +1359,153 @@ func _handle_character_menu_input(position: Vector2) -> void:
 			return
 
 
+func _design_to_screen_rect(rect: Rect2) -> Rect2:
+	return Rect2(design_draw_offset + rect.position * design_draw_scale, rect.size * design_draw_scale)
+
+
+func _open_settings_menu() -> void:
+	settings_menu_open = true
+	settings_message = ""
+	if nickname_edit == null:
+		nickname_edit = LineEdit.new()
+		nickname_edit.max_length = RopeSaveManager.NICKNAME_MAX_LENGTH
+		add_child(nickname_edit)
+	nickname_edit.text = nickname
+	nickname_edit.size = _design_to_screen_rect(NICKNAME_FIELD_RECT).size
+	nickname_edit.position = _design_to_screen_rect(NICKNAME_FIELD_RECT).position
+	nickname_edit.visible = true
+	if code_edit == null:
+		code_edit = LineEdit.new()
+		add_child(code_edit)
+	code_edit.text = ""
+	code_edit.placeholder_text = "코드 입력"
+	code_edit.size = _design_to_screen_rect(CODE_FIELD_RECT).size
+	code_edit.position = _design_to_screen_rect(CODE_FIELD_RECT).position
+	code_edit.visible = true
+
+
+func _close_settings_menu() -> void:
+	settings_menu_open = false
+	if nickname_edit != null:
+		nickname_edit.visible = false
+	if code_edit != null:
+		code_edit.visible = false
+
+
+func _open_ranking_menu() -> void:
+	ranking_menu_open = true
+	if nickname_edit != null:
+		nickname_edit.visible = false
+	if code_edit != null:
+		code_edit.visible = false
+	_fetch_ranking()
+
+
+func _close_ranking_menu() -> void:
+	ranking_menu_open = false
+	if nickname_edit != null:
+		nickname_edit.visible = true
+	if code_edit != null:
+		code_edit.visible = true
+
+
+func _handle_ranking_menu_input(position: Vector2) -> void:
+	if RANKING_PANEL_CLOSE_RECT.has_point(position):
+		_close_ranking_menu()
+
+
+func _fetch_ranking() -> void:
+	ranking_loading = true
+	ranking_error = ""
+	if leaderboard_fetch_request == null:
+		leaderboard_fetch_request = HTTPRequest.new()
+		add_child(leaderboard_fetch_request)
+		# The Web export's HTTPRequest can't reliably inflate a gzip-encoded
+		# response body (stream_peer_gzip fails partway through), which
+		# corrupts the JSON before we ever see it. Supabase compresses
+		# responses by default, so ask for uncompressed output instead of
+		# fighting the decompressor.
+		leaderboard_fetch_request.accept_gzip = false
+		leaderboard_fetch_request.request_completed.connect(_on_ranking_fetched)
+	var url := "%s/rest/v1/leaderboard?select=nickname,score&order=score.desc&limit=%d" % [SUPABASE_URL, LEADERBOARD_TOP_N]
+	var headers := ["apikey: %s" % SUPABASE_ANON_KEY, "Accept-Encoding: identity"]
+	var error := leaderboard_fetch_request.request(url, headers)
+	if error != OK:
+		ranking_loading = false
+		ranking_error = "랭킹을 불러올 수 없습니다"
+		queue_redraw()
+
+
+func _on_ranking_fetched(_result: int, response_code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
+	ranking_loading = false
+	if response_code < 200 or response_code >= 300:
+		ranking_error = "랭킹을 불러올 수 없습니다"
+		queue_redraw()
+		return
+	var parsed = JSON.parse_string(body.get_string_from_utf8())
+	if not parsed is Array:
+		ranking_error = "랭킹을 불러올 수 없습니다"
+		queue_redraw()
+		return
+	ranking_entries = parsed as Array
+	queue_redraw()
+
+
+func _submit_score(final_score: int) -> void:
+	if final_score <= 0:
+		return
+	if leaderboard_submit_request == null:
+		leaderboard_submit_request = HTTPRequest.new()
+		add_child(leaderboard_submit_request)
+		leaderboard_submit_request.accept_gzip = false
+	var url := "%s/rest/v1/leaderboard" % SUPABASE_URL
+	var headers := [
+		"apikey: %s" % SUPABASE_ANON_KEY,
+		"Content-Type: application/json",
+		"Accept-Encoding: identity",
+	]
+	var payload := JSON.stringify({"nickname": nickname, "score": final_score})
+	leaderboard_submit_request.request(url, headers, HTTPClient.METHOD_POST, payload)
+
+
+func _handle_settings_menu_input(position: Vector2) -> void:
+	if SETTINGS_PANEL_CLOSE_RECT.has_point(position):
+		_close_settings_menu()
+		return
+	if SOUND_TOGGLE_RECT.has_point(position):
+		feedback.sound_enabled = not feedback.sound_enabled
+		_save_progress()
+		return
+	if VIBRATION_TOGGLE_RECT.has_point(position):
+		feedback.vibration_enabled = not feedback.vibration_enabled
+		_save_progress()
+		return
+	if NICKNAME_SAVE_BUTTON_RECT.has_point(position):
+		var new_nickname := nickname_edit.text.strip_edges()
+		nickname = new_nickname if not new_nickname.is_empty() else RopeSaveManager.DEFAULT_NICKNAME
+		nickname_edit.text = nickname
+		settings_message = "닉네임 저장됨"
+		_save_progress()
+		return
+	if CODE_SUBMIT_BUTTON_RECT.has_point(position):
+		# Redeem-code validation and hidden-character rewards are not
+		# implemented yet — this just acknowledges the input for now.
+		settings_message = "코드 확인 준비 중"
+		code_edit.text = ""
+		return
+	if RANKING_BUTTON_RECT.has_point(position):
+		_open_ranking_menu()
+		return
+
+
 func _load_character_catalog() -> void:
 	character_ids.clear()
 	character_names.clear()
 	character_body_top_fractions.clear()
+	character_scale_multipliers.clear()
+	character_gameplay_scale_multipliers.clear()
+	character_air_pose_scale_multipliers.clear()
+	character_disable_jump_rescale.clear()
 	owned_character_ids.clear()
 	var entries: Array[Dictionary] = []
 	for character_id in DirAccess.get_directories_at(CHARACTER_ASSET_ROOT):
@@ -1326,6 +1519,10 @@ func _load_character_catalog() -> void:
 			"order": 9999,
 			"unlocked_by_default": false,
 			"body_top_fraction": 0.0,
+			"scale_multiplier": 1.0,
+			"gameplay_scale_multiplier": 1.0,
+			"air_pose_scale_multiplier": 1.0,
+			"disable_jump_rescale": false,
 		}
 		var metadata_path := _character_asset_path(character_id, "character.json")
 		if FileAccess.file_exists(metadata_path):
@@ -1340,6 +1537,10 @@ func _load_character_catalog() -> void:
 		character_ids.append(character_id)
 		character_names[character_id] = str(entry.display_name)
 		character_body_top_fractions[character_id] = clampf(float(entry.body_top_fraction), 0.0, 0.45)
+		character_scale_multipliers[character_id] = clampf(float(entry.scale_multiplier), 0.5, 2.0)
+		character_gameplay_scale_multipliers[character_id] = clampf(float(entry.gameplay_scale_multiplier), 0.5, 2.0)
+		character_air_pose_scale_multipliers[character_id] = clampf(float(entry.air_pose_scale_multiplier), 0.5, 1.5)
+		character_disable_jump_rescale[character_id] = bool(entry.disable_jump_rescale)
 		if bool(entry.unlocked_by_default):
 			owned_character_ids.append(character_id)
 	if character_ids.has(DEFAULT_CHARACTER_ID) and not owned_character_ids.has(DEFAULT_CHARACTER_ID):
@@ -1383,6 +1584,11 @@ func _prepare_character_regions() -> void:
 		# The source bullfighter art has extra transparent padding around its
 		# standing pose; keep its in-game height consistent with the roster.
 		player_base_scale *= 1.35
+	# Per-character in-game size tweak (distinct from scale_multiplier, which
+	# only affects the character-select card preview) — e.g. a deliberately
+	# smaller/larger character while keeping the auto-fit sizing intact.
+	var gameplay_scale := float(character_gameplay_scale_multipliers.get(selected_character_id, 1.0))
+	player_base_scale *= gameplay_scale
 	player_jump_regions.clear()
 	if player_jump_sprite == null:
 		return
@@ -1399,11 +1605,27 @@ func _prepare_character_regions() -> void:
 			used = cell_rect
 		player_jump_regions.append(Rect2(used))
 	if not player_jump_regions.is_empty():
-		var jump_reference_size := player_jump_regions[0].size
-		# Use one scale on both axes. The former per-axis fit forced every jump
-		# pose into the idle pose's bounding box, visibly squeezing wide poses.
-		var uniform_jump_scale := player_base_region.size.y * player_base_scale / jump_reference_size.y
-		player_jump_scale = Vector2.ONE * uniform_jump_scale
+		if bool(character_disable_jump_rescale.get(selected_character_id, false)):
+			# This character's idle.png and jump_sheet.png were built from one
+			# source image at one consistent scale (see the character-import
+			# skill), so there is no real DPI mismatch to correct for. A
+			# crouched jump pose is legitimately shorter than standing —
+			# rescaling to match heights would make it visibly balloon
+			# mid-jump instead of just looking crouched.
+			player_jump_scale = Vector2.ONE * player_base_scale
+		else:
+			# Use whichever jump pose is tallest as the scale reference. A pose
+			# with bent knees or tucked limbs has a shorter silhouette than
+			# standing, and sizing off a short pose inflates the uniform
+			# scale, making the character visibly grow mid-jump.
+			var reference_height := 0.0
+			for region in player_jump_regions:
+				reference_height = maxf(reference_height, region.size.y)
+			# Use one scale on both axes. The former per-axis fit forced every
+			# jump pose into the idle pose's bounding box, visibly squeezing
+			# wide poses.
+			var uniform_jump_scale := player_base_region.size.y * player_base_scale / reference_height
+			player_jump_scale = Vector2.ONE * uniform_jump_scale
 
 
 func _texture_used_region(texture: Texture2D) -> Rect2:
@@ -1489,6 +1711,10 @@ func _draw_hud() -> void:
 		_draw_main_menu(font)
 		if character_menu_open:
 			_draw_character_menu(font)
+		if settings_menu_open:
+			_draw_settings_menu(font)
+		if ranking_menu_open:
+			_draw_ranking_menu(font)
 		return
 	draw_string(font, Vector2(42, 82), "줄넘킹", HORIZONTAL_ALIGNMENT_LEFT, -1, 34, Color("91a4cc"))
 	var score_cell_size := 10.0 + clampf(flash_time / 0.22, 0.0, 1.0) * 2.0
@@ -1563,7 +1789,7 @@ func _draw_main_menu(font: Font) -> void:
 		draw_string(font, Vector2(prompt_rect.position.x, 980.0), "TAP TO START", HORIZONTAL_ALIGNMENT_CENTER, prompt_rect.size.x, 30, Color(1.0, 1.0, 1.0, prompt_alpha))
 
 	_draw_menu_asset_or_fallback(character_button_texture, character_button_used_region, font, CHARACTER_BUTTON_RECT, "CHARACTER", "캐릭터", Color("ef8f6b"))
-	_draw_menu_asset_or_fallback(coop_button_texture, coop_button_used_region, font, UPGRADE_BUTTON_RECT, "CO-OP", "협동 모드", Color("65b7f3"))
+	_draw_menu_asset_or_fallback(coop_button_texture, coop_button_used_region, font, COOP_BUTTON_RECT, "CO-OP", "협동 모드", Color("65b7f3"))
 	_draw_menu_asset_or_fallback(settings_button_texture, settings_button_used_region, font, SETTINGS_BUTTON_RECT, "SETTINGS", "설정", Color("9b8bea"))
 	_draw_test_start_button(font)
 	if not menu_notice.is_empty():
@@ -1604,8 +1830,8 @@ func _draw_character_menu(font: Font) -> void:
 	draw_rect(Rect2(Vector2.ZERO, DESIGN_SIZE), Color(0.02, 0.03, 0.06, 0.72), true)
 	draw_rect(CHARACTER_PANEL_RECT, Color("17243b"), true)
 	draw_rect(CHARACTER_PANEL_RECT, Color("fff0a6"), false, 7.0)
-	draw_string(font, Vector2(CHARACTER_PANEL_RECT.position.x, 260.0), "보유 캐릭터", HORIZONTAL_ALIGNMENT_CENTER, CHARACTER_PANEL_RECT.size.x, 38, Color.WHITE)
-	draw_string(font, Vector2(CHARACTER_PANEL_RECT.position.x, 300.0), "캐릭터 사진을 눌러 선택", HORIZONTAL_ALIGNMENT_CENTER, CHARACTER_PANEL_RECT.size.x, 22, Color("a9bad8"))
+	draw_string(font, Vector2(CHARACTER_PANEL_RECT.position.x, 175.0), "보유 캐릭터", HORIZONTAL_ALIGNMENT_CENTER, CHARACTER_PANEL_RECT.size.x, 38, Color.WHITE)
+	draw_string(font, Vector2(CHARACTER_PANEL_RECT.position.x, 215.0), "캐릭터 사진을 눌러 선택", HORIZONTAL_ALIGNMENT_CENTER, CHARACTER_PANEL_RECT.size.x, 22, Color("a9bad8"))
 	draw_circle(CHARACTER_PANEL_CLOSE_RECT.get_center(), 24.0, Color("ff4d67"))
 	draw_line(CHARACTER_PANEL_CLOSE_RECT.get_center() + Vector2(-8.0, -8.0), CHARACTER_PANEL_CLOSE_RECT.get_center() + Vector2(8.0, 8.0), Color.WHITE, 5.0, true)
 	draw_line(CHARACTER_PANEL_CLOSE_RECT.get_center() + Vector2(8.0, -8.0), CHARACTER_PANEL_CLOSE_RECT.get_center() + Vector2(-8.0, 8.0), Color.WHITE, 5.0, true)
@@ -1623,12 +1849,92 @@ func _draw_character_menu(font: Font) -> void:
 		draw_string(font, Vector2(312.0, 825.0), "%d / %d" % [character_page + 1, page_count], HORIZONTAL_ALIGNMENT_CENTER, 96.0, 22, Color("a9bad8"))
 
 
+func _draw_settings_menu(font: Font) -> void:
+	draw_rect(Rect2(Vector2.ZERO, DESIGN_SIZE), Color(0.02, 0.03, 0.06, 0.72), true)
+	draw_rect(SETTINGS_PANEL_RECT, Color("17243b"), true)
+	draw_rect(SETTINGS_PANEL_RECT, Color("fff0a6"), false, 7.0)
+	draw_string(font, Vector2(SETTINGS_PANEL_RECT.position.x, 175.0), "설정", HORIZONTAL_ALIGNMENT_CENTER, SETTINGS_PANEL_RECT.size.x, 38, Color.WHITE)
+	draw_circle(SETTINGS_PANEL_CLOSE_RECT.get_center(), 24.0, Color("ff4d67"))
+	draw_line(SETTINGS_PANEL_CLOSE_RECT.get_center() + Vector2(-8.0, -8.0), SETTINGS_PANEL_CLOSE_RECT.get_center() + Vector2(8.0, 8.0), Color.WHITE, 5.0, true)
+	draw_line(SETTINGS_PANEL_CLOSE_RECT.get_center() + Vector2(8.0, -8.0), SETTINGS_PANEL_CLOSE_RECT.get_center() + Vector2(-8.0, 8.0), Color.WHITE, 5.0, true)
+
+	_draw_settings_toggle_row(font, SOUND_TOGGLE_RECT, "소리", feedback.sound_enabled)
+	_draw_settings_toggle_row(font, VIBRATION_TOGGLE_RECT, "진동", feedback.vibration_enabled)
+
+	draw_rect(NICKNAME_ROW_RECT, Color("263a57"), true)
+	draw_rect(NICKNAME_ROW_RECT, Color("fff0a6"), false, 4.0)
+	draw_string(font, Vector2(NICKNAME_ROW_RECT.position.x + 16.0, NICKNAME_ROW_RECT.position.y + 46.0), "닉네임", HORIZONTAL_ALIGNMENT_LEFT, 110.0, 22, Color.WHITE)
+	draw_rect(NICKNAME_SAVE_BUTTON_RECT, Color("3b2119"), true)
+	draw_rect(NICKNAME_SAVE_BUTTON_RECT, Color("ffd23f"), false, 3.0)
+	draw_string(font, Vector2(NICKNAME_SAVE_BUTTON_RECT.position.x, NICKNAME_SAVE_BUTTON_RECT.position.y + 46.0), "저장", HORIZONTAL_ALIGNMENT_CENTER, NICKNAME_SAVE_BUTTON_RECT.size.x, 22, Color("ffd23f"))
+
+	draw_rect(CODE_ROW_RECT, Color("263a57"), true)
+	draw_rect(CODE_ROW_RECT, Color("fff0a6"), false, 4.0)
+	draw_string(font, Vector2(CODE_ROW_RECT.position.x + 16.0, CODE_ROW_RECT.position.y + 46.0), "코드", HORIZONTAL_ALIGNMENT_LEFT, 110.0, 22, Color.WHITE)
+	draw_rect(CODE_SUBMIT_BUTTON_RECT, Color("3b2119"), true)
+	draw_rect(CODE_SUBMIT_BUTTON_RECT, Color("ffd23f"), false, 3.0)
+	draw_string(font, Vector2(CODE_SUBMIT_BUTTON_RECT.position.x, CODE_SUBMIT_BUTTON_RECT.position.y + 46.0), "확인", HORIZONTAL_ALIGNMENT_CENTER, CODE_SUBMIT_BUTTON_RECT.size.x, 22, Color("ffd23f"))
+
+	draw_rect(RANKING_BUTTON_RECT, Color("3b2119"), true)
+	draw_rect(RANKING_BUTTON_RECT.grow(-5.0), Color("ffd23f"), true)
+	draw_rect(RANKING_BUTTON_RECT.grow(-9.0), Color("7a4317"), false, 3.0)
+	draw_string(font, Vector2(RANKING_BUTTON_RECT.position.x, RANKING_BUTTON_RECT.get_center().y + 8.0), "랭킹 보기", HORIZONTAL_ALIGNMENT_CENTER, RANKING_BUTTON_RECT.size.x, 26, Color("3b2119"))
+
+	if not settings_message.is_empty():
+		draw_string(font, Vector2(SETTINGS_PANEL_RECT.position.x, 770.0), settings_message, HORIZONTAL_ALIGNMENT_CENTER, SETTINGS_PANEL_RECT.size.x, 22, Color("ffd166"))
+
+
+func _draw_ranking_menu(font: Font) -> void:
+	draw_rect(Rect2(Vector2.ZERO, DESIGN_SIZE), Color(0.02, 0.03, 0.06, 0.72), true)
+	draw_rect(RANKING_PANEL_RECT, Color("17243b"), true)
+	draw_rect(RANKING_PANEL_RECT, Color("fff0a6"), false, 7.0)
+	draw_string(font, Vector2(RANKING_PANEL_RECT.position.x, 175.0), "전체 랭킹", HORIZONTAL_ALIGNMENT_CENTER, RANKING_PANEL_RECT.size.x, 38, Color.WHITE)
+	draw_string(font, Vector2(RANKING_PANEL_RECT.position.x, 215.0), "TOP %d" % LEADERBOARD_TOP_N, HORIZONTAL_ALIGNMENT_CENTER, RANKING_PANEL_RECT.size.x, 22, Color("a9bad8"))
+	draw_circle(RANKING_PANEL_CLOSE_RECT.get_center(), 24.0, Color("ff4d67"))
+	draw_line(RANKING_PANEL_CLOSE_RECT.get_center() + Vector2(-8.0, -8.0), RANKING_PANEL_CLOSE_RECT.get_center() + Vector2(8.0, 8.0), Color.WHITE, 5.0, true)
+	draw_line(RANKING_PANEL_CLOSE_RECT.get_center() + Vector2(8.0, -8.0), RANKING_PANEL_CLOSE_RECT.get_center() + Vector2(-8.0, 8.0), Color.WHITE, 5.0, true)
+
+	if ranking_loading:
+		draw_string(font, Vector2(RANKING_LIST_RECT.position.x, RANKING_LIST_RECT.position.y + 40.0), "불러오는 중...", HORIZONTAL_ALIGNMENT_CENTER, RANKING_LIST_RECT.size.x, 22, Color("a9bad8"))
+		return
+	if not ranking_error.is_empty():
+		draw_string(font, Vector2(RANKING_LIST_RECT.position.x, RANKING_LIST_RECT.position.y + 40.0), ranking_error, HORIZONTAL_ALIGNMENT_CENTER, RANKING_LIST_RECT.size.x, 22, Color("ff8b8b"))
+		return
+	if ranking_entries.is_empty():
+		draw_string(font, Vector2(RANKING_LIST_RECT.position.x, RANKING_LIST_RECT.position.y + 40.0), "아직 기록이 없습니다", HORIZONTAL_ALIGNMENT_CENTER, RANKING_LIST_RECT.size.x, 22, Color("a9bad8"))
+		return
+	for index in range(mini(ranking_entries.size(), LEADERBOARD_TOP_N)):
+		var entry: Dictionary = ranking_entries[index]
+		var row_y := RANKING_LIST_RECT.position.y + float(index) * RANKING_ROW_HEIGHT
+		var row := Rect2(RANKING_LIST_RECT.position.x, row_y, RANKING_LIST_RECT.size.x, RANKING_ROW_HEIGHT - 8.0)
+		draw_rect(row, Color("263a57"), true)
+		draw_rect(row, Color("fff0a6"), false, 3.0)
+		draw_string(font, Vector2(row.position.x + 16.0, row.position.y + 38.0), "%d" % (index + 1), HORIZONTAL_ALIGNMENT_LEFT, 60.0, 22, Color("ffd23f"))
+		draw_string(font, Vector2(row.position.x + 90.0, row.position.y + 38.0), str(entry.get("nickname", "")), HORIZONTAL_ALIGNMENT_LEFT, 280.0, 22, Color.WHITE)
+		draw_string(font, Vector2(row.end.x - 150.0, row.position.y + 38.0), str(int(entry.get("score", 0))), HORIZONTAL_ALIGNMENT_RIGHT, 130.0, 22, Color("73f7b4"))
+
+
+func _draw_settings_toggle_row(font: Font, row: Rect2, label: String, is_on: bool) -> void:
+	draw_rect(row, Color("263a57"), true)
+	draw_rect(row, Color("fff0a6"), false, 4.0)
+	draw_string(font, Vector2(row.position.x + 16.0, row.position.y + 50.0), label, HORIZONTAL_ALIGNMENT_LEFT, 200.0, 24, Color.WHITE)
+	var toggle_rect := Rect2(row.end.x - 140.0, row.position.y + 15.0, 120.0, 50.0)
+	draw_rect(toggle_rect, Color("73f7b4") if is_on else Color("4a4f5c"), true)
+	draw_rect(toggle_rect, Color("fff0a6"), false, 3.0)
+	draw_string(font, Vector2(toggle_rect.position.x, toggle_rect.position.y + 34.0), "ON" if is_on else "OFF", HORIZONTAL_ALIGNMENT_CENTER, toggle_rect.size.x, 20, Color.BLACK if is_on else Color.WHITE)
+
+
 func _draw_character_card(font: Font, character_id: String, card: Rect2) -> void:
 	var selected := character_id == selected_character_id
 	var border_color := Color("73f7b4") if selected else Color("fff0a6")
 	draw_rect(card, Color("263a57"), true)
 	draw_rect(card, border_color, false, 6.0)
-	var preview_rect := Rect2(card.position + Vector2(14.0, 16.0), Vector2(card.size.x - 28.0, 245.0))
+	# Anchored to the card's BOTTOM, not its top, so the extra height added to
+	# CHARACTER_CARD_RECTS for tall/scaled-up characters becomes free headroom
+	# above this box instead of shifting the fit-scale math (and therefore
+	# every other character's card size) along with it.
+	var preview_bottom := card.end.y - 139.0
+	var preview_rect := Rect2(Vector2(card.position.x + 14.0, preview_bottom - 245.0), Vector2(card.size.x - 28.0, 245.0))
 	var texture := _character_preview_texture(character_id)
 	if texture != null:
 		var source: Rect2 = character_preview_regions.get(character_id, Rect2(Vector2.ZERO, texture.get_size()))
@@ -1637,14 +1943,18 @@ func _draw_character_card(font: Font, character_id: String, card: Rect2) -> void
 		# look shorter than the other characters in the selection cards.
 		if character_id == "gyaru_girl" or character_id == "pirate_girl":
 			scale = preview_rect.size.y / source.size.y
+		scale *= float(character_scale_multipliers.get(character_id, 1.0))
 		var size := source.size * scale
 		var position := Vector2(preview_rect.get_center().x - size.x * 0.5, preview_rect.end.y - size.y)
 		draw_texture_rect_region(texture, Rect2(position, size), source)
+	# Offsets are anchored from the card's BOTTOM (not top) so they keep the
+	# same absolute position regardless of how much extra headroom the top of
+	# the card has for oversized character art.
 	var name: String = character_names.get(character_id, character_id)
-	draw_string(font, Vector2(card.position.x + 8.0, card.position.y + 305.0), name, HORIZONTAL_ALIGNMENT_CENTER, card.size.x - 16.0, 20, Color.WHITE)
-	draw_string(font, Vector2(card.position.x + 8.0, card.position.y + 342.0), "보유", HORIZONTAL_ALIGNMENT_CENTER, card.size.x - 16.0, 19, Color("ffd166"))
+	draw_string(font, Vector2(card.position.x + 8.0, card.end.y - 95.0), name, HORIZONTAL_ALIGNMENT_CENTER, card.size.x - 16.0, 20, Color.WHITE)
+	draw_string(font, Vector2(card.position.x + 8.0, card.end.y - 58.0), "보유", HORIZONTAL_ALIGNMENT_CENTER, card.size.x - 16.0, 19, Color("ffd166"))
 	var state_text := "사용 중" if selected else "선택"
-	draw_string(font, Vector2(card.position.x + 8.0, card.position.y + 378.0), state_text, HORIZONTAL_ALIGNMENT_CENTER, card.size.x - 16.0, 21, border_color)
+	draw_string(font, Vector2(card.position.x + 8.0, card.end.y - 22.0), state_text, HORIZONTAL_ALIGNMENT_CENTER, card.size.x - 16.0, 21, border_color)
 
 
 func _character_preview_texture(character_id: String) -> Texture2D:
