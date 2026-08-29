@@ -76,7 +76,8 @@ const RESOURCE_COUNTER_FRAME_PATH := "res://assets/ui/resource_counter_frame.png
 const TAP_PROMPT_PATH := "res://assets/ui/tap_to_start.png"
 const COIN_ICON_PATH := "res://assets/ui/coin_icon.png"
 const RUBY_ICON_PATH := "res://assets/ui/ruby_icon.png"
-const RESOURCE_ICON_OFFSET := Vector2(5.0, 12.0)
+const COIN_ICON_OFFSET := Vector2(8.0, 11.0)
+const RUBY_ICON_OFFSET := Vector2(8.0, 12.0)
 const RESOURCE_ICON_SIZE := Vector2(38.0, 38.0)
 const GAME_OVER_PANEL_PATH := "res://assets/ui/game_over_panel.png"
 const GOLD_DIGIT_SHEET_PATH := "res://assets/ui/gold_digit_sheet.png"
@@ -1776,8 +1777,8 @@ func _draw_game_over_panel(font: Font) -> void:
 
 
 func _draw_main_menu(font: Font) -> void:
-	_draw_resource_counter(font, Rect2(40.0, 22.0, 300.0, 62.0), coin_icon_texture, coin_icon_used_region, coins)
-	_draw_resource_counter(font, Rect2(380.0, 22.0, 300.0, 62.0), ruby_icon_texture, ruby_icon_used_region, gems)
+	_draw_resource_counter(font, Rect2(40.0, 22.0, 300.0, 62.0), coin_icon_texture, coin_icon_used_region, coins, COIN_ICON_OFFSET)
+	_draw_resource_counter(font, Rect2(380.0, 22.0, 300.0, 62.0), ruby_icon_texture, ruby_icon_used_region, gems, RUBY_ICON_OFFSET)
 
 	_draw_main_menu_title(font)
 	var best_rect := Rect2(235.0, 306.0, 250.0, 64.0)
@@ -1976,7 +1977,7 @@ func _character_preview_texture(character_id: String) -> Texture2D:
 	return texture
 
 
-func _draw_resource_counter(font: Font, rect: Rect2, icon_texture: Texture2D, icon_region: Rect2, amount: int) -> void:
+func _draw_resource_counter(font: Font, rect: Rect2, icon_texture: Texture2D, icon_region: Rect2, amount: int, icon_offset: Vector2) -> void:
 	var frame_rect := rect
 	if resource_counter_frame_texture != null and resource_counter_frame_used_region.size.x > 0.0:
 		# Preserve the frame artwork's original aspect ratio. The counter owns the
@@ -1990,7 +1991,7 @@ func _draw_resource_counter(font: Font, rect: Rect2, icon_texture: Texture2D, ic
 		draw_rect(frame_rect, Color("ffd23f"), false, 4.0)
 	# The frame already contains a circular icon socket. Keep the resource icon
 	# inside that socket instead of letting its artwork cross the gold rim.
-	var icon_rect := Rect2(frame_rect.position + RESOURCE_ICON_OFFSET, RESOURCE_ICON_SIZE)
+	var icon_rect := Rect2(frame_rect.position + icon_offset, RESOURCE_ICON_SIZE)
 	if icon_texture != null and icon_region.size.x > 0.0:
 		draw_texture_rect_region(icon_texture, icon_rect, icon_region)
 	# The icon already identifies the resource. A single large number stays clear

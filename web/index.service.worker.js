@@ -4,7 +4,7 @@
 // Incrementing CACHE_VERSION will kick off the install event and force
 // previously cached resources to be updated from the network.
 /** @type {string} */
-const CACHE_VERSION = '1788022960|9798672';
+const CACHE_VERSION = '1788029309|5249542';
 /** @type {string} */
 const CACHE_PREFIX = '줄넘킹-sw-cache-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
@@ -163,3 +163,4 @@ self.addEventListener('message', (event) => {
 		}
 	});
 });
+
