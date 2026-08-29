@@ -1379,6 +1379,10 @@ func _load_character_visuals(character_id: String) -> void:
 func _prepare_character_regions() -> void:
 	player_base_region = _texture_used_region(player_sprite)
 	player_base_scale = _scale_for_region(player_base_region)
+	if selected_character_id == "pirate_girl":
+		# The source bullfighter art has extra transparent padding around its
+		# standing pose; keep its in-game height consistent with the roster.
+		player_base_scale *= 1.35
 	player_jump_regions.clear()
 	if player_jump_sprite == null:
 		return
@@ -1622,7 +1626,7 @@ func _draw_character_card(font: Font, character_id: String, card: Rect2) -> void
 		var scale := minf(preview_rect.size.x / source.size.x, preview_rect.size.y / source.size.y)
 		# The ninja hood is intentionally wide; fit it by height so it does not
 		# look shorter than the other characters in the selection cards.
-		if character_id == "gyaru_girl":
+		if character_id == "gyaru_girl" or character_id == "pirate_girl":
 			scale = preview_rect.size.y / source.size.y
 		var size := source.size * scale
 		var position := Vector2(preview_rect.get_center().x - size.x * 0.5, preview_rect.end.y - size.y)
