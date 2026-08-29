@@ -350,30 +350,15 @@ func _test_character_asset_system(game: Node) -> void:
 	_expect(ResourceLoader.exists("res://assets/characters/default/jump_sheet.png"), "default jump asset path was not imported")
 	_expect(game._is_safe_character_id("default"), "default character id was rejected")
 	game._load_character_catalog()
-	_expect(game.character_ids.size() >= 9, "character catalog is missing expected folders")
+	_expect(game.character_ids.size() == 1, "only the default character should remain")
 	_expect(game.character_ids[0] == "default", "character metadata order was not applied")
-	_expect(game.character_names.get("schoolgirl_bob", "") == "단발 학생", "character display name was not loaded")
-	_expect(game.owned_character_ids.size() >= 3, "default-owned characters were not registered")
+	_expect(game.owned_character_ids == ["default"], "only the default character should be owned")
 	game._load_character_visuals("default")
 	_expect(game.player_sprite != null, "default character idle sprite was not loaded")
 	_expect(game.player_jump_regions.size() == 4, "jump sheet was not split into four frames")
 	_expect(game.player_jump_scale.x > 0.0 and game.player_jump_scale.y > 0.0, "character scale was not calculated")
 	_expect(is_equal_approx(game.player_jump_scale.x, game.player_jump_scale.y), "jump sprite scale distorts the character aspect ratio")
 	_expect(not game.set_player_character("../unsafe"), "unsafe character id was accepted")
-	for character_id in ["schoolgirl_ponytail", "schoolgirl_bob"]:
-		_expect(game.set_player_character(character_id), "%s character could not be selected" % character_id)
-		_expect(game.player_jump_regions.size() == 4, "%s jump sheet was not split into four frames" % character_id)
-		_expect(is_equal_approx(game.player_jump_scale.x, game.player_jump_scale.y), "%s jump sprite scale distorts the character aspect ratio" % character_id)
-	for character_id in ["gyaru_girl", "bunny_girl", "fish_suit", "security_boss", "astronaut", "moai"]:
-		var idle_path := "res://assets/characters/%s/idle.png" % character_id
-		var jump_path := "res://assets/characters/%s/jump_sheet.png" % character_id
-		_expect(ResourceLoader.exists(idle_path), "%s idle sprite was not imported" % character_id)
-		_expect(ResourceLoader.exists(jump_path), "%s jump sheet was not imported" % character_id)
-		_expect(game.set_player_character(character_id), "%s character could not be selected" % character_id)
-		_expect(game.player_jump_regions.size() == 4, "%s jump sheet was not split into four frames" % character_id)
-		_expect(is_equal_approx(game.player_jump_scale.x, game.player_jump_scale.y), "%s jump sprite scale distorts the character aspect ratio" % character_id)
-		var idle_image := (load(idle_path) as Texture2D).get_image()
-		_expect(idle_image.get_pixel(0, 0).a < 0.01, "%s idle sprite background is not transparent" % character_id)
 	for character_id in game.character_ids:
 		_expect(game.set_player_character(character_id), "%s character could not be measured" % character_id)
 		var body_top_fraction := float(game.character_body_top_fractions.get(character_id, 0.0))
