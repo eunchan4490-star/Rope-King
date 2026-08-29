@@ -1432,19 +1432,26 @@ func _fetch_ranking() -> void:
 	var error := leaderboard_fetch_request.request(url, headers)
 	if error != OK:
 		ranking_loading = false
-		ranking_error = "랭킹을 불러올 수 없습니다"
+		ranking_error = "랭킹을 불러올 수 없습니다 (요청 실패: %d)" % error
 		queue_redraw()
 
 
-func _on_ranking_fetched(_result: int, response_code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
+func _on_ranking_fetched(result: int, response_code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
 	ranking_loading = false
+	if result != HTTPRequest.RESULT_SUCCESS:
+		# result codes: see HTTPRequest.Result — e.g. CANT_CONNECT, CANT_RESOLVE,
+		# TLS_HANDSHAKE_ERROR. Surfacing the number lets us tell a DNS/TLS
+		# failure apart from a plain HTTP error without needing device logs.
+		ranking_error = "랭킹을 불러올 수 없습니다 (연결 실패: %d)" % result
+		queue_redraw()
+		return
 	if response_code < 200 or response_code >= 300:
-		ranking_error = "랭킹을 불러올 수 없습니다"
+		ranking_error = "랭킹을 불러올 수 없습니다 (서버 응답: %d)" % response_code
 		queue_redraw()
 		return
 	var parsed = JSON.parse_string(body.get_string_from_utf8())
 	if not parsed is Array:
-		ranking_error = "랭킹을 불러올 수 없습니다"
+		ranking_error = "랭킹을 불러올 수 없습니다 (응답 해석 실패)"
 		queue_redraw()
 		return
 	ranking_entries = parsed as Array
