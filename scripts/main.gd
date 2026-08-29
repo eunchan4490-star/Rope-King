@@ -1515,22 +1515,31 @@ func _draw_game_over_panel(font: Font) -> void:
 	draw_circle(GAME_OVER_CLOSE_RECT.get_center(), 26.0, Color("ff4d67"))
 	draw_line(GAME_OVER_CLOSE_RECT.get_center() + Vector2(-9.0, -9.0), GAME_OVER_CLOSE_RECT.get_center() + Vector2(9.0, 9.0), Color.WHITE, 5.0, true)
 	draw_line(GAME_OVER_CLOSE_RECT.get_center() + Vector2(9.0, -9.0), GAME_OVER_CLOSE_RECT.get_center() + Vector2(-9.0, 9.0), Color.WHITE, 5.0, true)
-	draw_string(font, Vector2(panel.position.x, panel.position.y + 140.0), "GAME OVER", HORIZONTAL_ALIGNMENT_CENTER, panel.size.x, 46, Color("ff4d67"))
-	draw_string(font, Vector2(panel.position.x, panel.position.y + 190.0), "이번 기록  %d" % score, HORIZONTAL_ALIGNMENT_CENTER, panel.size.x, 30, Color.WHITE)
-	draw_string(font, Vector2(panel.position.x, panel.position.y + 230.0), "BEST  %d" % best_score, HORIZONTAL_ALIGNMENT_CENTER, panel.size.x, 26, Color("ffd166"))
+	draw_string(font, Vector2(panel.position.x, panel.position.y + 116.0), "도전 종료!", HORIZONTAL_ALIGNMENT_CENTER, panel.size.x, 40, Color("ff6b6b"))
+	draw_string(font, Vector2(panel.position.x, panel.position.y + 151.0), "이번 기록", HORIZONTAL_ALIGNMENT_CENTER, panel.size.x, 22, Color("fff0a6"))
+	_draw_image_number(str(score), Vector2(panel.position.x + 65.0, panel.position.y + 163.0), 48.0, panel.size.x - 130.0, HORIZONTAL_ALIGNMENT_CENTER)
+
+	var best_rect := Rect2(panel.position + Vector2(60.0, 230.0), Vector2(250.0, 54.0))
+	var coin_rect := Rect2(panel.position + Vector2(320.0, 230.0), Vector2(150.0, 54.0))
+	draw_rect(best_rect, Color(0.12, 0.06, 0.025, 0.72), true)
+	draw_rect(coin_rect, Color(0.12, 0.06, 0.025, 0.72), true)
+	draw_rect(best_rect, Color("d99b2b"), false, 3.0)
+	draw_rect(coin_rect, Color("d99b2b"), false, 3.0)
+	draw_string(font, Vector2(best_rect.position.x + 12.0, best_rect.position.y + 35.0), "최고 기록", HORIZONTAL_ALIGNMENT_LEFT, 112.0, 20, Color("fff0a6"))
+	_draw_image_number(str(best_score), Vector2(best_rect.position.x + 126.0, best_rect.position.y + 10.0), 25.0, 108.0, HORIZONTAL_ALIGNMENT_CENTER)
+	draw_string(font, Vector2(coin_rect.position.x, coin_rect.position.y + 35.0), "코인  +%d" % run_coins_earned, HORIZONTAL_ALIGNMENT_CENTER, coin_rect.size.x, 20, Color("ffd166"))
 	var record_message := ""
 	if new_best_this_run:
-		record_message = "새 최고 기록!"
+		record_message = "왕관 갱신! 새 최고 기록"
 	elif score == run_start_best:
-		record_message = "최고 기록과 같아요!"
+		record_message = "최고 기록과 타이!"
 	else:
-		record_message = "최고 기록까지 %d회" % maxi(1, run_start_best - score)
-	draw_string(font, Vector2(panel.position.x, panel.position.y + 270.0), record_message, HORIZONTAL_ALIGNMENT_CENTER, panel.size.x, 24, Color("73f7b4"))
-	draw_string(font, Vector2(panel.position.x, panel.position.y + 305.0), "코인  +%d" % run_coins_earned, HORIZONTAL_ALIGNMENT_CENTER, panel.size.x, 23, Color("ffd166"))
-	var retry_rect := Rect2(panel.position + Vector2(75.0, 330.0), Vector2(380.0, 64.0))
+		record_message = "최고 기록까지 단 %d회" % maxi(1, run_start_best - score)
+	draw_string(font, Vector2(panel.position.x, panel.position.y + 318.0), record_message, HORIZONTAL_ALIGNMENT_CENTER, panel.size.x, 23, Color("73f7b4"))
+	var retry_rect := Rect2(panel.position + Vector2(75.0, 338.0), Vector2(380.0, 58.0))
 	draw_rect(retry_rect, Color("ffd23f"), true)
 	draw_rect(retry_rect, Color("fff0a6"), false, 5.0)
-	draw_string(font, Vector2(retry_rect.position.x, retry_rect.position.y + 43.0), "화면을 눌러 다시 도전", HORIZONTAL_ALIGNMENT_CENTER, retry_rect.size.x, 24, Color("633913"))
+	draw_string(font, Vector2(retry_rect.position.x, retry_rect.position.y + 39.0), "터치해서 다시 도전!", HORIZONTAL_ALIGNMENT_CENTER, retry_rect.size.x, 24, Color("633913"))
 
 
 func _draw_main_menu(font: Font) -> void:
