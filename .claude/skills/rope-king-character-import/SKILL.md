@@ -147,6 +147,18 @@ Every step here exists because a simpler version of it broke something:
   mid frame). Use when the user says one character's jump/apex pose looks
   oversized — e.g. `"air_pose_scale_multiplier": 0.95` for 5% smaller just at
   the apex. Edit `character.json` and rebuild the web export.
+- **A fifth knob, `jump_pose_scale_multiplier`, scales both jump frames (mid
+  and air) uniformly** — distinct from `air_pose_scale_multiplier`, which
+  only touches the apex frame. Wired into `_prepare_character_regions`,
+  multiplying `player_jump_scale` directly. Use when the whole jump sequence
+  (not just the apex) reads as bigger than idle — this is exactly the
+  `default` character's situation: its idle/jump_sheet come from very
+  different source resolutions, so `disable_jump_rescale` is off and the
+  old height-matching rescale is active, which correctly caps jump height at
+  idle's height but doesn't correct width, and in practice the whole jump
+  sequence still reads as oversized. `"jump_pose_scale_multiplier": 0.95` for
+  5% smaller on both frames. Edit `character.json` and rebuild the web
+  export.
 - **Jump-pose rescaling is off by default for pipeline-built characters
   (`disable_jump_rescale`).** `scripts/main.gd` used to always rescale the
   jump sprite so its bounding-box height matched idle's, to correct a real

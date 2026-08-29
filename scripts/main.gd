@@ -1925,14 +1925,14 @@ func _draw_hud() -> void:
 			_draw_ranking_menu(font)
 		return
 	if gameplay_score_label_texture != null and gameplay_score_label_used_region.size.x > 0.0:
-		var score_label_rect := Rect2(38.0, 39.0, 180.0, 78.0)
+		var score_label_rect := Rect2(38.0, 34.0, 144.0, 62.0)
 		draw_texture_rect_region(gameplay_score_label_texture, score_label_rect, gameplay_score_label_used_region)
 	else:
 		draw_string(font, Vector2(42, 82), "줄넘킹", HORIZONTAL_ALIGNMENT_LEFT, -1, 34, Color("91a4cc"))
 	var score_cell_size := 10.0 + clampf(flash_time / 0.22, 0.0, 1.0) * 2.0
 	_draw_image_number(str(score), Vector2(42.0, 101.0), score_cell_size * 7.0)
 	if gameplay_best_label_texture != null and gameplay_best_label_used_region.size.x > 0.0:
-		var best_label_rect := Rect2(472.0, 45.0, 160.0, 70.0)
+		var best_label_rect := Rect2(434.0, 45.0, 144.0, 63.0)
 		draw_texture_rect_region(gameplay_best_label_texture, best_label_rect, gameplay_best_label_used_region)
 	else:
 		draw_string(font, Vector2(480, 82), "BEST", HORIZONTAL_ALIGNMENT_LEFT, -1, 24, Color("fff0a6"))
