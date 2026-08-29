@@ -5,6 +5,9 @@ builds/
 *.apk
 *.aab
 
+# Release signing (never commit — losing this blocks all future updates)
+keystore/
+
 # Editor / OS files
 .idea/
 .vscode/
