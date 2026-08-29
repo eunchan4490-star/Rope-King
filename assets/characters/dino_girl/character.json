@@ -1,6 +1,6 @@
 {
   "display_name": "공룡소녀",
   "order": 22,
-  "unlocked_by_default": true,
-  "disable_jump_rescale": true
+  "disable_jump_rescale": true,
+  "unlock_score": 15
 }

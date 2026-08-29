@@ -1,7 +1,7 @@
 {
   "display_name": "윤예준",
   "order": 29,
-  "unlocked_by_default": true,
   "air_pose_scale_multiplier": 0.95,
-  "disable_jump_rescale": true
+  "disable_jump_rescale": true,
+  "price": 400
 }

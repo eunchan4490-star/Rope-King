@@ -1,6 +1,6 @@
 {
   "display_name": "과학자",
   "order": 30,
-  "unlocked_by_default": true,
-  "disable_jump_rescale": true
+  "disable_jump_rescale": true,
+  "unlock_score": 55
 }

@@ -1,7 +1,7 @@
 {
   "display_name": "도깨비소년",
   "order": 24,
-  "unlocked_by_default": true,
   "body_top_fraction": 0.16,
-  "disable_jump_rescale": true
+  "disable_jump_rescale": true,
+  "unlock_score": 25
 }

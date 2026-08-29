@@ -1,6 +1,6 @@
 {
   "display_name": "멘헤라소녀",
   "order": 27,
-  "unlocked_by_default": true,
-  "disable_jump_rescale": true
+  "disable_jump_rescale": true,
+  "price": 300
 }

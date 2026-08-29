@@ -72,6 +72,8 @@ const MENU_SETTINGS_TEXTURE_PATH := "res://assets/ui/menu_settings.png"
 const HUD_TITLE_FRAME_PATH := "res://assets/ui/title_frame.png"
 const HUD_TITLE_LOGO_PATH := "res://assets/ui/title_logo.png"
 const BEST_SCORE_FRAME_PATH := "res://assets/ui/best_score_frame.png"
+const GAMEPLAY_SCORE_LABEL_PATH := "res://assets/ui/score_label.png"
+const GAMEPLAY_BEST_LABEL_PATH := "res://assets/ui/best_label.png"
 const RESOURCE_COUNTER_FRAME_PATH := "res://assets/ui/resource_counter_frame.png"
 const TAP_PROMPT_PATH := "res://assets/ui/tap_to_start.png"
 const COIN_ICON_PATH := "res://assets/ui/coin_icon.png"
@@ -92,7 +94,6 @@ const JUMP_FRAME_COUNT := 2
 const JUMP_FRAME_AIR := 0
 const JUMP_FRAME_MID := 1
 const JUMP_APEX_VELOCITY_BAND := 180.0
-const CHARACTERS_PER_PAGE := 3
 const DEFAULT_BALANCE := preload("res://resources/balance/default_balance.tres")
 const CHARACTER_BUTTON_RECT := Rect2(25.0, 1055.0, 210.0, 195.0)
 const COOP_BUTTON_RECT := Rect2(255.0, 1055.0, 210.0, 195.0)
@@ -101,18 +102,34 @@ const TEST_START_50_RECT := Rect2(555.0, 670.0, 145.0, 82.0)
 const GAME_OVER_CLOSE_RECT := Rect2(548.0, 394.0, 58.0, 58.0)
 const CHARACTER_PANEL_RECT := Rect2(30.0, 100.0, 660.0, 785.0)
 const CHARACTER_PANEL_CLOSE_RECT := Rect2(616.0, 120.0, 52.0, 52.0)
-const CHARACTER_PAGE_PREV_RECT := Rect2(242.0, 785.0, 70.0, 58.0)
-const CHARACTER_PAGE_NEXT_RECT := Rect2(408.0, 785.0, 70.0, 58.0)
-# Cards extend 85px further up than their text/bottom layout would otherwise
-# need, so a character whose select-card preview is enlarged via
-# scale_multiplier (e.g. tall ears at 1.3x) has headroom instead of poking
-# out above the card border. The card BOTTOM (and therefore the name/보유/선택
-# text, via matching +85 offsets in _draw_character_card) is unchanged.
-const CHARACTER_CARD_RECTS := [
-	Rect2(52.0, 245.0, 190.0, 485.0),
-	Rect2(265.0, 245.0, 190.0, 485.0),
-	Rect2(478.0, 245.0, 190.0, 485.0),
-]
+# Category filter tabs (전체/기록/골드) sit in the space the old static
+# instruction subtitle used to occupy. Everything below them (cards, page
+# arrows) shifts down by this same amount so the bottom-anchored offsets in
+# _draw_character_card stay correct without re-deriving them.
+const CHARACTER_CATEGORY_ROW_RECT := Rect2(70.0, 215.0, 520.0, 44.0)
+const CHARACTER_CATEGORY_TAB_RECTS := {
+	"all": Rect2(70.0, 215.0, 168.0, 44.0),
+	"score": Rect2(246.0, 215.0, 168.0, 44.0),
+	"gold": Rect2(422.0, 215.0, 168.0, 44.0),
+}
+# The character grid scrolls vertically inside this viewport (a clipped child
+# Control — see character_list_viewport) instead of paging left/right. Column
+# x-positions and card size are LOCAL to that viewport, not full design space;
+# they preserve the original card layout's proportions (panel inset ~22px,
+# ~23px gutter between 190-wide cards).
+const CHARACTER_LIST_VIEWPORT_RECT := Rect2(30.0, 265.0, 660.0, 605.0)
+const CHARACTER_CARD_COLUMN_X := [22.0, 235.0, 448.0]
+const CHARACTER_CARD_WIDTH := 190.0
+# Cards are 445 tall so a character whose select-card preview is enlarged via
+# scale_multiplier (e.g. tall ears at 1.3x) has headroom instead of poking out
+# above the card's own top edge. The card BOTTOM (and therefore the name/
+# 보유/선택 text, via the +85 offsets in _draw_character_card) is unchanged by
+# this — only the top grows, both here and originally.
+const CHARACTER_CARD_HEIGHT := 445.0
+const CHARACTER_CARD_ROW_GAP := 20.0
+const CHARACTER_CARD_ROW_HEIGHT := CHARACTER_CARD_HEIGHT + CHARACTER_CARD_ROW_GAP
+const CHARACTER_GRID_COLUMNS := 3
+const CHARACTER_SCROLL_DRAG_THRESHOLD := 6.0
 const SETTINGS_PANEL_RECT := Rect2(30.0, 100.0, 660.0, 785.0)
 const SETTINGS_PANEL_CLOSE_RECT := Rect2(616.0, 120.0, 52.0, 52.0)
 const SOUND_TOGGLE_RECT := Rect2(70.0, 280.0, 520.0, 80.0)
@@ -151,6 +168,8 @@ const RANKING_ROW_HEIGHT := 60.0
 @export var hud_title_frame_texture: Texture2D
 @export var hud_title_logo_texture: Texture2D
 @export var best_score_frame_texture: Texture2D
+@export var gameplay_score_label_texture: Texture2D
+@export var gameplay_best_label_texture: Texture2D
 @export var resource_counter_frame_texture: Texture2D
 @export var tap_prompt_texture: Texture2D
 @export var coin_icon_texture: Texture2D
@@ -236,9 +255,18 @@ var character_body_top_fractions: Dictionary = {}
 var character_scale_multipliers: Dictionary = {}
 var character_gameplay_scale_multipliers: Dictionary = {}
 var character_air_pose_scale_multipliers: Dictionary = {}
+var character_jump_pose_scale_multipliers: Dictionary = {}
 var character_disable_jump_rescale: Dictionary = {}
+var character_unlock_scores: Dictionary = {}
+var character_prices: Dictionary = {}
 var owned_character_ids: Array[String] = []
-var character_page := 0
+var character_list_viewport: Control
+var character_scroll_offset := 0.0
+var character_scroll_dragging := false
+var character_scroll_moved := false
+var character_scroll_press_position := Vector2.ZERO
+var character_scroll_press_offset := 0.0
+var character_category_filter := "all"
 var turner_used_region := Rect2()
 var mirrored_turner_texture: Texture2D
 var mirrored_turner_used_region := Rect2()
@@ -261,6 +289,8 @@ var character_button_used_region := Rect2()
 var coop_button_used_region := Rect2()
 var settings_button_used_region := Rect2()
 var best_score_frame_used_region := Rect2()
+var gameplay_score_label_used_region := Rect2()
+var gameplay_best_label_used_region := Rect2()
 var resource_counter_frame_used_region := Rect2()
 var tap_prompt_used_region := Rect2()
 var coin_icon_used_region := Rect2()
@@ -301,6 +331,10 @@ func _ready() -> void:
 		hud_title_logo_texture = load(HUD_TITLE_LOGO_PATH) as Texture2D
 	if best_score_frame_texture == null and ResourceLoader.exists(BEST_SCORE_FRAME_PATH):
 		best_score_frame_texture = load(BEST_SCORE_FRAME_PATH) as Texture2D
+	if gameplay_score_label_texture == null and ResourceLoader.exists(GAMEPLAY_SCORE_LABEL_PATH):
+		gameplay_score_label_texture = load(GAMEPLAY_SCORE_LABEL_PATH) as Texture2D
+	if gameplay_best_label_texture == null and ResourceLoader.exists(GAMEPLAY_BEST_LABEL_PATH):
+		gameplay_best_label_texture = load(GAMEPLAY_BEST_LABEL_PATH) as Texture2D
 	if resource_counter_frame_texture == null and ResourceLoader.exists(RESOURCE_COUNTER_FRAME_PATH):
 		resource_counter_frame_texture = load(RESOURCE_COUNTER_FRAME_PATH) as Texture2D
 	if tap_prompt_texture == null and ResourceLoader.exists(TAP_PROMPT_PATH):
@@ -317,6 +351,8 @@ func _ready() -> void:
 	coop_button_used_region = _texture_used_region(coop_button_texture)
 	settings_button_used_region = _texture_used_region(settings_button_texture)
 	best_score_frame_used_region = _texture_used_region(best_score_frame_texture)
+	gameplay_score_label_used_region = _texture_used_region(gameplay_score_label_texture)
+	gameplay_best_label_used_region = _texture_used_region(gameplay_best_label_texture)
 	resource_counter_frame_used_region = _texture_used_region(resource_counter_frame_texture)
 	tap_prompt_used_region = _texture_used_region(tap_prompt_texture)
 	coin_icon_used_region = _texture_used_region(coin_icon_texture)
@@ -450,6 +486,27 @@ func _advance_turner_transition(delta: float) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	# The character list is drag-to-scroll, which needs press/move/release
+	# tracked as a sequence — everything else in this game only ever cares
+	# about a single press, so this lives as an early, self-contained branch
+	# rather than reshaping the pressed-only model below for one screen.
+	if character_menu_open and character_scroll_dragging:
+		var motion_position := Vector2(-1.0, -1.0)
+		if event is InputEventScreenDrag:
+			motion_position = (event as InputEventScreenDrag).position
+		elif event is InputEventMouseMotion:
+			motion_position = (event as InputEventMouseMotion).position
+		if motion_position.x >= 0.0:
+			var local_position := _screen_to_design(motion_position) - CHARACTER_LIST_VIEWPORT_RECT.position
+			_update_character_list_drag(local_position)
+			get_viewport().set_input_as_handled()
+			return
+		var released := (event is InputEventScreenTouch and not (event as InputEventScreenTouch).pressed) \
+			or (event is InputEventMouseButton and not (event as InputEventMouseButton).pressed)
+		if released:
+			_end_character_list_drag()
+			get_viewport().set_input_as_handled()
+			return
 	var pressed := event.is_action_pressed("jump")
 	var pointer_position := Vector2(-1.0, -1.0)
 	if event is InputEventScreenTouch:
@@ -467,7 +524,15 @@ func _unhandled_input(event: InputEvent) -> void:
 		if game_state == GameState.TITLE and pointer_position.x >= 0.0:
 			var design_position := _screen_to_design(pointer_position)
 			if character_menu_open:
-				_handle_character_menu_input(design_position)
+				if CHARACTER_PANEL_CLOSE_RECT.has_point(design_position):
+					_close_character_menu()
+					get_viewport().set_input_as_handled()
+					return
+				if _handle_character_category_tap(design_position):
+					get_viewport().set_input_as_handled()
+					return
+				if CHARACTER_LIST_VIEWPORT_RECT.has_point(design_position):
+					_begin_character_list_drag(design_position - CHARACTER_LIST_VIEWPORT_RECT.position)
 				get_viewport().set_input_as_handled()
 				return
 			if ranking_menu_open:
@@ -576,6 +641,7 @@ func _resolve_rope_crossing() -> void:
 		if score > best_score:
 			best_score = score
 			new_best_this_run = true
+			_check_score_unlocks()
 		rope_speed = _base_speed_for_score(score)
 		total_success += 1
 		var previous_team := turner_team
@@ -740,11 +806,26 @@ func _load_saved_progress() -> void:
 		var character_id := str(owned_id)
 		if character_ids.has(character_id) and not owned_character_ids.has(character_id):
 			owned_character_ids.append(character_id)
+	_check_score_unlocks()
 	var saved_character := str(data.selected_character)
 	selected_character_id = saved_character if owned_character_ids.has(saved_character) else DEFAULT_CHARACTER_ID
 	feedback.sound_enabled = bool(data.settings.sound)
 	feedback.vibration_enabled = bool(data.settings.vibration)
 	nickname = str(data.nickname)
+
+
+func _check_score_unlocks() -> void:
+	# Characters with a positive unlock_score in character.json start locked
+	# and join owned_character_ids on their own once best_score reaches the
+	# threshold — no purchase needed. Characters priced in gold instead (see
+	# character_prices) are deliberately excluded from this: they only ever
+	# unlock through the "buy" tap in the character menu.
+	for character_id in character_ids:
+		if owned_character_ids.has(character_id):
+			continue
+		var required_score := int(character_unlock_scores.get(character_id, 0))
+		if required_score > 0 and best_score >= required_score:
+			owned_character_ids.append(character_id)
 
 
 func _save_progress() -> void:
@@ -1339,29 +1420,99 @@ func set_player_character(character_id: String) -> bool:
 	return player_sprite != null
 
 
-func _handle_character_menu_input(position: Vector2) -> void:
-	if CHARACTER_PANEL_CLOSE_RECT.has_point(position):
-		character_menu_open = false
+func _handle_character_category_tap(position: Vector2) -> bool:
+	for category in CHARACTER_CATEGORY_TAB_RECTS.keys():
+		if (CHARACTER_CATEGORY_TAB_RECTS[category] as Rect2).has_point(position):
+			if character_category_filter != category:
+				character_category_filter = category
+				character_scroll_offset = 0.0
+			return true
+	return false
+
+
+func _character_scroll_max() -> float:
+	var count := _filtered_character_ids().size()
+	if count <= 0:
+		return 0.0
+	var rows := int(ceil(float(count) / float(CHARACTER_GRID_COLUMNS)))
+	var content_height := float(rows) * CHARACTER_CARD_ROW_HEIGHT
+	return maxf(0.0, content_height - CHARACTER_LIST_VIEWPORT_RECT.size.y)
+
+
+func _begin_character_list_drag(position: Vector2) -> void:
+	character_scroll_dragging = true
+	character_scroll_moved = false
+	character_scroll_press_position = position
+	character_scroll_press_offset = character_scroll_offset
+
+
+func _update_character_list_drag(position: Vector2) -> void:
+	var delta_y := position.y - character_scroll_press_position.y
+	if absf(delta_y) > CHARACTER_SCROLL_DRAG_THRESHOLD:
+		character_scroll_moved = true
+	character_scroll_offset = clampf(character_scroll_press_offset - delta_y, 0.0, _character_scroll_max())
+	if character_list_viewport != null:
+		character_list_viewport.queue_redraw()
+
+
+func _end_character_list_drag() -> void:
+	character_scroll_dragging = false
+	if not character_scroll_moved:
+		_handle_character_card_tap(character_scroll_press_position)
+
+
+func _handle_character_card_tap(position: Vector2) -> void:
+	# position is in CHARACTER_LIST_VIEWPORT_RECT design space (i.e. already
+	# offset so (0,0) is the viewport's own top-left), matching the local
+	# coordinates cards are drawn in inside _draw_character_list_contents.
+	var filtered := _filtered_character_ids()
+	var content_y := position.y + character_scroll_offset
+	var row := int(floor(content_y / CHARACTER_CARD_ROW_HEIGHT))
+	if row < 0:
 		return
-	var page_count := _character_page_count()
-	if CHARACTER_PAGE_PREV_RECT.has_point(position) and page_count > 1:
-		character_page = posmod(character_page - 1, page_count)
+	if content_y - float(row) * CHARACTER_CARD_ROW_HEIGHT > CHARACTER_CARD_HEIGHT:
+		return  # tapped in the gap between rows
+	var col := -1
+	for i in range(CHARACTER_CARD_COLUMN_X.size()):
+		var column_x: float = CHARACTER_CARD_COLUMN_X[i]
+		if position.x >= column_x and position.x <= column_x + CHARACTER_CARD_WIDTH:
+			col = i
+			break
+	if col == -1:
 		return
-	if CHARACTER_PAGE_NEXT_RECT.has_point(position) and page_count > 1:
-		character_page = (character_page + 1) % page_count
+	var index := row * CHARACTER_GRID_COLUMNS + col
+	if index < 0 or index >= filtered.size():
 		return
-	var page_ids := _current_character_page_ids()
-	for index in range(mini(page_ids.size(), CHARACTER_CARD_RECTS.size())):
-		if CHARACTER_CARD_RECTS[index].has_point(position):
-			var character_id: String = page_ids[index]
-			if set_player_character(character_id):
-				menu_notice = "%s 선택" % character_names.get(character_id, character_id)
-				_save_progress()
-			return
+	var character_id: String = filtered[index]
+	if owned_character_ids.has(character_id):
+		if set_player_character(character_id):
+			menu_notice = "%s 선택" % character_names.get(character_id, character_id)
+			_save_progress()
+		return
+	var price := int(character_prices.get(character_id, 0))
+	if price > 0:
+		if coins >= price:
+			coins -= price
+			owned_character_ids.append(character_id)
+			set_player_character(character_id)
+			menu_notice = "%s 구매 완료!" % character_names.get(character_id, character_id)
+			_save_progress()
+		else:
+			menu_notice = "골드가 부족합니다 (%d 골드 필요)" % price
+	else:
+		var required_score := int(character_unlock_scores.get(character_id, 0))
+		menu_notice = "최고 기록 %d점에 해금됩니다" % required_score
 
 
 func _design_to_screen_rect(rect: Rect2) -> Rect2:
 	return Rect2(design_draw_offset + rect.position * design_draw_scale, rect.size * design_draw_scale)
+
+
+func _close_character_menu() -> void:
+	character_menu_open = false
+	character_scroll_dragging = false
+	if character_list_viewport != null:
+		character_list_viewport.visible = false
 
 
 func _open_settings_menu() -> void:
@@ -1513,7 +1664,10 @@ func _load_character_catalog() -> void:
 	character_scale_multipliers.clear()
 	character_gameplay_scale_multipliers.clear()
 	character_air_pose_scale_multipliers.clear()
+	character_jump_pose_scale_multipliers.clear()
 	character_disable_jump_rescale.clear()
+	character_unlock_scores.clear()
+	character_prices.clear()
 	owned_character_ids.clear()
 	var entries: Array[Dictionary] = []
 	for character_id in DirAccess.get_directories_at(CHARACTER_ASSET_ROOT):
@@ -1530,7 +1684,10 @@ func _load_character_catalog() -> void:
 			"scale_multiplier": 1.0,
 			"gameplay_scale_multiplier": 1.0,
 			"air_pose_scale_multiplier": 1.0,
+			"jump_pose_scale_multiplier": 1.0,
 			"disable_jump_rescale": false,
+			"unlock_score": 0,
+			"price": 0,
 		}
 		var metadata_path := _character_asset_path(character_id, "character.json")
 		if FileAccess.file_exists(metadata_path):
@@ -1548,25 +1705,63 @@ func _load_character_catalog() -> void:
 		character_scale_multipliers[character_id] = clampf(float(entry.scale_multiplier), 0.5, 2.0)
 		character_gameplay_scale_multipliers[character_id] = clampf(float(entry.gameplay_scale_multiplier), 0.5, 2.0)
 		character_air_pose_scale_multipliers[character_id] = clampf(float(entry.air_pose_scale_multiplier), 0.5, 1.5)
+		character_jump_pose_scale_multipliers[character_id] = clampf(float(entry.jump_pose_scale_multiplier), 0.5, 1.5)
 		character_disable_jump_rescale[character_id] = bool(entry.disable_jump_rescale)
+		character_unlock_scores[character_id] = maxi(0, int(entry.unlock_score))
+		character_prices[character_id] = maxi(0, int(entry.price))
 		if bool(entry.unlocked_by_default):
 			owned_character_ids.append(character_id)
 	if character_ids.has(DEFAULT_CHARACTER_ID) and not owned_character_ids.has(DEFAULT_CHARACTER_ID):
 		owned_character_ids.push_front(DEFAULT_CHARACTER_ID)
 
 
-func _character_page_count() -> int:
-	return maxi(1, int(ceil(float(owned_character_ids.size()) / float(CHARACTERS_PER_PAGE))))
-
-
-func _current_character_page_ids() -> Array[String]:
+func _filtered_character_ids() -> Array[String]:
+	# "score" and "gold" split the roster by how a locked character is
+	# unlocked — a character always belongs to exactly one of those groups,
+	# via character_unlock_scores / character_prices set in
+	# _load_character_catalog. The starter (unlock_score 0, price 0) only
+	# shows up under "all", since it isn't something to unlock at all.
+	if character_category_filter == "all":
+		return character_ids
 	var result: Array[String] = []
-	var page_count := _character_page_count()
-	character_page = clampi(character_page, 0, page_count - 1)
-	var first_index := character_page * CHARACTERS_PER_PAGE
-	for index in range(first_index, mini(first_index + CHARACTERS_PER_PAGE, owned_character_ids.size())):
-		result.append(owned_character_ids[index])
+	for character_id in character_ids:
+		if character_category_filter == "score" and int(character_unlock_scores.get(character_id, 0)) > 0:
+			result.append(character_id)
+		elif character_category_filter == "gold" and int(character_prices.get(character_id, 0)) > 0:
+			result.append(character_id)
 	return result
+
+
+func _ensure_character_list_viewport() -> void:
+	if character_list_viewport == null:
+		character_list_viewport = Control.new()
+		character_list_viewport.clip_contents = true
+		# All hit-testing for this panel already happens manually in
+		# _unhandled_input against design-space rects, the same way every
+		# other menu in this game works — this viewport exists purely to
+		# clip card drawing to a scroll window, so it must never intercept
+		# input itself (that would fight the manual drag/tap handling).
+		character_list_viewport.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		character_list_viewport.draw.connect(_draw_character_list_contents)
+		add_child(character_list_viewport)
+	var screen_rect := _design_to_screen_rect(CHARACTER_LIST_VIEWPORT_RECT)
+	character_list_viewport.position = screen_rect.position
+	character_list_viewport.size = screen_rect.size
+	character_list_viewport.visible = true
+	character_list_viewport.queue_redraw()
+
+
+func _draw_character_list_contents() -> void:
+	var font := ThemeDB.fallback_font
+	var filtered := _filtered_character_ids()
+	for index in range(filtered.size()):
+		var row := index / CHARACTER_GRID_COLUMNS
+		var col := index % CHARACTER_GRID_COLUMNS
+		var y := float(row) * CHARACTER_CARD_ROW_HEIGHT - character_scroll_offset
+		if y + CHARACTER_CARD_HEIGHT < 0.0 or y > CHARACTER_LIST_VIEWPORT_RECT.size.y:
+			continue
+		var card_rect := Rect2(CHARACTER_CARD_COLUMN_X[col], y, CHARACTER_CARD_WIDTH, CHARACTER_CARD_HEIGHT)
+		_draw_character_card(character_list_viewport, font, filtered[index], card_rect)
 
 
 func _load_character_visuals(character_id: String) -> void:
@@ -1634,6 +1829,11 @@ func _prepare_character_regions() -> void:
 			# wide poses.
 			var uniform_jump_scale := player_base_region.size.y * player_base_scale / reference_height
 			player_jump_scale = Vector2.ONE * uniform_jump_scale
+		# Per-character correction applied to both jump frames (mid and air) —
+		# distinct from air_pose_scale_multiplier, which only touches the apex
+		# frame. Use when a character's whole jump sequence reads as too big
+		# relative to its idle pose.
+		player_jump_scale *= float(character_jump_pose_scale_multipliers.get(selected_character_id, 1.0))
 
 
 func _texture_used_region(texture: Texture2D) -> Rect2:
@@ -1724,10 +1924,18 @@ func _draw_hud() -> void:
 		if ranking_menu_open:
 			_draw_ranking_menu(font)
 		return
-	draw_string(font, Vector2(42, 82), "줄넘킹", HORIZONTAL_ALIGNMENT_LEFT, -1, 34, Color("91a4cc"))
+	if gameplay_score_label_texture != null and gameplay_score_label_used_region.size.x > 0.0:
+		var score_label_rect := Rect2(38.0, 39.0, 180.0, 78.0)
+		draw_texture_rect_region(gameplay_score_label_texture, score_label_rect, gameplay_score_label_used_region)
+	else:
+		draw_string(font, Vector2(42, 82), "줄넘킹", HORIZONTAL_ALIGNMENT_LEFT, -1, 34, Color("91a4cc"))
 	var score_cell_size := 10.0 + clampf(flash_time / 0.22, 0.0, 1.0) * 2.0
 	_draw_image_number(str(score), Vector2(42.0, 101.0), score_cell_size * 7.0)
-	draw_string(font, Vector2(480, 82), "BEST", HORIZONTAL_ALIGNMENT_LEFT, -1, 24, Color("fff0a6"))
+	if gameplay_best_label_texture != null and gameplay_best_label_used_region.size.x > 0.0:
+		var best_label_rect := Rect2(472.0, 45.0, 160.0, 70.0)
+		draw_texture_rect_region(gameplay_best_label_texture, best_label_rect, gameplay_best_label_used_region)
+	else:
+		draw_string(font, Vector2(480, 82), "BEST", HORIZONTAL_ALIGNMENT_LEFT, -1, 24, Color("fff0a6"))
 	_draw_image_number(str(best_score), Vector2(570.0, 54.0), 31.0)
 	if game_state != GameState.GAME_OVER:
 		draw_string(font, Vector2(0, 1120), message, HORIZONTAL_ALIGNMENT_CENTER, DESIGN_SIZE.x, 31, message_color)
@@ -1784,15 +1992,19 @@ func _draw_main_menu(font: Font) -> void:
 	var best_rect := Rect2(235.0, 306.0, 250.0, 64.0)
 	if best_score_frame_texture != null and best_score_frame_used_region.size.x > 0.0:
 		draw_texture_rect_region(best_score_frame_texture, best_rect, best_score_frame_used_region)
-	else:
-		draw_rect(best_rect, Color(0.23, 0.14, 0.09, 0.88), true)
-	draw_string(font, Vector2(278.0, 347.0), "최고 기록", HORIZONTAL_ALIGNMENT_CENTER, 105.0, 21, Color("fff0a6"))
+		draw_string(font, Vector2(278.0, 347.0), "최고 기록", HORIZONTAL_ALIGNMENT_CENTER, 105.0, 21, Color("fff0a6"))
 	_draw_image_number(str(best_score), Vector2(390.0, 326.0), 22.0, 76.0, HORIZONTAL_ALIGNMENT_CENTER)
 
 	var prompt_alpha := 0.78 + sin(Time.get_ticks_msec() * 0.004) * 0.18
-	var prompt_rect := Rect2(225.0, 505.0, 340.0, 128.0)
+	var prompt_rect := Rect2(201.0, 462.0, 408.0, 154.0)
 	if tap_prompt_texture != null and tap_prompt_used_region.size.x > 0.0:
-		_draw_rotated_texture_region(tap_prompt_texture, prompt_rect, tap_prompt_used_region, 0.12, Color(1.0, 1.0, 1.0, prompt_alpha))
+		# The prompt art is a near-white silhouette, which disappears against
+		# the light sky/street background behind it — a dark offset copy
+		# (tinted via modulate, since the source is mostly white) reads as a
+		# drop shadow and keeps it legible without redesigning the asset.
+		var shadow_rect := Rect2(prompt_rect.position + Vector2(3.0, 4.0), prompt_rect.size)
+		_draw_rotated_texture_region(tap_prompt_texture, shadow_rect, tap_prompt_used_region, 0.0, Color(0.0, 0.0, 0.0, prompt_alpha * 0.55))
+		_draw_rotated_texture_region(tap_prompt_texture, prompt_rect, tap_prompt_used_region, 0.0, Color(1.0, 1.0, 1.0, prompt_alpha))
 	else:
 		draw_string(font, Vector2(prompt_rect.position.x, 980.0), "TAP TO START", HORIZONTAL_ALIGNMENT_CENTER, prompt_rect.size.x, 30, Color(1.0, 1.0, 1.0, prompt_alpha))
 
@@ -1822,39 +2034,51 @@ func _draw_rotated_texture_region(texture: Texture2D, target: Rect2, source: Rec
 func _draw_main_menu_title(font: Font) -> void:
 	# Both rectangles share the exact screen center (x = 360).
 	var frame_rect := Rect2(125.0, 116.0, 470.0, 188.0)
-	if hud_title_frame_texture != null:
+	if hud_title_logo_texture != null:
+		# The current title_logo art is a self-contained plaque with its own
+		# border baked in, so it replaces the separate frame texture outright
+		# — drawing both stacked a second box around it ("box inside a box").
+		draw_texture_rect(hud_title_logo_texture, frame_rect, false)
+	elif hud_title_frame_texture != null:
 		draw_texture_rect(hud_title_frame_texture, frame_rect, false)
+		draw_string(font, Vector2(160.0, 225.0), "줄넘킹", HORIZONTAL_ALIGNMENT_CENTER, 400.0, 54, Color("ffd23f"))
 	else:
 		draw_rect(frame_rect, Color("3a2418"), true)
 		draw_rect(frame_rect, Color("ffd23f"), false, 7.0)
-	var logo_rect := Rect2(255.0, 154.0, 210.0, 112.0)
-	if hud_title_logo_texture != null:
-		draw_texture_rect(hud_title_logo_texture, logo_rect, false)
-	else:
 		draw_string(font, Vector2(160.0, 225.0), "줄넘킹", HORIZONTAL_ALIGNMENT_CENTER, 400.0, 54, Color("ffd23f"))
+
+
+func _draw_character_category_tabs(font: Font) -> void:
+	var labels := {"all": "전체", "score": "기록", "gold": "골드"}
+	var categories: Array[String] = ["all", "score", "gold"]
+	for category in categories:
+		var tab: Rect2 = CHARACTER_CATEGORY_TAB_RECTS[category]
+		var active: bool = character_category_filter == category
+		draw_rect(tab, Color("73f7b4") if active else Color("263a57"), true)
+		draw_rect(tab, Color("fff0a6"), false, 3.0)
+		draw_string(font, Vector2(tab.position.x, tab.position.y + 30.0), labels[category], HORIZONTAL_ALIGNMENT_CENTER, tab.size.x, 20, Color.BLACK if active else Color("a9bad8"))
 
 
 func _draw_character_menu(font: Font) -> void:
 	draw_rect(Rect2(Vector2.ZERO, DESIGN_SIZE), Color(0.02, 0.03, 0.06, 0.72), true)
 	draw_rect(CHARACTER_PANEL_RECT, Color("17243b"), true)
 	draw_rect(CHARACTER_PANEL_RECT, Color("fff0a6"), false, 7.0)
-	draw_string(font, Vector2(CHARACTER_PANEL_RECT.position.x, 175.0), "보유 캐릭터", HORIZONTAL_ALIGNMENT_CENTER, CHARACTER_PANEL_RECT.size.x, 38, Color.WHITE)
-	draw_string(font, Vector2(CHARACTER_PANEL_RECT.position.x, 215.0), "캐릭터 사진을 눌러 선택", HORIZONTAL_ALIGNMENT_CENTER, CHARACTER_PANEL_RECT.size.x, 22, Color("a9bad8"))
+	draw_string(font, Vector2(CHARACTER_PANEL_RECT.position.x, 175.0), "캐릭터", HORIZONTAL_ALIGNMENT_CENTER, CHARACTER_PANEL_RECT.size.x, 38, Color.WHITE)
 	draw_circle(CHARACTER_PANEL_CLOSE_RECT.get_center(), 24.0, Color("ff4d67"))
 	draw_line(CHARACTER_PANEL_CLOSE_RECT.get_center() + Vector2(-8.0, -8.0), CHARACTER_PANEL_CLOSE_RECT.get_center() + Vector2(8.0, 8.0), Color.WHITE, 5.0, true)
 	draw_line(CHARACTER_PANEL_CLOSE_RECT.get_center() + Vector2(8.0, -8.0), CHARACTER_PANEL_CLOSE_RECT.get_center() + Vector2(-8.0, 8.0), Color.WHITE, 5.0, true)
-	var page_ids := _current_character_page_ids()
-	for index in range(mini(page_ids.size(), CHARACTER_CARD_RECTS.size())):
-		_draw_character_card(font, page_ids[index], CHARACTER_CARD_RECTS[index])
-	var page_count := _character_page_count()
-	if page_count > 1:
-		draw_rect(CHARACTER_PAGE_PREV_RECT, Color("263a57"), true)
-		draw_rect(CHARACTER_PAGE_PREV_RECT, Color("fff0a6"), false, 4.0)
-		draw_rect(CHARACTER_PAGE_NEXT_RECT, Color("263a57"), true)
-		draw_rect(CHARACTER_PAGE_NEXT_RECT, Color("fff0a6"), false, 4.0)
-		draw_string(font, Vector2(CHARACTER_PAGE_PREV_RECT.position.x, CHARACTER_PAGE_PREV_RECT.position.y + 40.0), "<", HORIZONTAL_ALIGNMENT_CENTER, CHARACTER_PAGE_PREV_RECT.size.x, 28, Color.WHITE)
-		draw_string(font, Vector2(CHARACTER_PAGE_NEXT_RECT.position.x, CHARACTER_PAGE_NEXT_RECT.position.y + 40.0), ">", HORIZONTAL_ALIGNMENT_CENTER, CHARACTER_PAGE_NEXT_RECT.size.x, 28, Color.WHITE)
-		draw_string(font, Vector2(312.0, 825.0), "%d / %d" % [character_page + 1, page_count], HORIZONTAL_ALIGNMENT_CENTER, 96.0, 22, Color("a9bad8"))
+	_draw_character_category_tabs(font)
+	_ensure_character_list_viewport()
+	var scroll_max := _character_scroll_max()
+	if scroll_max > 0.0:
+		# A thin track + thumb on the right edge of the list area — the only
+		# hint that there's more below since the arrows are gone and this is
+		# a drag-to-scroll list now, not a paged one.
+		var track := Rect2(CHARACTER_LIST_VIEWPORT_RECT.end.x - 6.0, CHARACTER_LIST_VIEWPORT_RECT.position.y, 6.0, CHARACTER_LIST_VIEWPORT_RECT.size.y)
+		draw_rect(track, Color(1.0, 1.0, 1.0, 0.12), true)
+		var thumb_height := maxf(40.0, track.size.y * (track.size.y / (track.size.y + scroll_max)))
+		var thumb_y := track.position.y + (track.size.y - thumb_height) * (character_scroll_offset / scroll_max)
+		draw_rect(Rect2(track.position.x, thumb_y, track.size.x, thumb_height), Color("ffd23f"), true)
 
 
 func _draw_settings_menu(font: Font) -> void:
@@ -1932,15 +2156,21 @@ func _draw_settings_toggle_row(font: Font, row: Rect2, label: String, is_on: boo
 	draw_string(font, Vector2(toggle_rect.position.x, toggle_rect.position.y + 34.0), "ON" if is_on else "OFF", HORIZONTAL_ALIGNMENT_CENTER, toggle_rect.size.x, 20, Color.BLACK if is_on else Color.WHITE)
 
 
-func _draw_character_card(font: Font, character_id: String, card: Rect2) -> void:
+func _draw_character_card(canvas: CanvasItem, font: Font, character_id: String, card: Rect2) -> void:
+	# Draws onto `canvas` explicitly (not implicit self) so this can be
+	# called from character_list_viewport's own draw signal and still land
+	# on that Control's clipped canvas instead of the root Node2D's.
+	var owned := owned_character_ids.has(character_id)
 	var selected := character_id == selected_character_id
 	var border_color := Color("73f7b4") if selected else Color("fff0a6")
-	draw_rect(card, Color("263a57"), true)
-	draw_rect(card, border_color, false, 6.0)
-	# Anchored to the card's BOTTOM, not its top, so the extra height added to
-	# CHARACTER_CARD_RECTS for tall/scaled-up characters becomes free headroom
-	# above this box instead of shifting the fit-scale math (and therefore
-	# every other character's card size) along with it.
+	if not owned:
+		border_color = Color("6b7280")
+	canvas.draw_rect(card, Color("263a57"), true)
+	canvas.draw_rect(card, border_color, false, 6.0)
+	# Anchored to the card's BOTTOM, not its top, so the extra height above
+	# the minimum text layout needs becomes free headroom for tall/scaled-up
+	# character previews instead of shifting the fit-scale math (and
+	# therefore every other character's card size) along with it.
 	var preview_bottom := card.end.y - 139.0
 	var preview_rect := Rect2(Vector2(card.position.x + 14.0, preview_bottom - 245.0), Vector2(card.size.x - 28.0, 245.0))
 	var texture := _character_preview_texture(character_id)
@@ -1954,15 +2184,29 @@ func _draw_character_card(font: Font, character_id: String, card: Rect2) -> void
 		scale *= float(character_scale_multipliers.get(character_id, 1.0))
 		var size := source.size * scale
 		var position := Vector2(preview_rect.get_center().x - size.x * 0.5, preview_rect.end.y - size.y)
-		draw_texture_rect_region(texture, Rect2(position, size), source)
+		# Locked characters are silhouetted dark instead of shown in full
+		# color — a preview of the shape without giving away the art as a
+		# reward for reaching the unlock condition.
+		var tint := Color(1.0, 1.0, 1.0) if owned else Color(0.12, 0.14, 0.2)
+		canvas.draw_texture_rect_region(texture, Rect2(position, size), source, tint)
 	# Offsets are anchored from the card's BOTTOM (not top) so they keep the
 	# same absolute position regardless of how much extra headroom the top of
 	# the card has for oversized character art.
 	var name: String = character_names.get(character_id, character_id)
-	draw_string(font, Vector2(card.position.x + 8.0, card.end.y - 95.0), name, HORIZONTAL_ALIGNMENT_CENTER, card.size.x - 16.0, 20, Color.WHITE)
-	draw_string(font, Vector2(card.position.x + 8.0, card.end.y - 58.0), "보유", HORIZONTAL_ALIGNMENT_CENTER, card.size.x - 16.0, 19, Color("ffd166"))
-	var state_text := "사용 중" if selected else "선택"
-	draw_string(font, Vector2(card.position.x + 8.0, card.end.y - 22.0), state_text, HORIZONTAL_ALIGNMENT_CENTER, card.size.x - 16.0, 21, border_color)
+	canvas.draw_string(font, Vector2(card.position.x + 8.0, card.end.y - 95.0), name, HORIZONTAL_ALIGNMENT_CENTER, card.size.x - 16.0, 20, Color.WHITE if owned else Color("9aa4b8"))
+	if owned:
+		canvas.draw_string(font, Vector2(card.position.x + 8.0, card.end.y - 58.0), "보유", HORIZONTAL_ALIGNMENT_CENTER, card.size.x - 16.0, 19, Color("ffd166"))
+		var state_text := "사용 중" if selected else "선택"
+		canvas.draw_string(font, Vector2(card.position.x + 8.0, card.end.y - 22.0), state_text, HORIZONTAL_ALIGNMENT_CENTER, card.size.x - 16.0, 21, border_color)
+		return
+	var price := int(character_prices.get(character_id, 0))
+	var required_score := int(character_unlock_scores.get(character_id, 0))
+	if price > 0:
+		canvas.draw_string(font, Vector2(card.position.x + 8.0, card.end.y - 58.0), "%d 골드" % price, HORIZONTAL_ALIGNMENT_CENTER, card.size.x - 16.0, 19, Color("ffd166"))
+		canvas.draw_string(font, Vector2(card.position.x + 8.0, card.end.y - 22.0), "구매", HORIZONTAL_ALIGNMENT_CENTER, card.size.x - 16.0, 21, Color("73f7b4") if coins >= price else Color("ff8b8b"))
+	else:
+		canvas.draw_string(font, Vector2(card.position.x + 8.0, card.end.y - 58.0), "최고기록 %d" % required_score, HORIZONTAL_ALIGNMENT_CENTER, card.size.x - 16.0, 19, Color("9aa4b8"))
+		canvas.draw_string(font, Vector2(card.position.x + 8.0, card.end.y - 22.0), "잠김", HORIZONTAL_ALIGNMENT_CENTER, card.size.x - 16.0, 21, Color("6b7280"))
 
 
 func _character_preview_texture(character_id: String) -> Texture2D:

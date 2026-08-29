@@ -1,8 +1,8 @@
 {
   "display_name": "마녀",
   "order": 26,
-  "unlocked_by_default": true,
   "body_top_fraction": 0.22,
   "gameplay_scale_multiplier": 0.9,
-  "disable_jump_rescale": true
+  "disable_jump_rescale": true,
+  "unlock_score": 35
 }

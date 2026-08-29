@@ -337,8 +337,9 @@ func _test_character_asset_system(game: Node) -> void:
 	_expect(ResourceLoader.exists("res://assets/ui/tap_to_start.png"), "tap-to-start prompt asset was not imported")
 	_expect(ResourceLoader.exists("res://assets/ui/coin_icon.png"), "coin icon asset was not imported")
 	_expect(ResourceLoader.exists("res://assets/ui/ruby_icon.png"), "ruby icon asset was not imported")
-	var resource_icon_rect := Rect2(game.RESOURCE_ICON_OFFSET, game.RESOURCE_ICON_SIZE)
-	_expect(Rect2(Vector2.ZERO, Vector2(48.0, 62.0)).encloses(resource_icon_rect), "resource icon protrudes outside its frame socket")
+	for icon_offset in [game.COIN_ICON_OFFSET, game.RUBY_ICON_OFFSET]:
+		var resource_icon_rect := Rect2(icon_offset, game.RESOURCE_ICON_SIZE)
+		_expect(Rect2(Vector2.ZERO, Vector2(48.0, 62.0)).encloses(resource_icon_rect), "resource icon protrudes outside its frame socket")
 	for countdown_name in ["3", "2", "1", "go"]:
 		var countdown_path := "res://assets/ui/countdown_%s.png" % countdown_name
 		_expect(ResourceLoader.exists(countdown_path), "countdown asset %s was not imported" % countdown_name)
