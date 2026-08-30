@@ -1687,23 +1687,18 @@ func _effective_rope_speed_raw() -> float:
 
 
 func _base_speed_for_score(current_score: int) -> float:
-	# The plain student turner always has its baseline speed keep rising with
-	# score. Every OTHER patterned team's difficulty (10..90, and the duo
-	# stage past 130) comes entirely from its own turn pattern (athlete/duo
-	# bursts, sleepy's slow/fast swings, prankster fakes, wizard ghosting) —
-	# a rising baseline on top of that made sleepy get disproportionately
-	# fast at high scores since its fast-turn multiplier was compounding
-	# with an ever-rising number. Team assignment is random past score 10
-	# (see _update_turner_team_and_pattern), so this keys off the live team
+	# Only the plain student turner has its baseline speed keep rising with
+	# score. Every patterned team's difficulty — including the boss gauntlet
+	# (90..AIR_CHALLENGE_START_SCORE) — comes entirely from its own turn
+	# pattern (athlete/duo bursts, sleepy's slow/fast swings, prankster
+	# fakes, wizard ghosting) — a rising baseline on top of that made both
+	# sleepy and the boss stretch feel disproportionately fast at high
+	# scores, since a fast-turn multiplier was compounding with an
+	# ever-rising number instead of staying at a fixed, learnable pace.
+	# Team assignment is random past score 10 (see
+	# _update_turner_team_and_pattern), so this keys off the live team
 	# instead of fixed score bands.
-	# The boss gauntlet (90..AIR_CHALLENGE_START_SCORE) is the exception: it
-	# still needs to keep getting harder as score climbs toward the double
-	# rope reveal, even though its own turner team is one of the same random
-	# patterned teams — otherwise the boss stretch goes flat the moment it
-	# starts instead of ramping like it visually promises to.
 	if turner_team == TurnerTeam.STUDENT:
-		return balance.speed_for_score(current_score)
-	if current_score >= BOSS_TURNER_SCORE_THRESHOLD and current_score < AIR_CHALLENGE_START_SCORE:
 		return balance.speed_for_score(current_score)
 	return balance.speed_for_score(TURNER_CHANGE_INTERVAL)
 
