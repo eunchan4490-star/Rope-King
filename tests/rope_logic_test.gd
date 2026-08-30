@@ -70,6 +70,14 @@ func _test_athlete_base_speed_stays_fixed(game: Node) -> void:
 	_expect(is_equal_approx(game._base_speed_for_score(30), athlete_base), "sleepy base speed did not hold the flat score-10 baseline")
 	game.turner_team = game.TurnerTeam.DUO
 	_expect(is_equal_approx(game._base_speed_for_score(130), athlete_base), "duo base speed did not hold the flat score-10 baseline")
+	# The boss gauntlet (90..AIR_CHALLENGE_START_SCORE) is the one patterned
+	# stretch that must still keep ramping with score — its own turner team
+	# is one of the same random patterned teams, but the stage visually
+	# promises to keep getting harder toward the double-rope reveal.
+	game.turner_team = game.TurnerTeam.SLEEPY
+	_expect(is_equal_approx(game._base_speed_for_score(game.BOSS_TURNER_SCORE_THRESHOLD), BALANCE.speed_for_score(game.BOSS_TURNER_SCORE_THRESHOLD)), "boss gauntlet base speed did not scale with score at its start")
+	_expect(is_equal_approx(game._base_speed_for_score(game.AIR_CHALLENGE_START_SCORE - 1), BALANCE.speed_for_score(game.AIR_CHALLENGE_START_SCORE - 1)), "boss gauntlet base speed did not scale with score near its end")
+	_expect(is_equal_approx(game._base_speed_for_score(game.AIR_CHALLENGE_START_SCORE), athlete_base), "duo stage base speed incorrectly kept scaling like the boss gauntlet")
 
 
 func _test_high_speed_crossings(game: Node) -> void:

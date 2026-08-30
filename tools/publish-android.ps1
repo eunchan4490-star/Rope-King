@@ -62,13 +62,25 @@ if ($null -eq $run) {
 & gh run watch $run.databaseId --exit-status
 if ($LASTEXITCODE -ne 0) { throw "Android APK 빌드가 실패했습니다: $($run.url)" }
 
+$releaseTag = "android-" + $run.databaseId
 $downloadDirectory = Join-Path $projectRoot ("builds\\run-" + $run.databaseId)
 New-Item -ItemType Directory -Path $downloadDirectory -Force | Out-Null
+
 & gh run download $run.databaseId --name "Rope-King-Android" --dir $downloadDirectory
 if ($LASTEXITCODE -ne 0) { throw "APK 다운로드에 실패했습니다." }
 
 $apk = Get-ChildItem -LiteralPath $downloadDirectory -Filter "*.apk" -Recurse | Select-Object -First 1
 if ($null -eq $apk) { throw "다운로드 결과에서 APK를 찾지 못했습니다." }
 
+$repo = (gh repo view --json nameWithOwner -q .nameWithOwner).Trim()
+& gh release view $releaseTag --repo $repo --json tagName 2>$null | Out-Null
+if ($LASTEXITCODE -eq 0) {
+    & gh release upload $releaseTag "$($apk.FullName)#Rope-King.apk" --repo $repo --clobber
+} else {
+    & gh release create $releaseTag "$($apk.FullName)#Rope-King.apk" --repo $repo --target $commitSha --title "줄넘킹 Android $releaseTag" --notes "Android APK 자동 배포입니다."
+}
+if ($LASTEXITCODE -ne 0) { throw "GitHub Release 업로드에 실패했습니다." }
+
 Write-Host "빌드 성공: $($run.url)"
+Write-Host "릴리스: https://github.com/$repo/releases/tag/$releaseTag"
 Write-Host "설치 APK: $($apk.FullName)"
