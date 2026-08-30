@@ -17,6 +17,8 @@ extends Resource
 @export var wave_min_multiplier := 0.78
 @export var wave_range := 0.42
 @export var athlete_burst_multiplier := 1.72
+@export var wizard_speed_min_multiplier := 0.7
+@export var wizard_speed_max_multiplier := 1.4
 
 
 func speed_for_score(score: int) -> float:

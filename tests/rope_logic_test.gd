@@ -18,6 +18,7 @@ func _init() -> void:
 	_test_sleepy_turner_pattern(game)
 	_test_prankster_turner_pattern(game)
 	_test_wizard_turner_pattern(game)
+	_test_turner_team_randomization(game)
 	_test_physical_clearance_wins(game)
 	_test_visible_contact_loses(game)
 	_test_coop_mode(game)
@@ -44,11 +45,21 @@ func _test_speed_curve(game: Node) -> void:
 
 
 func _test_athlete_base_speed_stays_fixed(game: Node) -> void:
+	# _base_speed_for_score now keys off the live turner_team (team
+	# assignment past score 10 is random — see _random_turner_team), not
+	# fixed score bands, so each case below sets the team it means to test.
 	var athlete_base: float = BALANCE.speed_for_score(10)
 	_expect(is_equal_approx(BALANCE.speed_gain_per_score, 0.15), "student speed gain was not raised to 0.15 per score")
+	game.turner_team = game.TurnerTeam.ATHLETE
 	for score in [10, 11, 20, 29]:
 		_expect(is_equal_approx(game._base_speed_for_score(score), athlete_base), "athlete base speed increased at score %d" % score)
+	game.turner_team = game.TurnerTeam.PRANKSTER
+	_expect(is_equal_approx(game._base_speed_for_score(50), athlete_base), "prankster base speed increased at score 50")
+	game.turner_team = game.TurnerTeam.WIZARD
+	_expect(is_equal_approx(game._base_speed_for_score(70), athlete_base), "wizard base speed increased at score 70")
+	game.turner_team = game.TurnerTeam.STUDENT
 	_expect(is_equal_approx(game._base_speed_for_score(9), BALANCE.speed_for_score(9)), "student speed curve changed before athlete entry")
+	game.turner_team = game.TurnerTeam.SLEEPY
 	_expect(is_equal_approx(game._base_speed_for_score(30), BALANCE.speed_for_score(30)), "sleepy student speed curve did not resume at score 30")
 
 
@@ -86,8 +97,12 @@ func _test_athlete_turner_pattern(game: Node) -> void:
 	game.score = 9
 	_expect(not game._update_turner_team_and_pattern(), "turner changed before ten successes")
 	game.score = 10
-	_expect(game._update_turner_team_and_pattern(), "athlete did not enter at ten successes")
-	_expect(int(game.turner_team) == 1, "athlete team was not activated")
+	_expect(game._update_turner_team_and_pattern(), "turner team did not change at ten successes")
+	# Which team gets picked at this boundary is random now (see
+	# _random_turner_team) — force athlete specifically so the rest of this
+	# test can exercise its own turn pattern deterministically.
+	game.turner_team = game.TurnerTeam.ATHLETE
+	game._init_turner_team_state(game.TurnerTeam.ATHLETE)
 	_expect(int(game.challenge_pattern) == 0, "athlete started with an unfair immediate burst")
 	game.is_jumping = false
 	game.accepting_input = true
@@ -154,8 +169,11 @@ func _test_sleepy_turner_pattern(game: Node) -> void:
 	game.score = 29
 	_expect(not game._update_turner_team_and_pattern(), "sleepy student entered before total score 30")
 	game.score = 30
-	_expect(game._update_turner_team_and_pattern(), "sleepy student did not enter at total score 30")
-	_expect(int(game.turner_team) == int(game.TurnerTeam.SLEEPY), "sleepy student team was not activated")
+	_expect(game._update_turner_team_and_pattern(), "turner team did not change at total score 30")
+	# Force sleepy specifically — the boundary's random pick is covered by
+	# _test_turner_team_randomization; this test targets sleepy's own pattern.
+	game.turner_team = game.TurnerTeam.SLEEPY
+	game._init_turner_team_state(game.TurnerTeam.SLEEPY)
 	_expect(int(game.sleepy_slow_turns_remaining) >= game.SLEEPY_MIN_SLOW_TURNS, "sleepy student began without a sleeping turn")
 	_expect(int(game.sleepy_slow_turns_remaining) <= game.SLEEPY_MAX_SLOW_TURNS, "sleepy student's initial random sleep exceeded its cap")
 	game._start_turner_transition(game.TurnerTeam.ATHLETE)
@@ -188,11 +206,14 @@ func _test_sleepy_turner_pattern(game: Node) -> void:
 func _test_prankster_turner_pattern(game: Node) -> void:
 	game._reset_turner_run()
 	game.turner_team = game.TurnerTeam.SLEEPY
+	game.turner_change_slot = 2  # matches the SLEEPY slot (scores 30-49)
 	game.score = 49
 	_expect(not game._update_turner_team_and_pattern(), "prankster entered before score 50")
 	game.score = 50
-	_expect(game._update_turner_team_and_pattern(), "prankster did not enter at score 50")
-	_expect(int(game.turner_team) == int(game.TurnerTeam.PRANKSTER), "prankster team was not activated")
+	_expect(game._update_turner_team_and_pattern(), "turner team did not change at score 50")
+	# Force prankster specifically — see the athlete/sleepy tests above for why.
+	game.turner_team = game.TurnerTeam.PRANKSTER
+	game._init_turner_team_state(game.TurnerTeam.PRANKSTER)
 	_expect(int(game.prankster_normal_turns_remaining) >= 1 and int(game.prankster_normal_turns_remaining) <= 3, "prankster initial fake timing was outside 1-to-3 turns")
 	game.prankster_normal_turns_remaining = 1
 	game._update_turner_team_and_pattern()
@@ -227,14 +248,25 @@ func _test_prankster_turner_pattern(game: Node) -> void:
 
 func _test_wizard_turner_pattern(game: Node) -> void:
 	game._reset_turner_run()
+	# Seed turner_change_slot to where a real playthrough would already be by
+	# score 69 (past the 10/30/50 boundaries, all slot 3 under
+	# TURNER_RANDOM_INTERVAL=20) so this isolates just the slot 3->4
+	# transition at score 70, instead of also firing one from the fresh
+	# reset's slot 0.
 	game.turner_team = game.TurnerTeam.PRANKSTER
+	game.turner_change_slot = 3
 	game.score = 69
 	_expect(not game._update_turner_team_and_pattern(), "wizard entered before score 70")
 	game.score = 70
-	_expect(game._update_turner_team_and_pattern(), "wizard did not enter at score 70")
-	_expect(int(game.turner_team) == int(game.TurnerTeam.WIZARD), "wizard team was not activated")
+	_expect(game._update_turner_team_and_pattern(), "turner team did not change at score 70")
+	# Force wizard specifically — see the athlete/sleepy tests above for why.
+	game.turner_team = game.TurnerTeam.WIZARD
+	game._init_turner_team_state(game.TurnerTeam.WIZARD)
 	_expect(not bool(game.wizard_rope_hidden), "wizard began with an invisible turn instead of a normal turn")
-	_expect(is_equal_approx(game._base_speed_for_score(70), BALANCE.speed_for_score(10)), "wizard speed was not fixed to the score-10 speed")
+	# Wizard's difficulty comes entirely from its turn pattern (hidden rope +
+	# randomized speed), same as athlete/prankster, so its baseline also
+	# holds flat at the score-10 speed (see _base_speed_for_score).
+	_expect(is_equal_approx(game._base_speed_for_score(70), BALANCE.speed_for_score(10)), "wizard speed was not held at the score-10 baseline")
 	game._update_turner_team_and_pattern()
 	_expect(bool(game.wizard_rope_hidden), "wizard's second turn did not become invisible")
 	game.game_state = game.GameState.PLAYING
@@ -252,11 +284,46 @@ func _test_wizard_turner_pattern(game: Node) -> void:
 	_expect(game._is_jump_cue(), "wizard visibility test did not enter the red cue")
 	_expect(not game._wizard_rope_is_ghosted(), "wizard's translucent rope did not become solid for the red cue")
 	_expect(game._wizard_illusions_are_active(), "non-lethal wizard illusions disappeared during the real rope's red cue")
+	_expect(is_equal_approx(game._effective_rope_speed(), game.rope_speed), "wizard speed was randomized during the fair red cue window")
 	game._update_turner_team_and_pattern()
 	_expect(not bool(game.wizard_rope_hidden), "wizard rope did not return to a normal visible turn")
 	game.rope_angle = PI
-	_expect(is_equal_approx(game._effective_rope_speed(), game.rope_speed), "wizard speed changed away from its fixed baseline")
+	# Outside the red cue, wizard speed is now randomized per turn (each
+	# _update_turner_team_and_pattern() call re-rolls wizard_speed_multiplier)
+	# so a steady rhythm alone can't carry a player through — only the range
+	# is checked here, not an exact fixed value.
+	var wizard_speed: float = game._effective_rope_speed()
+	var min_speed: float = game.rope_speed * BALANCE.wizard_speed_min_multiplier
+	var max_speed: float = game.rope_speed * BALANCE.wizard_speed_max_multiplier
+	_expect(wizard_speed >= min_speed - 0.001 and wizard_speed <= max_speed + 0.001, "wizard speed fell outside its configured random range")
 	_expect(is_equal_approx(game._rope_midpoint_y(PI * 1.5), game.LEFT_HAND.y - game.ROPE_OVERHEAD_RADIUS), "wizard rope size still changed")
+
+
+func _test_turner_team_randomization(game: Node) -> void:
+	# Past score 10, the rope-turner team must be re-rolled every
+	# TURNER_RANDOM_INTERVAL points, must never repeat the team that was
+	# just active, and (run over many seeds) must actually use more than
+	# one team — not silently collapse back to a fixed sequence.
+	for trial in range(30):
+		game._reset_turner_run()
+		game.score = 10
+		_expect(game._update_turner_team_and_pattern(), "turner team did not change at score 10 (trial %d)" % trial)
+		_expect(int(game.turner_team) != int(game.TurnerTeam.STUDENT), "turner stayed on the default team past score 10 (trial %d)" % trial)
+		var teams_seen: Dictionary = {int(game.turner_team): true}
+		var previous_team: int = int(game.turner_team)
+		var boundary := 30
+		while boundary <= 80:
+			game.score = boundary - 1
+			_expect(not game._update_turner_team_and_pattern(), "turner team changed before score %d (trial %d)" % [boundary, trial])
+			game.score = boundary
+			_expect(game._update_turner_team_and_pattern(), "turner team did not change at score %d (trial %d)" % [boundary, trial])
+			_expect(int(game.turner_team) != previous_team, "same turner team repeated back to back at score %d (trial %d)" % [boundary, trial])
+			previous_team = int(game.turner_team)
+			teams_seen[previous_team] = true
+			boundary += 20
+		if teams_seen.size() > 1:
+			return
+	failures.append("turner team randomization never picked more than one team across 30 trials")
 
 
 func _test_physical_clearance_wins(game: Node) -> void:
@@ -410,7 +477,9 @@ func _test_start_at_fifty(game: Node) -> void:
 	game._start_game_at_score(50)
 	_expect(int(game.game_state) == int(game.GameState.PLAYING), "50-start test button did not start gameplay")
 	_expect(int(game.score) == 50, "50-start test button used the wrong score")
-	_expect(int(game.turner_team) == int(game.TurnerTeam.PRANKSTER), "50-start test button did not activate the prankster team")
+	# Which team gets picked past score 10 is random now (see
+	# _random_turner_team) — only assert a non-default team is active.
+	_expect(int(game.turner_team) != int(game.TurnerTeam.STUDENT), "50-start test button did not activate a non-default team")
 	_expect(is_equal_approx(game.rope_speed, game._base_speed_for_score(50)), "50-start test button used the wrong rope speed")
 	_expect(not bool(game.turner_transition_active), "50-start test button incorrectly played an entrance transition")
 	game._return_to_main()

@@ -53,12 +53,17 @@ func default_data() -> Dictionary:
 			"total_runs": 0,
 			"total_success": 0,
 		},
+		"attendance": {
+			"streak": 0,
+			"last_claim_date": "",
+		},
 	}
 
 
 func _sanitize(source: Dictionary, defaults: Dictionary) -> Dictionary:
 	var settings_source: Dictionary = source.get("settings", {}) if source.get("settings", {}) is Dictionary else {}
 	var stats_source: Dictionary = source.get("stats", {}) if source.get("stats", {}) is Dictionary else {}
+	var attendance_source: Dictionary = source.get("attendance", {}) if source.get("attendance", {}) is Dictionary else {}
 	var owned_source = source.get("owned_characters", defaults.owned_characters)
 	var owned: Array = owned_source if owned_source is Array else defaults.owned_characters
 	if owned.is_empty():
@@ -83,5 +88,9 @@ func _sanitize(source: Dictionary, defaults: Dictionary) -> Dictionary:
 		"stats": {
 			"total_runs": maxi(0, int(stats_source.get("total_runs", defaults.stats.total_runs))),
 			"total_success": maxi(0, int(stats_source.get("total_success", defaults.stats.total_success))),
+		},
+		"attendance": {
+			"streak": maxi(0, int(attendance_source.get("streak", defaults.attendance.streak))),
+			"last_claim_date": str(attendance_source.get("last_claim_date", defaults.attendance.last_claim_date)),
 		},
 	}

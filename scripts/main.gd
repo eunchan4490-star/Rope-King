@@ -15,6 +15,12 @@ const PLAYER_GROUND_Y := 890.0
 const TURNER_GROUND_Y := 910.0
 const LEFT_HAND := Vector2(140.0, 855.0)
 const RIGHT_HAND := Vector2(580.0, 855.0)
+# LEFT_HAND/RIGHT_HAND.y (855) sits 55px above a normal turner's feet
+# (TURNER_GROUND_Y, 910) — 55 / 165 (the normal sprite height) down from the
+# sprite's bottom, i.e. this far down from its top. Used to keep the boss
+# turner's hand fixed at that same on-screen height when its sprite is
+# scaled up (see _draw_turner).
+const TURNER_HAND_FRACTION_FROM_TOP := 1.0 - 55.0 / 165.0
 const COOP_LEFT_HAND := Vector2(72.0, 855.0)
 const COOP_RIGHT_HAND := Vector2(648.0, 855.0)
 const COOP_LEFT_TURNER_FEET := Vector2(42.0, TURNER_GROUND_Y)
@@ -28,6 +34,16 @@ const ROPE_PIXEL_OUTLINE_SIZE := Vector2(14.0, 14.0)
 const ROPE_PIXEL_CORE_SIZE := Vector2(8.0, 8.0)
 const HIT_REVEAL_SECONDS := 0.42
 const TURNER_CHANGE_INTERVAL := 10
+# After the initial score-10 grace period, a new random team is rolled every
+# TURNER_RANDOM_INTERVAL points — matching the spacing the fixed sequence
+# used to have (ATHLETE@10, SLEEPY@30, PRANKSTER@50, WIZARD@70), just with
+# the team at each of those boundaries now chosen at random instead of fixed.
+const TURNER_RANDOM_INTERVAL := 20
+# From BOSS_TURNER_SCORE_THRESHOLD up to the double-rope reveal, the turner
+# team rerolls much more often so every existing pattern (athlete/sleepy/
+# prankster/wizard) gets a chance to show up before the boss's real gimmick
+# (the second rope) kicks in.
+const BOSS_GAUNTLET_TURNER_INTERVAL := 3
 const ATHLETE_NORMAL_TURNS := 2
 const ATHLETE_MAX_BURST_TURNS := 2
 const SLEEPY_START_SCORE := 30
@@ -60,13 +76,29 @@ const LEFT_TURNER_ENTRY_FEET := Vector2(-120.0, TURNER_GROUND_Y)
 const RIGHT_TURNER_ENTRY_FEET := Vector2(840.0, TURNER_GROUND_Y)
 const CHARACTER_ASSET_ROOT := "res://assets/characters"
 const DEFAULT_BACKGROUND_PATH := "res://assets/backgrounds/neighborhood.png"
+const BGM_MUSIC_PATH := "res://assets/audio/bgm.mp3"
 const DEFAULT_TURNER_PATH := "res://assets/turners/bowl_cut_student.png"
 const ATHLETE_TURNER_PATH := "res://assets/turners/athlete_student.png"
 const SLEEPY_TURNER_ASLEEP_PATH := "res://assets/turners/sleepy_student_asleep.png"
 const SLEEPY_TURNER_AWAKE_PATH := "res://assets/turners/sleepy_student_awake.png"
 const PRANKSTER_TURNER_PATH := "res://assets/turners/prankster_student.png"
 const WIZARD_TURNER_PATH := "res://assets/turners/wizard_student.png"
+const BOSS_TURNER_PATH := "res://assets/turners/boss_king.png"
+const BOSS_TURNER_SCORE_THRESHOLD := 90
 const MENU_CHARACTER_TEXTURE_PATH := "res://assets/ui/menu_character.png"
+const RANKING_BUTTON_TEXTURE_PATH := "res://assets/ui/ranking_button.png"
+const ATTENDANCE_BUTTON_TEXTURE_PATH := "res://assets/ui/attendance_button.png"
+const ATTENDANCE_TRACK_BG_PATH := "res://assets/ui/checkin_track_bg.png"
+const ATTENDANCE_RUBY_ICON_PATH := "res://assets/ui/checkin_ruby_icon.png"
+const ATTENDANCE_COMPLETE_BADGE_PATH := "res://assets/ui/checkin_complete_badge.png"
+const ATTENDANCE_CHEST_CLOSED_PATH := "res://assets/ui/checkin_chest_closed.png"
+const ATTENDANCE_CHEST_OPEN_PATH := "res://assets/ui/checkin_chest_open.png"
+# Slot centers measured from the track art itself (as fractions of its own
+# width/height) — the 7 punched-out circles are evenly spaced but not
+# perfectly centered in the frame, so computing fractions instead of
+# guessing even spacing keeps the reward icons sitting inside the holes.
+const ATTENDANCE_TRACK_SLOT_X_FRACTIONS := [0.1453, 0.2634, 0.3813, 0.4991, 0.6161, 0.7332, 0.8497]
+const ATTENDANCE_TRACK_SLOT_Y_FRACTION := 0.4877
 const MENU_COOP_TEXTURE_PATH := "res://assets/ui/menu_coop.png"
 const MENU_SETTINGS_TEXTURE_PATH := "res://assets/ui/menu_settings.png"
 const HUD_TITLE_FRAME_PATH := "res://assets/ui/title_frame.png"
@@ -82,6 +114,22 @@ const COIN_ICON_OFFSET := Vector2(8.0, 11.0)
 const RUBY_ICON_OFFSET := Vector2(8.0, 12.0)
 const RESOURCE_ICON_SIZE := Vector2(38.0, 38.0)
 const GAME_OVER_PANEL_PATH := "res://assets/ui/game_over_panel.png"
+# Godot's built-in ThemeDB.fallback_font has no Hangul glyphs, so every piece
+# of Korean text drawn via draw_string() rendered as tofu boxes until this
+# was added — it just went unnoticed because most Korean text on screen is
+# actually baked into the button/panel PNGs, not live-rendered.
+const UI_FONT_PATH := "res://assets/fonts/Mulmaru.ttf"
+const PANEL_FRAME_PATH := "res://assets/ui/panel_frame.png"
+# Character panel gets its own taller frame (settings/ranking keep the
+# shorter shared one) so more of the card grid fits before scrolling.
+const CHARACTER_PANEL_FRAME_PATH := "res://assets/ui/panel_frame_long.png"
+const CLOSE_BUTTON_TEXTURE_PATH := "res://assets/ui/close_button.png"
+const TAB_INACTIVE_TEXTURE_PATH := "res://assets/ui/tab_inactive.png"
+const TAB_ACTIVE_TEXTURE_PATH := "res://assets/ui/tab_active.png"
+const LOCK_ICON_TEXTURE_PATH := "res://assets/ui/lock_icon.png"
+const INPUT_ROW_BG_TEXTURE_PATH := "res://assets/ui/input_row_bg.png"
+const TOGGLE_ON_TEXTURE_PATH := "res://assets/ui/toggle_on.png"
+const TOGGLE_OFF_TEXTURE_PATH := "res://assets/ui/toggle_off.png"
 const GOLD_DIGIT_SHEET_PATH := "res://assets/ui/gold_digit_sheet.png"
 const COUNTDOWN_PATHS := [
 	"res://assets/ui/countdown_3.png",
@@ -100,26 +148,35 @@ const COOP_BUTTON_RECT := Rect2(255.0, 1055.0, 210.0, 195.0)
 const SETTINGS_BUTTON_RECT := Rect2(485.0, 1055.0, 210.0, 195.0)
 const TEST_START_50_RECT := Rect2(555.0, 670.0, 145.0, 82.0)
 const GAME_OVER_CLOSE_RECT := Rect2(548.0, 394.0, 58.0, 58.0)
-const CHARACTER_PANEL_RECT := Rect2(30.0, 100.0, 660.0, 785.0)
-const CHARACTER_PANEL_CLOSE_RECT := Rect2(616.0, 120.0, 52.0, 52.0)
-# Category filter tabs (전체/기록/골드) sit in the space the old static
-# instruction subtitle used to occupy. Everything below them (cards, page
-# arrows) shifts down by this same amount so the bottom-anchored offsets in
-# _draw_character_card stay correct without re-deriving them.
-const CHARACTER_CATEGORY_ROW_RECT := Rect2(70.0, 215.0, 520.0, 44.0)
+# Character panel uses its own taller frame (panel_frame_long.png) instead
+# of the shared square one settings/ranking use, so this rect is much taller
+# than SETTINGS_PANEL_RECT/RANKING_PANEL_RECT even though all three used to
+# share identical dimensions. Width kept at 660 to match the frame art's own
+# aspect ratio (407:612) — changing width alone would stretch/distort it.
+const CHARACTER_PANEL_RECT := Rect2(30.0, 100.0, 660.0, 992.0)
+const CHARACTER_PANEL_CLOSE_RECT := Rect2(580.0, 191.0, 52.0, 52.0)
+# Category filter tabs (전체/기록/골드) sit below panel_frame_long's crown
+# decoration. x/width (130..590) match the frame's actual clean interior for
+# this taller art, which is narrower and differently centered than the
+# shared panel_frame.png's — measured from the image directly, not reused
+# from the other panels' insets.
+const CHARACTER_CATEGORY_ROW_RECT := Rect2(130.0, 320.0, 460.0, 44.0)
 const CHARACTER_CATEGORY_TAB_RECTS := {
-	"all": Rect2(70.0, 215.0, 168.0, 44.0),
-	"score": Rect2(246.0, 215.0, 168.0, 44.0),
-	"gold": Rect2(422.0, 215.0, 168.0, 44.0),
+	"all": Rect2(130.0, 320.0, 148.0, 44.0),
+	"score": Rect2(286.0, 320.0, 148.0, 44.0),
+	"gold": Rect2(442.0, 320.0, 148.0, 44.0),
 }
 # The character grid scrolls vertically inside this viewport (a clipped child
-# Control — see character_list_viewport) instead of paging left/right. Column
-# x-positions and card size are LOCAL to that viewport, not full design space;
-# they preserve the original card layout's proportions (panel inset ~22px,
-# ~23px gutter between 190-wide cards).
-const CHARACTER_LIST_VIEWPORT_RECT := Rect2(30.0, 265.0, 660.0, 605.0)
-const CHARACTER_CARD_COLUMN_X := [22.0, 235.0, 448.0]
-const CHARACTER_CARD_WIDTH := 190.0
+# Control — see character_list_viewport) instead of paging left/right.
+# Column x-positions and card size are LOCAL to that viewport. Columns sit
+# flush against each other (zero gutter) so 3 cards exactly fill the 460px
+# clean interior width without any spilling past the frame's side borders.
+# Height (630) is tall enough for one full row plus a peek of the next,
+# thanks to panel_frame_long's much taller clean interior — the old shared
+# frame only had room for one row with barely any peek.
+const CHARACTER_LIST_VIEWPORT_RECT := Rect2(130.0, 370.0, 460.0, 630.0)
+const CHARACTER_CARD_WIDTH := 460.0 / 3.0
+const CHARACTER_CARD_COLUMN_X := [0.0, CHARACTER_CARD_WIDTH, CHARACTER_CARD_WIDTH * 2.0]
 # Cards are 445 tall so a character whose select-card preview is enlarged via
 # scale_multiplier (e.g. tall ears at 1.3x) has headroom instead of poking out
 # above the card's own top edge. The card BOTTOM (and therefore the name/
@@ -130,20 +187,31 @@ const CHARACTER_CARD_ROW_GAP := 20.0
 const CHARACTER_CARD_ROW_HEIGHT := CHARACTER_CARD_HEIGHT + CHARACTER_CARD_ROW_GAP
 const CHARACTER_GRID_COLUMNS := 3
 const CHARACTER_SCROLL_DRAG_THRESHOLD := 6.0
+const RANKING_SCROLL_DRAG_THRESHOLD := 6.0
 const SETTINGS_PANEL_RECT := Rect2(30.0, 100.0, 660.0, 785.0)
-const SETTINGS_PANEL_CLOSE_RECT := Rect2(616.0, 120.0, 52.0, 52.0)
-const SOUND_TOGGLE_RECT := Rect2(70.0, 280.0, 520.0, 80.0)
-const VIBRATION_TOGGLE_RECT := Rect2(70.0, 380.0, 520.0, 80.0)
-const NICKNAME_ROW_RECT := Rect2(70.0, 480.0, 520.0, 70.0)
-const NICKNAME_FIELD_RECT := Rect2(200.0, 480.0, 260.0, 70.0)
-const NICKNAME_SAVE_BUTTON_RECT := Rect2(470.0, 480.0, 120.0, 70.0)
-const CODE_ROW_RECT := Rect2(70.0, 570.0, 520.0, 70.0)
-const CODE_FIELD_RECT := Rect2(200.0, 570.0, 260.0, 70.0)
-const CODE_SUBMIT_BUTTON_RECT := Rect2(470.0, 570.0, 120.0, 70.0)
-const RANKING_BUTTON_RECT := Rect2(70.0, 660.0, 520.0, 80.0)
+const SETTINGS_PANEL_CLOSE_RECT := Rect2(596.0, 211.0, 52.0, 52.0)
+const SOUND_TOGGLE_RECT := Rect2(105.0, 360.0, 505.0, 80.0)
+const VIBRATION_TOGGLE_RECT := Rect2(105.0, 460.0, 505.0, 80.0)
+const NICKNAME_ROW_RECT := Rect2(105.0, 560.0, 505.0, 70.0)
+const NICKNAME_FIELD_RECT := Rect2(235.0, 560.0, 245.0, 70.0)
+const NICKNAME_SAVE_BUTTON_RECT := Rect2(490.0, 560.0, 120.0, 70.0)
+const CODE_ROW_RECT := Rect2(105.0, 650.0, 505.0, 70.0)
+const CODE_FIELD_RECT := Rect2(235.0, 650.0, 245.0, 70.0)
+const CODE_SUBMIT_BUTTON_RECT := Rect2(490.0, 650.0, 120.0, 70.0)
+const RANKING_MAIN_BUTTON_RECT := Rect2(531.0, 306.0, 189.0, 107.0)
 const RANKING_PANEL_RECT := Rect2(30.0, 100.0, 660.0, 785.0)
-const RANKING_PANEL_CLOSE_RECT := Rect2(616.0, 120.0, 52.0, 52.0)
-const RANKING_LIST_RECT := Rect2(70.0, 280.0, 520.0, 480.0)
+const RANKING_PANEL_CLOSE_RECT := Rect2(596.0, 211.0, 52.0, 52.0)
+const ATTENDANCE_MAIN_BUTTON_RECT := Rect2(531.0, 428.0, 189.0, 107.0)
+const ATTENDANCE_PANEL_RECT := Rect2(30.0, 100.0, 660.0, 785.0)
+const ATTENDANCE_PANEL_CLOSE_RECT := Rect2(596.0, 211.0, 52.0, 52.0)
+const ATTENDANCE_CLAIM_BUTTON_RECT := Rect2(110.0, 560.0, 500.0, 90.0)
+const ATTENDANCE_DAY_REWARDS := [1, 2, 2, 3, 3, 4, 5]
+const RANKING_PERIOD_TAB_RECTS := {
+	"all": Rect2(105.0, 335.0, 163.0, 44.0),
+	"week": Rect2(276.0, 335.0, 163.0, 44.0),
+	"month": Rect2(447.0, 335.0, 163.0, 44.0),
+}
+const RANKING_LIST_RECT := Rect2(105.0, 425.0, 505.0, 335.0)
 const RANKING_ROW_HEIGHT := 60.0
 
 @export_group("Player Sprite")
@@ -160,8 +228,16 @@ const RANKING_ROW_HEIGHT := 60.0
 @export var sleepy_turner_awake_texture: Texture2D
 @export var prankster_turner_texture: Texture2D
 @export var wizard_turner_texture: Texture2D
+@export var boss_turner_texture: Texture2D
 @export_group("Menu Button Assets")
 @export var character_button_texture: Texture2D
+@export var ranking_button_texture: Texture2D
+@export var attendance_button_texture: Texture2D
+@export var attendance_track_bg_texture: Texture2D
+@export var attendance_ruby_icon_texture: Texture2D
+@export var attendance_complete_badge_texture: Texture2D
+@export var attendance_chest_closed_texture: Texture2D
+@export var attendance_chest_open_texture: Texture2D
 @export var coop_button_texture: Texture2D
 @export var settings_button_texture: Texture2D
 @export_group("HUD Title Assets")
@@ -175,6 +251,16 @@ const RANKING_ROW_HEIGHT := 60.0
 @export var coin_icon_texture: Texture2D
 @export var ruby_icon_texture: Texture2D
 @export var game_over_panel_texture: Texture2D
+@export var panel_frame_texture: Texture2D
+@export var character_panel_frame_texture: Texture2D
+@export var ui_font: FontFile
+@export var close_button_texture: Texture2D
+@export var tab_inactive_texture: Texture2D
+@export var tab_active_texture: Texture2D
+@export var lock_icon_texture: Texture2D
+@export var input_row_bg_texture: Texture2D
+@export var toggle_on_texture: Texture2D
+@export var toggle_off_texture: Texture2D
 @export var gold_digit_sheet_texture: Texture2D
 @export_group("Game Balance")
 @export var balance: RopeGameBalance = DEFAULT_BALANCE
@@ -183,6 +269,15 @@ var score := 0
 var best_score := 0
 var rope_angle := PI
 var rope_speed := 0.0
+
+# Boss "double dutch" rope: a second independent rope, offset in phase so it
+# crosses exactly between the main rope's crossings. Prototype toggle only —
+# not yet wired to a real round-100 boss trigger.
+const DOUBLE_ROPE_TEST_ENABLED := true
+const DOUBLE_ROPE_TEST_SCORE_THRESHOLD := 110
+const ROPE_B_PHASE_OFFSET := PI
+var rope_b_enabled := false
+var rope_b_angle := PI
 var jump_height := 0.0
 var jump_velocity := 0.0
 var jump_animation_time := 0.0
@@ -202,6 +297,7 @@ var accepting_input := true
 var game_state := GameState.TITLE
 var challenge_pattern := 0
 var turner_team := TurnerTeam.STUDENT
+var turner_change_slot := 0
 var athlete_normal_turns_remaining := 0
 var athlete_burst_turns_remaining := 0
 var sleepy_slow_turns_remaining := 0
@@ -212,8 +308,10 @@ var prankster_fake_pending := false
 var prankster_fake_mode := 0
 var prankster_fake_time := 0.0
 var wizard_rope_hidden := false
+var wizard_speed_multiplier := 1.0
 var turner_transition_active := false
 var turner_transition_time := 0.0
+var countdown_vibration_index := -1
 var turner_transition_phase := TurnerTransitionPhase.NONE
 var departing_turner_team := TurnerTeam.STUDENT
 var flash_time := 0.0
@@ -242,9 +340,13 @@ var nickname_edit: LineEdit
 var code_edit: LineEdit
 var settings_message := ""
 var ranking_menu_open := false
+var attendance_menu_open := false
+var attendance_streak := 0
+var attendance_last_claim_date := ""
 var ranking_loading := false
 var ranking_error := ""
 var ranking_entries: Array = []
+var ranking_period_filter := "all"
 var leaderboard_submit_request: HTTPRequest
 var leaderboard_fetch_request: HTTPRequest
 var character_preview_textures: Dictionary = {}
@@ -266,6 +368,12 @@ var character_scroll_dragging := false
 var character_scroll_moved := false
 var character_scroll_press_position := Vector2.ZERO
 var character_scroll_press_offset := 0.0
+var ranking_list_viewport: Control
+var ranking_scroll_offset := 0.0
+var ranking_scroll_dragging := false
+var ranking_scroll_moved := false
+var ranking_scroll_press_position := Vector2.ZERO
+var ranking_scroll_press_offset := 0.0
 var character_category_filter := "all"
 var turner_used_region := Rect2()
 var mirrored_turner_texture: Texture2D
@@ -285,7 +393,17 @@ var mirrored_prankster_turner_used_region := Rect2()
 var wizard_turner_used_region := Rect2()
 var mirrored_wizard_turner_texture: Texture2D
 var mirrored_wizard_turner_used_region := Rect2()
+var boss_turner_used_region := Rect2()
+var mirrored_boss_turner_texture: Texture2D
+var mirrored_boss_turner_used_region := Rect2()
 var character_button_used_region := Rect2()
+var ranking_button_used_region := Rect2()
+var attendance_button_used_region := Rect2()
+var attendance_track_bg_used_region := Rect2()
+var attendance_ruby_icon_used_region := Rect2()
+var attendance_complete_badge_used_region := Rect2()
+var attendance_chest_closed_used_region := Rect2()
+var attendance_chest_open_used_region := Rect2()
 var coop_button_used_region := Rect2()
 var settings_button_used_region := Rect2()
 var best_score_frame_used_region := Rect2()
@@ -296,6 +414,15 @@ var tap_prompt_used_region := Rect2()
 var coin_icon_used_region := Rect2()
 var ruby_icon_used_region := Rect2()
 var game_over_panel_used_region := Rect2()
+var panel_frame_used_region := Rect2()
+var character_panel_frame_used_region := Rect2()
+var close_button_used_region := Rect2()
+var tab_inactive_used_region := Rect2()
+var tab_active_used_region := Rect2()
+var lock_icon_used_region := Rect2()
+var input_row_bg_used_region := Rect2()
+var toggle_on_used_region := Rect2()
+var toggle_off_used_region := Rect2()
 var gold_digit_regions: Array[Rect2] = []
 var countdown_textures: Array[Texture2D] = []
 var countdown_used_regions: Array[Rect2] = []
@@ -314,6 +441,7 @@ func _ready() -> void:
 	add_child(save_manager)
 	_load_character_catalog()
 	_load_saved_progress()
+	feedback.play_bgm(BGM_MUSIC_PATH)
 	rope_speed = balance.base_rope_speed
 	_load_character_visuals(selected_character_id)
 	if background_texture == null and ResourceLoader.exists(DEFAULT_BACKGROUND_PATH):
@@ -321,6 +449,20 @@ func _ready() -> void:
 	_prepare_turner_visuals()
 	if character_button_texture == null and ResourceLoader.exists(MENU_CHARACTER_TEXTURE_PATH):
 		character_button_texture = load(MENU_CHARACTER_TEXTURE_PATH) as Texture2D
+	if ranking_button_texture == null and ResourceLoader.exists(RANKING_BUTTON_TEXTURE_PATH):
+		ranking_button_texture = load(RANKING_BUTTON_TEXTURE_PATH) as Texture2D
+	if attendance_button_texture == null and ResourceLoader.exists(ATTENDANCE_BUTTON_TEXTURE_PATH):
+		attendance_button_texture = load(ATTENDANCE_BUTTON_TEXTURE_PATH) as Texture2D
+	if attendance_track_bg_texture == null and ResourceLoader.exists(ATTENDANCE_TRACK_BG_PATH):
+		attendance_track_bg_texture = load(ATTENDANCE_TRACK_BG_PATH) as Texture2D
+	if attendance_ruby_icon_texture == null and ResourceLoader.exists(ATTENDANCE_RUBY_ICON_PATH):
+		attendance_ruby_icon_texture = load(ATTENDANCE_RUBY_ICON_PATH) as Texture2D
+	if attendance_complete_badge_texture == null and ResourceLoader.exists(ATTENDANCE_COMPLETE_BADGE_PATH):
+		attendance_complete_badge_texture = load(ATTENDANCE_COMPLETE_BADGE_PATH) as Texture2D
+	if attendance_chest_closed_texture == null and ResourceLoader.exists(ATTENDANCE_CHEST_CLOSED_PATH):
+		attendance_chest_closed_texture = load(ATTENDANCE_CHEST_CLOSED_PATH) as Texture2D
+	if attendance_chest_open_texture == null and ResourceLoader.exists(ATTENDANCE_CHEST_OPEN_PATH):
+		attendance_chest_open_texture = load(ATTENDANCE_CHEST_OPEN_PATH) as Texture2D
 	if coop_button_texture == null and ResourceLoader.exists(MENU_COOP_TEXTURE_PATH):
 		coop_button_texture = load(MENU_COOP_TEXTURE_PATH) as Texture2D
 	if settings_button_texture == null and ResourceLoader.exists(MENU_SETTINGS_TEXTURE_PATH):
@@ -345,9 +487,36 @@ func _ready() -> void:
 		ruby_icon_texture = load(RUBY_ICON_PATH) as Texture2D
 	if game_over_panel_texture == null and ResourceLoader.exists(GAME_OVER_PANEL_PATH):
 		game_over_panel_texture = load(GAME_OVER_PANEL_PATH) as Texture2D
+	if ui_font == null and ResourceLoader.exists(UI_FONT_PATH):
+		ui_font = load(UI_FONT_PATH) as FontFile
+	if panel_frame_texture == null and ResourceLoader.exists(PANEL_FRAME_PATH):
+		panel_frame_texture = load(PANEL_FRAME_PATH) as Texture2D
+	if character_panel_frame_texture == null and ResourceLoader.exists(CHARACTER_PANEL_FRAME_PATH):
+		character_panel_frame_texture = load(CHARACTER_PANEL_FRAME_PATH) as Texture2D
+	if close_button_texture == null and ResourceLoader.exists(CLOSE_BUTTON_TEXTURE_PATH):
+		close_button_texture = load(CLOSE_BUTTON_TEXTURE_PATH) as Texture2D
+	if tab_inactive_texture == null and ResourceLoader.exists(TAB_INACTIVE_TEXTURE_PATH):
+		tab_inactive_texture = load(TAB_INACTIVE_TEXTURE_PATH) as Texture2D
+	if tab_active_texture == null and ResourceLoader.exists(TAB_ACTIVE_TEXTURE_PATH):
+		tab_active_texture = load(TAB_ACTIVE_TEXTURE_PATH) as Texture2D
+	if lock_icon_texture == null and ResourceLoader.exists(LOCK_ICON_TEXTURE_PATH):
+		lock_icon_texture = load(LOCK_ICON_TEXTURE_PATH) as Texture2D
+	if input_row_bg_texture == null and ResourceLoader.exists(INPUT_ROW_BG_TEXTURE_PATH):
+		input_row_bg_texture = load(INPUT_ROW_BG_TEXTURE_PATH) as Texture2D
+	if toggle_on_texture == null and ResourceLoader.exists(TOGGLE_ON_TEXTURE_PATH):
+		toggle_on_texture = load(TOGGLE_ON_TEXTURE_PATH) as Texture2D
+	if toggle_off_texture == null and ResourceLoader.exists(TOGGLE_OFF_TEXTURE_PATH):
+		toggle_off_texture = load(TOGGLE_OFF_TEXTURE_PATH) as Texture2D
 	if gold_digit_sheet_texture == null and ResourceLoader.exists(GOLD_DIGIT_SHEET_PATH):
 		gold_digit_sheet_texture = load(GOLD_DIGIT_SHEET_PATH) as Texture2D
 	character_button_used_region = _texture_used_region(character_button_texture)
+	ranking_button_used_region = _texture_used_region(ranking_button_texture)
+	attendance_button_used_region = _texture_used_region(attendance_button_texture)
+	attendance_track_bg_used_region = _texture_used_region(attendance_track_bg_texture)
+	attendance_ruby_icon_used_region = _texture_used_region(attendance_ruby_icon_texture)
+	attendance_complete_badge_used_region = _texture_used_region(attendance_complete_badge_texture)
+	attendance_chest_closed_used_region = _texture_used_region(attendance_chest_closed_texture)
+	attendance_chest_open_used_region = _texture_used_region(attendance_chest_open_texture)
 	coop_button_used_region = _texture_used_region(coop_button_texture)
 	settings_button_used_region = _texture_used_region(settings_button_texture)
 	best_score_frame_used_region = _texture_used_region(best_score_frame_texture)
@@ -358,6 +527,15 @@ func _ready() -> void:
 	coin_icon_used_region = _texture_used_region(coin_icon_texture)
 	ruby_icon_used_region = _texture_used_region(ruby_icon_texture)
 	game_over_panel_used_region = _texture_used_region(game_over_panel_texture)
+	panel_frame_used_region = _texture_used_region(panel_frame_texture)
+	character_panel_frame_used_region = _texture_used_region(character_panel_frame_texture)
+	close_button_used_region = _texture_used_region(close_button_texture)
+	tab_inactive_used_region = _texture_used_region(tab_inactive_texture)
+	tab_active_used_region = _texture_used_region(tab_active_texture)
+	lock_icon_used_region = _texture_used_region(lock_icon_texture)
+	input_row_bg_used_region = _texture_used_region(input_row_bg_texture)
+	toggle_on_used_region = _texture_used_region(toggle_on_texture)
+	toggle_off_used_region = _texture_used_region(toggle_off_texture)
 	_prepare_gold_digit_regions()
 	_prepare_countdown_visuals()
 	get_viewport().size_changed.connect(queue_redraw)
@@ -425,6 +603,16 @@ func _prepare_turner_visuals() -> void:
 			mirrored_wizard_image.flip_x()
 			mirrored_wizard_turner_texture = ImageTexture.create_from_image(mirrored_wizard_image)
 			mirrored_wizard_turner_used_region = _texture_used_region(mirrored_wizard_turner_texture)
+	if boss_turner_texture == null and ResourceLoader.exists(BOSS_TURNER_PATH):
+		boss_turner_texture = load(BOSS_TURNER_PATH) as Texture2D
+	if boss_turner_texture != null:
+		boss_turner_used_region = _texture_used_region(boss_turner_texture)
+		var boss_image := boss_turner_texture.get_image()
+		if boss_image != null and not boss_image.is_empty():
+			var mirrored_boss_image := boss_image.duplicate()
+			mirrored_boss_image.flip_x()
+			mirrored_boss_turner_texture = ImageTexture.create_from_image(mirrored_boss_image)
+			mirrored_boss_turner_used_region = _texture_used_region(mirrored_boss_turner_texture)
 
 
 func _prepare_countdown_visuals() -> void:
@@ -462,6 +650,11 @@ func _process(delta: float) -> void:
 			rope_angle = fposmod(rope_angle + _effective_rope_speed() * delta, TAU)
 			if _angle_crossed(previous_rope_angle, rope_angle, ROPE_CROSSING_ANGLE):
 				_resolve_rope_crossing()
+			if rope_b_enabled and game_state == GameState.PLAYING:
+				var previous_rope_b_angle := rope_b_angle
+				rope_b_angle = fposmod(rope_b_angle + _effective_rope_speed() * delta, TAU)
+				if _angle_crossed(previous_rope_b_angle, rope_b_angle, ROPE_CROSSING_ANGLE):
+					_resolve_rope_b_crossing()
 	elif game_state == GameState.HIT:
 		hit_reveal_time -= delta
 		if hit_reveal_time <= 0.0:
@@ -477,6 +670,19 @@ func _advance_turner_transition(delta: float) -> void:
 	if turner_transition_phase == TurnerTransitionPhase.TURNER_EXIT and turner_transition_time >= TURNER_EXIT_SECONDS:
 		turner_transition_time -= TURNER_EXIT_SECONDS
 		turner_transition_phase = TurnerTransitionPhase.TURNER_ENTRY_COUNTDOWN
+		countdown_vibration_index = -1
+	if turner_transition_phase == TurnerTransitionPhase.TURNER_ENTRY_COUNTDOWN:
+		# One buzz per number and a stronger one for GO — keyed off the same
+		# index _draw_countdown_overlay uses, so it fires exactly once per
+		# step instead of every frame that step is on screen.
+		var countdown_index := mini(3, int(turner_transition_time / COUNTDOWN_NUMBER_SECONDS))
+		if countdown_index != countdown_vibration_index:
+			countdown_vibration_index = countdown_index
+			if feedback != null:
+				if countdown_index == 3:
+					feedback.play_countdown_go()
+				else:
+					feedback.play_countdown_tick()
 	if turner_transition_phase == TurnerTransitionPhase.TURNER_ENTRY_COUNTDOWN and turner_transition_time >= COUNTDOWN_TOTAL_SECONDS:
 		turner_transition_active = false
 		turner_transition_phase = TurnerTransitionPhase.NONE
@@ -505,6 +711,23 @@ func _unhandled_input(event: InputEvent) -> void:
 			or (event is InputEventMouseButton and not (event as InputEventMouseButton).pressed)
 		if released:
 			_end_character_list_drag()
+			get_viewport().set_input_as_handled()
+			return
+	if ranking_menu_open and ranking_scroll_dragging:
+		var motion_position := Vector2(-1.0, -1.0)
+		if event is InputEventScreenDrag:
+			motion_position = (event as InputEventScreenDrag).position
+		elif event is InputEventMouseMotion:
+			motion_position = (event as InputEventMouseMotion).position
+		if motion_position.x >= 0.0:
+			var local_position := _screen_to_design(motion_position) - RANKING_LIST_RECT.position
+			_update_ranking_list_drag(local_position)
+			get_viewport().set_input_as_handled()
+			return
+		var released := (event is InputEventScreenTouch and not (event as InputEventScreenTouch).pressed) \
+			or (event is InputEventMouseButton and not (event as InputEventMouseButton).pressed)
+		if released:
+			_end_ranking_list_drag()
 			get_viewport().set_input_as_handled()
 			return
 	var pressed := event.is_action_pressed("jump")
@@ -539,6 +762,10 @@ func _unhandled_input(event: InputEvent) -> void:
 				_handle_ranking_menu_input(design_position)
 				get_viewport().set_input_as_handled()
 				return
+			if attendance_menu_open:
+				_handle_attendance_menu_input(design_position)
+				get_viewport().set_input_as_handled()
+				return
 			if settings_menu_open:
 				_handle_settings_menu_input(design_position)
 				get_viewport().set_input_as_handled()
@@ -557,6 +784,14 @@ func _unhandled_input(event: InputEvent) -> void:
 				return
 			if SETTINGS_BUTTON_RECT.has_point(design_position):
 				_open_settings_menu()
+				get_viewport().set_input_as_handled()
+				return
+			if RANKING_MAIN_BUTTON_RECT.has_point(design_position):
+				_open_ranking_menu()
+				get_viewport().set_input_as_handled()
+				return
+			if ATTENDANCE_MAIN_BUTTON_RECT.has_point(design_position):
+				_open_attendance_menu()
 				get_viewport().set_input_as_handled()
 				return
 		if coop_mode:
@@ -642,10 +877,38 @@ func _resolve_rope_crossing() -> void:
 			best_score = score
 			new_best_this_run = true
 			_check_score_unlocks()
-		rope_speed = _base_speed_for_score(score)
 		total_success += 1
+		if DOUBLE_ROPE_TEST_ENABLED and not rope_b_enabled and score >= DOUBLE_ROPE_TEST_SCORE_THRESHOLD:
+			rope_speed = _base_speed_for_score(score)
+			rope_b_enabled = true
+			rope_b_angle = fposmod(rope_angle + ROPE_B_PHASE_OFFSET, TAU)
+			message = "[테스트] 보스 등장! 줄 2개를 동시에 넘어라!"
+			message_color = Color("35d0ff")
+			flash_time = 0.22
+			jump_started_in_cue = false
+			feedback.play_success(score)
+			return
 		var previous_team := turner_team
 		var team_changed := _update_turner_team_and_pattern()
+		# Recompute after the team update, not before — _base_speed_for_score
+		# now depends on the live turner_team (flat for athlete/prankster/
+		# wizard, ramping for student/sleepy), so computing it with the
+		# about-to-be-replaced team baked in a stale speed into the new
+		# team's very first turn (e.g. a sleepy-ramped high baseline carried
+		# into athlete's burst multiplier, or vice versa into sleepy looking
+		# like it barely moves).
+		rope_speed = _base_speed_for_score(score)
+		if team_changed and score >= BOSS_TURNER_SCORE_THRESHOLD:
+			# The boss gauntlet cycles patterns every few turns — a full
+			# exit + "3,2,1,GO" transition every time would be far too
+			# disruptive for a fast-paced boss fight, so the pattern just
+			# swaps instantly with no stoppage.
+			message = "패턴 변경!"
+			message_color = Color("ff6b6b")
+			flash_time = 0.22
+			jump_started_in_cue = false
+			feedback.play_success(score)
+			return
 		if team_changed:
 			_start_turner_transition(previous_team)
 			match turner_team:
@@ -668,22 +931,34 @@ func _resolve_rope_crossing() -> void:
 		jump_started_in_cue = false
 		feedback.play_success(score)
 	else:
-		# Freeze at the visible contact point before revealing the result panel.
 		rope_angle = ROPE_CROSSING_ANGLE
-		game_state = GameState.HIT
-		hit_reveal_time = HIT_REVEAL_SECONDS
-		accepting_input = false
-		if coop_mode:
-			message = "왼쪽 플레이어가 걸렸어요!" if coop_hit_player == 1 else "오른쪽 플레이어가 걸렸어요!"
-		else:
-			message = "앗! 줄에 걸렸어요!"
-		message_color = Color("ff7892")
-		flash_time = 0.5
-		run_coins_earned = score + (5 if new_best_this_run else 0)
-		coins += run_coins_earned
-		total_runs += 1
-		_save_progress()
-		feedback.play_failure()
+		_trigger_rope_miss()
+
+
+func _resolve_rope_b_crossing() -> void:
+	# The boss double-dutch rope never awards score on its own — it's an
+	# extra fail condition layered on top of the main rope's rhythm.
+	if not _player_clears_rope_at_crossing():
+		rope_b_angle = ROPE_CROSSING_ANGLE
+		_trigger_rope_miss()
+
+
+func _trigger_rope_miss() -> void:
+	# Freeze at the visible contact point before revealing the result panel.
+	game_state = GameState.HIT
+	hit_reveal_time = HIT_REVEAL_SECONDS
+	accepting_input = false
+	if coop_mode:
+		message = "왼쪽 플레이어가 걸렸어요!" if coop_hit_player == 1 else "오른쪽 플레이어가 걸렸어요!"
+	else:
+		message = "앗! 줄에 걸렸어요!"
+	message_color = Color("ff7892")
+	flash_time = 0.5
+	run_coins_earned = score + (5 if new_best_this_run else 0)
+	coins += run_coins_earned
+	total_runs += 1
+	_save_progress()
+	feedback.play_failure()
 
 
 func _player_clears_rope_at_crossing() -> bool:
@@ -728,6 +1003,8 @@ func _start_run() -> void:
 	score = 0
 	rope_angle = PI
 	rope_speed = balance.base_rope_speed
+	rope_b_enabled = false
+	rope_b_angle = fposmod(PI + ROPE_B_PHASE_OFFSET, TAU)
 	jump_height = 0.0
 	jump_velocity = 0.0
 	jump_animation_time = 0.0
@@ -745,19 +1022,13 @@ func _start_run() -> void:
 func _start_game_at_score(start_score: int) -> void:
 	_start_game()
 	score = maxi(0, start_score)
+	turner_change_slot = _turner_slot_for_score(score)
+	if turner_change_slot > 0:
+		turner_team = _random_turner_team(TurnerTeam.STUDENT)
+		_init_turner_team_state(turner_team)
+	else:
+		turner_team = TurnerTeam.STUDENT
 	rope_speed = _base_speed_for_score(score)
-	if score >= WIZARD_START_SCORE:
-		turner_team = TurnerTeam.WIZARD
-		wizard_rope_hidden = false
-	elif score >= PRANKSTER_START_SCORE:
-		turner_team = TurnerTeam.PRANKSTER
-		prankster_normal_turns_remaining = _roll_prankster_normal_turns()
-	elif score >= SLEEPY_START_SCORE:
-		turner_team = TurnerTeam.SLEEPY
-		sleepy_slow_turns_remaining = _roll_sleepy_slow_turns()
-	elif score >= TURNER_CHANGE_INTERVAL:
-		turner_team = TurnerTeam.ATHLETE
-		athlete_normal_turns_remaining = ATHLETE_NORMAL_TURNS
 	message = "테스트 모드: %d회부터 시작!" % score
 	message_color = Color("ffd84a")
 
@@ -767,6 +1038,7 @@ func _return_to_main() -> void:
 	score = 0
 	rope_angle = PI
 	rope_speed = balance.base_rope_speed
+	rope_b_enabled = false
 	jump_height = 0.0
 	jump_velocity = 0.0
 	jump_animation_time = 0.0
@@ -812,6 +1084,8 @@ func _load_saved_progress() -> void:
 	feedback.sound_enabled = bool(data.settings.sound)
 	feedback.vibration_enabled = bool(data.settings.vibration)
 	nickname = str(data.nickname)
+	attendance_streak = int(data.attendance.streak)
+	attendance_last_claim_date = str(data.attendance.last_claim_date)
 
 
 func _check_score_unlocks() -> void:
@@ -844,6 +1118,10 @@ func _save_progress() -> void:
 		"stats": {
 			"total_runs": total_runs,
 			"total_success": total_success,
+		},
+		"attendance": {
+			"streak": attendance_streak,
+			"last_claim_date": attendance_last_claim_date,
 		},
 	})
 
@@ -997,6 +1275,10 @@ func _draw_rope_layer(draw_behind: bool) -> void:
 		_draw_rope_curve(rope_angle, rope_color, highlight_color, outline_color, shadow_color)
 		_draw_pixel_rope_grip(_active_left_hand(), wizard_ghosted)
 		_draw_pixel_rope_grip(_active_right_hand(), wizard_ghosted)
+	if rope_b_enabled and _rope_angle_is_behind(rope_b_angle) == draw_behind:
+		var rope_b_color := Color("ff334f") if show_jump_cue else Color("35d0ff")
+		var rope_b_highlight := Color("ff9a8d") if show_jump_cue else Color("bdf3ff")
+		_draw_rope_curve(rope_b_angle, rope_b_color, rope_b_highlight, outline_color, shadow_color)
 
 
 func _draw_rope_curve(curve_angle: float, rope_color: Color, highlight_color: Color, outline_color: Color, shadow_color: Color, lateral_offset := 0.0) -> void:
@@ -1098,11 +1380,26 @@ func _is_jump_cue() -> bool:
 	return seconds_until_crossing <= balance.jump_cue_seconds
 
 
+const DOUBLE_ROPE_SPEED_MULTIPLIER := 0.65
+
+
 func _effective_rope_speed() -> float:
+	var speed := _effective_rope_speed_raw()
+	if rope_b_enabled:
+		speed *= DOUBLE_ROPE_SPEED_MULTIPLIER
+	return speed
+
+
+func _effective_rope_speed_raw() -> float:
 	if turner_team == TurnerTeam.SLEEPY:
 		if sleepy_fast_turns_remaining > 0:
 			return rope_speed if _is_jump_cue() else rope_speed * SLEEPY_FAST_MULTIPLIER
 		return rope_speed * SLEEPY_SLOW_MULTIPLIER
+	if turner_team == TurnerTeam.WIZARD:
+		# A fresh random multiplier every turn (see _update_turner_team_and_pattern)
+		# means the hidden-rope wait can't be timed by a steady rhythm — but the
+		# visible red jump-cue window still runs at the fair, un-randomized speed.
+		return rope_speed if _is_jump_cue() else rope_speed * wizard_speed_multiplier
 	# Keep a stable, fair speed throughout the red input window.
 	if challenge_pattern == 0 or _is_jump_cue():
 		return rope_speed
@@ -1119,17 +1416,22 @@ func _effective_rope_speed() -> float:
 
 
 func _base_speed_for_score(current_score: int) -> float:
-	# The athlete's difficulty comes from its burst pattern, not a constantly
-	# rising baseline. Hold the score-10 baseline until the sleepy team enters.
-	if current_score >= TURNER_CHANGE_INTERVAL and current_score < SLEEPY_START_SCORE:
-		return balance.speed_for_score(TURNER_CHANGE_INTERVAL)
-	if current_score >= PRANKSTER_START_SCORE:
-		return balance.speed_for_score(TURNER_CHANGE_INTERVAL)
-	return balance.speed_for_score(current_score)
+	# Only the student (below score 10) and sleepy teams have their baseline
+	# speed keep rising with score — sleepy's difficulty already comes from
+	# its own slow/fast swings, and letting the baseline rise too keeps later
+	# sleepy stretches from going stale. Every other team's difficulty comes
+	# entirely from its turn pattern (athlete bursts, prankster fakes, wizard
+	# ghosting), so their baseline holds flat at the score-10 speed. Team
+	# assignment is random past score 10 (see _update_turner_team_and_pattern),
+	# so this keys off the live team instead of fixed score bands.
+	if turner_team == TurnerTeam.STUDENT or turner_team == TurnerTeam.SLEEPY:
+		return balance.speed_for_score(current_score)
+	return balance.speed_for_score(TURNER_CHANGE_INTERVAL)
 
 
 func _reset_turner_run() -> void:
 	turner_team = TurnerTeam.STUDENT
+	turner_change_slot = 0
 	challenge_pattern = 0
 	athlete_normal_turns_remaining = 0
 	athlete_burst_turns_remaining = 0
@@ -1141,6 +1443,7 @@ func _reset_turner_run() -> void:
 	prankster_fake_mode = 0
 	prankster_fake_time = 0.0
 	wizard_rope_hidden = false
+	wizard_speed_multiplier = 1.0
 	turner_transition_active = false
 	turner_transition_time = 0.0
 	turner_transition_phase = TurnerTransitionPhase.NONE
@@ -1157,41 +1460,62 @@ func _start_turner_transition(previous_team := TurnerTeam.STUDENT) -> void:
 	rope_angle = PI
 
 
+func _turner_slot_for_score(current_score: int) -> int:
+	# Slot number only matters for detecting "did it change" — the exact
+	# value doesn't matter as long as it's monotonic and distinct per stretch.
+	if current_score < TURNER_CHANGE_INTERVAL:
+		return 0
+	if current_score < BOSS_TURNER_SCORE_THRESHOLD:
+		return int((current_score - TURNER_CHANGE_INTERVAL) / TURNER_RANDOM_INTERVAL) + 1
+	var pre_gauntlet_slot := int((BOSS_TURNER_SCORE_THRESHOLD - TURNER_CHANGE_INTERVAL) / TURNER_RANDOM_INTERVAL) + 1
+	return pre_gauntlet_slot + int((current_score - BOSS_TURNER_SCORE_THRESHOLD) / BOSS_GAUNTLET_TURNER_INTERVAL) + 1
+
+
+func _random_turner_team(exclude: TurnerTeam) -> TurnerTeam:
+	# Picks the next rope-turner team at random, excluding whichever team is
+	# currently active so the same team never plays two change-intervals in
+	# a row.
+	var choices: Array[TurnerTeam] = [TurnerTeam.ATHLETE, TurnerTeam.SLEEPY, TurnerTeam.PRANKSTER, TurnerTeam.WIZARD]
+	choices.erase(exclude)
+	return choices[randi() % choices.size()]
+
+
+func _init_turner_team_state(team: TurnerTeam) -> void:
+	sleepy_wake_warning_time = 0.0
+	sleepy_fast_turns_remaining = 0
+	prankster_fake_pending = false
+	prankster_fake_mode = 0
+	prankster_fake_time = 0.0
+	match team:
+		TurnerTeam.ATHLETE:
+			athlete_normal_turns_remaining = ATHLETE_NORMAL_TURNS
+			athlete_burst_turns_remaining = 0
+		TurnerTeam.SLEEPY:
+			sleepy_slow_turns_remaining = _roll_sleepy_slow_turns()
+		TurnerTeam.PRANKSTER:
+			prankster_normal_turns_remaining = _roll_prankster_normal_turns()
+		TurnerTeam.WIZARD:
+			wizard_rope_hidden = false
+
+
 func _update_turner_team_and_pattern() -> bool:
-	if turner_team == TurnerTeam.STUDENT:
-		if score < TURNER_CHANGE_INTERVAL:
-			challenge_pattern = 0
+	# The default (STUDENT) rope-turner holds until score 10, exactly as
+	# before. Past that, a new team is rolled at random (never repeating the
+	# just-active one) every TURNER_RANDOM_INTERVAL points, instead of the
+	# old fixed STUDENT->ATHLETE->SLEEPY->PRANKSTER->WIZARD sequence.
+	var target_slot := _turner_slot_for_score(score)
+	if target_slot != turner_change_slot:
+		turner_change_slot = target_slot
+		challenge_pattern = 0
+		if target_slot <= 0:
+			turner_team = TurnerTeam.STUDENT
 			return false
-		turner_team = TurnerTeam.ATHLETE
-		challenge_pattern = 0
-		athlete_normal_turns_remaining = ATHLETE_NORMAL_TURNS
-		athlete_burst_turns_remaining = 0
+		var new_team := _random_turner_team(turner_team)
+		turner_team = new_team
+		_init_turner_team_state(new_team)
 		return true
-	if turner_team == TurnerTeam.ATHLETE and score >= SLEEPY_START_SCORE:
-		turner_team = TurnerTeam.SLEEPY
-		challenge_pattern = 0
-		sleepy_slow_turns_remaining = _roll_sleepy_slow_turns()
-		sleepy_wake_warning_time = 0.0
-		sleepy_fast_turns_remaining = 0
-		return true
-	if turner_team == TurnerTeam.SLEEPY and score >= PRANKSTER_START_SCORE:
-		turner_team = TurnerTeam.PRANKSTER
-		challenge_pattern = 0
-		sleepy_wake_warning_time = 0.0
-		sleepy_fast_turns_remaining = 0
-		prankster_normal_turns_remaining = _roll_prankster_normal_turns()
-		prankster_fake_pending = false
-		prankster_fake_mode = 0
-		prankster_fake_time = 0.0
-		return true
-	if turner_team == TurnerTeam.PRANKSTER and score >= WIZARD_START_SCORE:
-		turner_team = TurnerTeam.WIZARD
-		challenge_pattern = 0
-		prankster_fake_pending = false
-		prankster_fake_mode = 0
-		prankster_fake_time = 0.0
-		wizard_rope_hidden = false
-		return true
+	if turner_team == TurnerTeam.STUDENT:
+		return false
 	if turner_team == TurnerTeam.SLEEPY:
 		if sleepy_fast_turns_remaining > 0:
 			sleepy_fast_turns_remaining -= 1
@@ -1211,6 +1535,10 @@ func _update_turner_team_and_pattern() -> bool:
 		return false
 	if turner_team == TurnerTeam.WIZARD:
 		wizard_rope_hidden = not wizard_rope_hidden
+		# Re-rolled every turn so the wait before the rope reappears can't be
+		# timed by a steady rhythm alone — only the actual jump-cue window
+		# (checked in _effective_rope_speed) stays at the fair, visible speed.
+		wizard_speed_multiplier = randf_range(balance.wizard_speed_min_multiplier, balance.wizard_speed_max_multiplier)
 		return false
 
 	if challenge_pattern == 2:
@@ -1314,16 +1642,35 @@ func _draw_turner(feet: Vector2, faces_left: bool, display_team := -1) -> void:
 		base_region = wizard_turner_used_region
 		mirror_texture = mirrored_wizard_turner_texture
 		mirror_region = mirrored_wizard_turner_used_region
+	# From score 90 on, the boss look takes over the rope turners regardless
+	# of whichever team pattern is currently active underneath.
+	if score >= BOSS_TURNER_SCORE_THRESHOLD and boss_turner_texture != null:
+		base_texture = boss_turner_texture
+		base_region = boss_turner_used_region
+		mirror_texture = mirrored_boss_turner_texture
+		mirror_region = mirrored_boss_turner_used_region
 	if base_texture != null and base_region.size.x > 0.0:
 		var active_texture := mirror_texture if faces_left and mirror_texture != null else base_texture
 		var active_region := mirror_region if faces_left and mirror_texture != null else base_region
 		# Match the helper's height to the playable character and preserve the
 		# original aspect ratio so the sprite never looks stretched sideways.
 		var sprite_height := 165.0
+		var is_boss := score >= BOSS_TURNER_SCORE_THRESHOLD and boss_turner_texture != null
+		if is_boss:
+			sprite_height *= 1.5
 		var sprite_width := sprite_height * active_region.size.x / active_region.size.y
 		var sprite_size := Vector2(sprite_width, sprite_height)
 		_draw_shadow_ellipse(render_feet + Vector2(0, 13), Vector2(sprite_width * 0.34, 11), Color(0, 0, 0, 0.2))
-		var sprite_rect := Rect2(render_feet + Vector2(-sprite_width * 0.5, -sprite_height), sprite_size)
+		var sprite_top_y := render_feet.y - sprite_height
+		if is_boss:
+			# The rope's grip point (LEFT_HAND/RIGHT_HAND) is fixed, so a
+			# feet-anchored sprite would drag the boss's hand away from it as
+			# the sprite grows. Anchor by hand height instead — the same
+			# on-screen y the hand sits at on the normal 165px sprite — so
+			# only the body grows around a fixed hand.
+			var base_hand_y := render_feet.y - (1.0 - TURNER_HAND_FRACTION_FROM_TOP) * 165.0
+			sprite_top_y = base_hand_y - TURNER_HAND_FRACTION_FROM_TOP * sprite_height
+		var sprite_rect := Rect2(Vector2(render_feet.x - sprite_width * 0.5, sprite_top_y), sprite_size)
 		draw_texture_rect_region(active_texture, sprite_rect, active_region)
 		return
 	var direction := -1.0 if faces_left else 1.0
@@ -1521,6 +1868,7 @@ func _open_settings_menu() -> void:
 	if nickname_edit == null:
 		nickname_edit = LineEdit.new()
 		nickname_edit.max_length = RopeSaveManager.NICKNAME_MAX_LENGTH
+		nickname_edit.add_theme_font_override("font", _ui_font())
 		add_child(nickname_edit)
 	nickname_edit.text = nickname
 	nickname_edit.size = _design_to_screen_rect(NICKNAME_FIELD_RECT).size
@@ -1528,6 +1876,7 @@ func _open_settings_menu() -> void:
 	nickname_edit.visible = true
 	if code_edit == null:
 		code_edit = LineEdit.new()
+		code_edit.add_theme_font_override("font", _ui_font())
 		add_child(code_edit)
 	code_edit.text = ""
 	code_edit.placeholder_text = "코드 입력"
@@ -1546,6 +1895,7 @@ func _close_settings_menu() -> void:
 
 func _open_ranking_menu() -> void:
 	ranking_menu_open = true
+	ranking_scroll_offset = 0.0
 	if nickname_edit != null:
 		nickname_edit.visible = false
 	if code_edit != null:
@@ -1555,6 +1905,9 @@ func _open_ranking_menu() -> void:
 
 func _close_ranking_menu() -> void:
 	ranking_menu_open = false
+	ranking_scroll_dragging = false
+	if ranking_list_viewport != null:
+		ranking_list_viewport.visible = false
 	if nickname_edit != null:
 		nickname_edit.visible = true
 	if code_edit != null:
@@ -1564,6 +1917,179 @@ func _close_ranking_menu() -> void:
 func _handle_ranking_menu_input(position: Vector2) -> void:
 	if RANKING_PANEL_CLOSE_RECT.has_point(position):
 		_close_ranking_menu()
+		return
+	if _handle_ranking_period_tap(position):
+		return
+	if RANKING_LIST_RECT.has_point(position):
+		_begin_ranking_list_drag(position - RANKING_LIST_RECT.position)
+
+
+func _ranking_scroll_max() -> float:
+	var count := mini(ranking_entries.size(), LEADERBOARD_TOP_N)
+	var content_height := float(count) * RANKING_ROW_HEIGHT
+	return maxf(0.0, content_height - RANKING_LIST_RECT.size.y)
+
+
+func _begin_ranking_list_drag(position: Vector2) -> void:
+	ranking_scroll_dragging = true
+	ranking_scroll_moved = false
+	ranking_scroll_press_position = position
+	ranking_scroll_press_offset = ranking_scroll_offset
+
+
+func _update_ranking_list_drag(position: Vector2) -> void:
+	var delta_y := position.y - ranking_scroll_press_position.y
+	if absf(delta_y) > RANKING_SCROLL_DRAG_THRESHOLD:
+		ranking_scroll_moved = true
+	ranking_scroll_offset = clampf(ranking_scroll_press_offset - delta_y, 0.0, _ranking_scroll_max())
+	if ranking_list_viewport != null:
+		ranking_list_viewport.queue_redraw()
+
+
+func _end_ranking_list_drag() -> void:
+	ranking_scroll_dragging = false
+
+
+func _ensure_ranking_list_viewport() -> void:
+	if ranking_list_viewport == null:
+		ranking_list_viewport = Control.new()
+		ranking_list_viewport.clip_contents = true
+		ranking_list_viewport.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		ranking_list_viewport.draw.connect(_draw_ranking_list_contents)
+		add_child(ranking_list_viewport)
+	var screen_rect := _design_to_screen_rect(RANKING_LIST_RECT)
+	ranking_list_viewport.position = screen_rect.position
+	ranking_list_viewport.size = screen_rect.size
+	ranking_list_viewport.visible = true
+	ranking_list_viewport.queue_redraw()
+
+
+func _draw_ranking_list_contents() -> void:
+	var font := _ui_font()
+	var canvas := ranking_list_viewport
+	if ranking_loading:
+		canvas.draw_string(font, Vector2(0.0, 40.0), "불러오는 중...", HORIZONTAL_ALIGNMENT_CENTER, RANKING_LIST_RECT.size.x, 22, Color("a9bad8"))
+		return
+	if not ranking_error.is_empty():
+		canvas.draw_string(font, Vector2(0.0, 40.0), ranking_error, HORIZONTAL_ALIGNMENT_CENTER, RANKING_LIST_RECT.size.x, 22, Color("ff8b8b"))
+		return
+	if ranking_entries.is_empty():
+		canvas.draw_string(font, Vector2(0.0, 40.0), "아직 기록이 없습니다", HORIZONTAL_ALIGNMENT_CENTER, RANKING_LIST_RECT.size.x, 22, Color("a9bad8"))
+		return
+	# Gold/silver/bronze accents for the top 3 make the leaderboard read at a
+	# glance instead of every row looking identical.
+	var rank_colors := [Color("ffd23f"), Color("d7dde6"), Color("e2a15c")]
+	for index in range(mini(ranking_entries.size(), LEADERBOARD_TOP_N)):
+		var entry: Dictionary = ranking_entries[index]
+		var row_y := float(index) * RANKING_ROW_HEIGHT - ranking_scroll_offset
+		if row_y + RANKING_ROW_HEIGHT < 0.0 or row_y > RANKING_LIST_RECT.size.y:
+			continue
+		var row := Rect2(0.0, row_y, RANKING_LIST_RECT.size.x, RANKING_ROW_HEIGHT - 8.0)
+		_draw_row_background_on(canvas, row)
+		var rank_color: Color = rank_colors[index] if index < rank_colors.size() else Color("a9bad8")
+		canvas.draw_string(font, Vector2(row.position.x + 16.0, row.position.y + 38.0), "%d" % (index + 1), HORIZONTAL_ALIGNMENT_LEFT, 60.0, 22, rank_color)
+		canvas.draw_string(font, Vector2(row.position.x + 90.0, row.position.y + 38.0), str(entry.get("nickname", "")), HORIZONTAL_ALIGNMENT_LEFT, 280.0, 22, Color.WHITE)
+		canvas.draw_string(font, Vector2(row.end.x - 150.0, row.position.y + 38.0), str(int(entry.get("score", 0))), HORIZONTAL_ALIGNMENT_RIGHT, 130.0, 22, Color("73f7b4"))
+
+
+func _open_attendance_menu() -> void:
+	attendance_menu_open = true
+	if nickname_edit != null:
+		nickname_edit.visible = false
+	if code_edit != null:
+		code_edit.visible = false
+
+
+func _close_attendance_menu() -> void:
+	attendance_menu_open = false
+	if nickname_edit != null:
+		nickname_edit.visible = true
+	if code_edit != null:
+		code_edit.visible = true
+
+
+func _handle_attendance_menu_input(position: Vector2) -> void:
+	if ATTENDANCE_PANEL_CLOSE_RECT.has_point(position):
+		_close_attendance_menu()
+		return
+	if ATTENDANCE_CLAIM_BUTTON_RECT.has_point(position):
+		_claim_attendance_reward()
+
+
+func _current_date_string() -> String:
+	return Time.get_date_string_from_system()
+
+
+func _yesterday_date_string() -> String:
+	return Time.get_date_string_from_unix_time(int(Time.get_unix_time_from_system()) - 86400)
+
+
+func _is_attendance_claimed_today() -> bool:
+	return not attendance_last_claim_date.is_empty() and attendance_last_claim_date == _current_date_string()
+
+
+func _attendance_display_day() -> int:
+	# The 1-based day-in-cycle (1..7) to highlight in the reward track: the
+	# day just claimed if today's claim is already done, otherwise the day
+	# that would be claimed if the player taps the button right now. Wrapping
+	# via modulo naturally resets the display to day 1 for a new cycle
+	# without tracking cycle number separately.
+	if _is_attendance_claimed_today():
+		return (attendance_streak - 1) % ATTENDANCE_DAY_REWARDS.size() + 1
+	var prospective_streak := attendance_streak + 1 if attendance_last_claim_date == _yesterday_date_string() else 1
+	return (prospective_streak - 1) % ATTENDANCE_DAY_REWARDS.size() + 1
+
+
+func _claim_attendance_reward() -> void:
+	if _is_attendance_claimed_today():
+		return
+	attendance_streak = attendance_streak + 1 if attendance_last_claim_date == _yesterday_date_string() else 1
+	attendance_last_claim_date = _current_date_string()
+	var day_index := (attendance_streak - 1) % ATTENDANCE_DAY_REWARDS.size()
+	gems += int(ATTENDANCE_DAY_REWARDS[day_index])
+	_save_progress()
+
+
+func _handle_ranking_period_tap(position: Vector2) -> bool:
+	for period in RANKING_PERIOD_TAB_RECTS.keys():
+		if (RANKING_PERIOD_TAB_RECTS[period] as Rect2).has_point(position):
+			if ranking_period_filter != period:
+				ranking_period_filter = period
+				ranking_scroll_offset = 0.0
+				_fetch_ranking()
+			return true
+	return false
+
+
+func _ranking_period_cutoff_unix() -> float:
+	# "주간"/"월간" are calendar-boundary windows (this week since Monday
+	# 00:00 UTC, this month since day 1 00:00 UTC), not a rolling N-day
+	# average — recomputed fresh on every fetch, so no backend reset job
+	# is needed for the ranking to "roll over".
+	var now_unix := Time.get_unix_time_from_system()
+	if ranking_period_filter == "week":
+		var weekday: int = Time.get_datetime_dict_from_unix_time(now_unix)["weekday"]
+		var days_since_monday := (weekday + 6) % 7
+		var day_dict := Time.get_datetime_dict_from_unix_time(now_unix - float(days_since_monday) * 86400.0)
+		day_dict["hour"] = 0
+		day_dict["minute"] = 0
+		day_dict["second"] = 0
+		return Time.get_unix_time_from_datetime_dict(day_dict)
+	if ranking_period_filter == "month":
+		var month_dict := Time.get_datetime_dict_from_unix_time(now_unix)
+		month_dict["day"] = 1
+		month_dict["hour"] = 0
+		month_dict["minute"] = 0
+		month_dict["second"] = 0
+		return Time.get_unix_time_from_datetime_dict(month_dict)
+	return -1.0
+
+
+func _ranking_period_query_filter() -> String:
+	var cutoff_unix := _ranking_period_cutoff_unix()
+	if cutoff_unix < 0.0:
+		return ""
+	return "&created_at=gte.%sZ" % Time.get_datetime_string_from_unix_time(int(cutoff_unix), true)
 
 
 func _fetch_ranking() -> void:
@@ -1579,13 +2105,19 @@ func _fetch_ranking() -> void:
 		# fighting the decompressor.
 		leaderboard_fetch_request.accept_gzip = false
 		leaderboard_fetch_request.request_completed.connect(_on_ranking_fetched)
-	var url := "%s/rest/v1/leaderboard?select=nickname,score&order=score.desc&limit=%d" % [SUPABASE_URL, LEADERBOARD_TOP_N]
+	var url := "%s/rest/v1/leaderboard?select=nickname,score&order=score.desc&limit=%d%s" % [SUPABASE_URL, LEADERBOARD_TOP_N, _ranking_period_query_filter()]
 	var headers := ["apikey: %s" % SUPABASE_ANON_KEY, "Accept-Encoding: identity"]
 	var error := leaderboard_fetch_request.request(url, headers)
 	if error != OK:
 		ranking_loading = false
 		ranking_error = "랭킹을 불러올 수 없습니다 (요청 실패: %d)" % error
-		queue_redraw()
+		_redraw_ranking()
+
+
+func _redraw_ranking() -> void:
+	queue_redraw()
+	if ranking_list_viewport != null:
+		ranking_list_viewport.queue_redraw()
 
 
 func _on_ranking_fetched(result: int, response_code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
@@ -1595,19 +2127,20 @@ func _on_ranking_fetched(result: int, response_code: int, _headers: PackedString
 		# TLS_HANDSHAKE_ERROR. Surfacing the number lets us tell a DNS/TLS
 		# failure apart from a plain HTTP error without needing device logs.
 		ranking_error = "랭킹을 불러올 수 없습니다 (연결 실패: %d)" % result
-		queue_redraw()
+		_redraw_ranking()
 		return
 	if response_code < 200 or response_code >= 300:
 		ranking_error = "랭킹을 불러올 수 없습니다 (서버 응답: %d)" % response_code
-		queue_redraw()
+		_redraw_ranking()
 		return
 	var parsed = JSON.parse_string(body.get_string_from_utf8())
 	if not parsed is Array:
 		ranking_error = "랭킹을 불러올 수 없습니다 (응답 해석 실패)"
-		queue_redraw()
+		_redraw_ranking()
 		return
 	ranking_entries = parsed as Array
-	queue_redraw()
+	ranking_scroll_offset = 0.0
+	_redraw_ranking()
 
 
 func _submit_score(final_score: int) -> void:
@@ -1651,9 +2184,6 @@ func _handle_settings_menu_input(position: Vector2) -> void:
 		# implemented yet — this just acknowledges the input for now.
 		settings_message = "코드 확인 준비 중"
 		code_edit.text = ""
-		return
-	if RANKING_BUTTON_RECT.has_point(position):
-		_open_ranking_menu()
 		return
 
 
@@ -1752,7 +2282,7 @@ func _ensure_character_list_viewport() -> void:
 
 
 func _draw_character_list_contents() -> void:
-	var font := ThemeDB.fallback_font
+	var font := _ui_font()
 	var filtered := _filtered_character_ids()
 	for index in range(filtered.size()):
 		var row := index / CHARACTER_GRID_COLUMNS
@@ -1836,6 +2366,10 @@ func _prepare_character_regions() -> void:
 		player_jump_scale *= float(character_jump_pose_scale_multipliers.get(selected_character_id, 1.0))
 
 
+func _ui_font() -> Font:
+	return ui_font if ui_font != null else ThemeDB.fallback_font
+
+
 func _texture_used_region(texture: Texture2D) -> Rect2:
 	if texture == null:
 		return Rect2()
@@ -1914,7 +2448,7 @@ func _draw_shadow_ellipse(center: Vector2, radii: Vector2, color: Color) -> void
 
 
 func _draw_hud() -> void:
-	var font := ThemeDB.fallback_font
+	var font := _ui_font()
 	if game_state == GameState.TITLE:
 		_draw_main_menu(font)
 		if character_menu_open:
@@ -1923,6 +2457,8 @@ func _draw_hud() -> void:
 			_draw_settings_menu(font)
 		if ranking_menu_open:
 			_draw_ranking_menu(font)
+		if attendance_menu_open:
+			_draw_attendance_menu(font)
 		return
 	if gameplay_score_label_texture != null and gameplay_score_label_used_region.size.x > 0.0:
 		var score_label_rect := Rect2(38.0, 34.0, 144.0, 62.0)
@@ -1932,7 +2468,7 @@ func _draw_hud() -> void:
 	var score_cell_size := 10.0 + clampf(flash_time / 0.22, 0.0, 1.0) * 2.0
 	_draw_image_number(str(score), Vector2(42.0, 101.0), score_cell_size * 7.0)
 	if gameplay_best_label_texture != null and gameplay_best_label_used_region.size.x > 0.0:
-		var best_label_rect := Rect2(434.0, 45.0, 144.0, 63.0)
+		var best_label_rect := Rect2(434.0, 45.0, 115.0, 50.0)
 		draw_texture_rect_region(gameplay_best_label_texture, best_label_rect, gameplay_best_label_used_region)
 	else:
 		draw_string(font, Vector2(480, 82), "BEST", HORIZONTAL_ALIGNMENT_LEFT, -1, 24, Color("fff0a6"))
@@ -1991,7 +2527,10 @@ func _draw_main_menu(font: Font) -> void:
 	_draw_main_menu_title(font)
 	var best_rect := Rect2(235.0, 306.0, 250.0, 64.0)
 	if best_score_frame_texture != null and best_score_frame_used_region.size.x > 0.0:
+		# The current best_score_frame art already has "최고 기록" baked in —
+		# drawing the label again on top double-prints the text.
 		draw_texture_rect_region(best_score_frame_texture, best_rect, best_score_frame_used_region)
+	else:
 		draw_string(font, Vector2(278.0, 347.0), "최고 기록", HORIZONTAL_ALIGNMENT_CENTER, 105.0, 21, Color("fff0a6"))
 	_draw_image_number(str(best_score), Vector2(390.0, 326.0), 22.0, 76.0, HORIZONTAL_ALIGNMENT_CENTER)
 
@@ -2012,6 +2551,8 @@ func _draw_main_menu(font: Font) -> void:
 	_draw_menu_asset_or_fallback(coop_button_texture, coop_button_used_region, font, COOP_BUTTON_RECT, "CO-OP", "협동 모드", Color("65b7f3"))
 	_draw_menu_asset_or_fallback(settings_button_texture, settings_button_used_region, font, SETTINGS_BUTTON_RECT, "SETTINGS", "설정", Color("9b8bea"))
 	_draw_test_start_button(font)
+	_draw_ranking_main_button(font)
+	_draw_attendance_main_button(font)
 	if not menu_notice.is_empty():
 		draw_string(font, Vector2(0, 925), menu_notice, HORIZONTAL_ALIGNMENT_CENTER, DESIGN_SIZE.x, 22, Color("ffd166"))
 
@@ -2022,6 +2563,119 @@ func _draw_test_start_button(font: Font) -> void:
 	draw_rect(TEST_START_50_RECT.grow(-9.0), Color("7a4317"), false, 3.0)
 	draw_string(font, Vector2(TEST_START_50_RECT.position.x, TEST_START_50_RECT.position.y + 31.0), "TEST", HORIZONTAL_ALIGNMENT_CENTER, TEST_START_50_RECT.size.x, 18, Color("633913"))
 	draw_string(font, Vector2(TEST_START_50_RECT.position.x, TEST_START_50_RECT.position.y + 62.0), "50 START", HORIZONTAL_ALIGNMENT_CENTER, TEST_START_50_RECT.size.x, 25, Color("3b2119"))
+
+
+func _draw_ranking_main_button(font: Font) -> void:
+	if ranking_button_texture != null and ranking_button_used_region.size.x > 0.0:
+		# The source art is a square icon; stretching it to the wide button
+		# rect distorts it. Fit it by height and center it horizontally so it
+		# keeps its own aspect ratio instead of being squashed sideways.
+		var icon_aspect := ranking_button_used_region.size.x / ranking_button_used_region.size.y
+		var icon_size := Vector2(RANKING_MAIN_BUTTON_RECT.size.y * icon_aspect, RANKING_MAIN_BUTTON_RECT.size.y)
+		if icon_size.x > RANKING_MAIN_BUTTON_RECT.size.x:
+			icon_size = Vector2(RANKING_MAIN_BUTTON_RECT.size.x, RANKING_MAIN_BUTTON_RECT.size.x / icon_aspect)
+		var icon_rect := Rect2(RANKING_MAIN_BUTTON_RECT.position + (RANKING_MAIN_BUTTON_RECT.size - icon_size) * 0.5, icon_size)
+		draw_texture_rect_region(ranking_button_texture, icon_rect, ranking_button_used_region)
+		return
+	draw_rect(RANKING_MAIN_BUTTON_RECT, Color("3b2119"), true)
+	draw_rect(RANKING_MAIN_BUTTON_RECT.grow(-5.0), Color("ffd23f"), true)
+	draw_rect(RANKING_MAIN_BUTTON_RECT.grow(-9.0), Color("7a4317"), false, 3.0)
+	draw_string(font, Vector2(RANKING_MAIN_BUTTON_RECT.position.x, RANKING_MAIN_BUTTON_RECT.position.y + 31.0), "랭킹", HORIZONTAL_ALIGNMENT_CENTER, RANKING_MAIN_BUTTON_RECT.size.x, 18, Color("633913"))
+	draw_string(font, Vector2(RANKING_MAIN_BUTTON_RECT.position.x, RANKING_MAIN_BUTTON_RECT.position.y + 62.0), "보기", HORIZONTAL_ALIGNMENT_CENTER, RANKING_MAIN_BUTTON_RECT.size.x, 25, Color("3b2119"))
+
+
+func _draw_attendance_main_button(font: Font) -> void:
+	var claimable := not _is_attendance_claimed_today()
+	if attendance_button_texture != null and attendance_button_used_region.size.x > 0.0:
+		# Same aspect-preserving fit as the ranking button — the source art
+		# is a square icon and the button slot is wide, so fit by height and
+		# center horizontally instead of stretching it sideways.
+		var icon_aspect := attendance_button_used_region.size.x / attendance_button_used_region.size.y
+		var icon_size := Vector2(ATTENDANCE_MAIN_BUTTON_RECT.size.y * icon_aspect, ATTENDANCE_MAIN_BUTTON_RECT.size.y)
+		if icon_size.x > ATTENDANCE_MAIN_BUTTON_RECT.size.x:
+			icon_size = Vector2(ATTENDANCE_MAIN_BUTTON_RECT.size.x, ATTENDANCE_MAIN_BUTTON_RECT.size.x / icon_aspect)
+		var icon_rect := Rect2(ATTENDANCE_MAIN_BUTTON_RECT.position + (ATTENDANCE_MAIN_BUTTON_RECT.size - icon_size) * 0.5, icon_size)
+		draw_texture_rect_region(attendance_button_texture, icon_rect, attendance_button_used_region)
+	else:
+		draw_rect(ATTENDANCE_MAIN_BUTTON_RECT, Color("3b2119"), true)
+		draw_rect(ATTENDANCE_MAIN_BUTTON_RECT.grow(-5.0), Color("73f7b4") if claimable else Color("ffd23f"), true)
+		draw_rect(ATTENDANCE_MAIN_BUTTON_RECT.grow(-9.0), Color("7a4317"), false, 3.0)
+		draw_string(font, Vector2(ATTENDANCE_MAIN_BUTTON_RECT.position.x, ATTENDANCE_MAIN_BUTTON_RECT.position.y + 31.0), "출석", HORIZONTAL_ALIGNMENT_CENTER, ATTENDANCE_MAIN_BUTTON_RECT.size.x, 18, Color("3b2119"))
+		draw_string(font, Vector2(ATTENDANCE_MAIN_BUTTON_RECT.position.x, ATTENDANCE_MAIN_BUTTON_RECT.position.y + 62.0), "받기!" if claimable else "완료", HORIZONTAL_ALIGNMENT_CENTER, ATTENDANCE_MAIN_BUTTON_RECT.size.x, 25, Color("3b2119"))
+	if claimable:
+		var badge_center := ATTENDANCE_MAIN_BUTTON_RECT.position + Vector2(ATTENDANCE_MAIN_BUTTON_RECT.size.x - 14.0, 14.0)
+		draw_circle(badge_center, 12.0, Color("ff4d67"))
+		draw_string(font, badge_center - Vector2(6.0, -7.0), "!", HORIZONTAL_ALIGNMENT_CENTER, 20.0, 18, Color.WHITE)
+
+
+func _draw_attendance_menu(font: Font) -> void:
+	draw_rect(Rect2(Vector2.ZERO, DESIGN_SIZE), Color(0.02, 0.03, 0.06, 0.72), true)
+	_draw_panel_frame(ATTENDANCE_PANEL_RECT)
+	draw_string(font, Vector2(ATTENDANCE_PANEL_RECT.position.x, 270.0), "출석 보상", HORIZONTAL_ALIGNMENT_CENTER, ATTENDANCE_PANEL_RECT.size.x, 38, Color.WHITE)
+	_draw_close_button(ATTENDANCE_PANEL_CLOSE_RECT)
+
+	var streak_text := "연속 출석 %d일째" % attendance_streak if attendance_streak > 0 else "첫 출석을 기다리고 있어요"
+	draw_string(font, Vector2(ATTENDANCE_PANEL_RECT.position.x, 320.0), streak_text, HORIZONTAL_ALIGNMENT_CENTER, ATTENDANCE_PANEL_RECT.size.x, 24, Color("a9bad8"))
+
+	var display_day := _attendance_display_day()
+	var day_count := ATTENDANCE_DAY_REWARDS.size()
+
+	if attendance_track_bg_texture != null and attendance_track_bg_used_region.size.x > 0.0:
+		var track_rect := Rect2(ATTENDANCE_PANEL_RECT.position.x + 40.0, 395.0, ATTENDANCE_PANEL_RECT.size.x - 80.0, 0.0)
+		track_rect.size.y = track_rect.size.x * (attendance_track_bg_used_region.size.y / attendance_track_bg_used_region.size.x)
+		draw_texture_rect_region(attendance_track_bg_texture, track_rect, attendance_track_bg_used_region)
+		var icon_diameter := track_rect.size.x * 0.088
+		for i in range(day_count):
+			var day_number := i + 1
+			var done_today := day_number == display_day and _is_attendance_claimed_today()
+			var already_passed := day_number < display_day
+			var is_today := day_number == display_day and not _is_attendance_claimed_today()
+			var slot_center := track_rect.position + Vector2(
+				ATTENDANCE_TRACK_SLOT_X_FRACTIONS[i] * track_rect.size.x,
+				ATTENDANCE_TRACK_SLOT_Y_FRACTION * track_rect.size.y
+			)
+			var is_last_day := day_number == day_count
+			var icon_texture := attendance_ruby_icon_texture
+			var icon_region := attendance_ruby_icon_used_region
+			if is_last_day and (already_passed or done_today) and attendance_chest_open_texture != null:
+				icon_texture = attendance_chest_open_texture
+				icon_region = attendance_chest_open_used_region
+			elif is_last_day and attendance_chest_closed_texture != null:
+				icon_texture = attendance_chest_closed_texture
+				icon_region = attendance_chest_closed_used_region
+			if icon_texture != null and icon_region.size.x > 0.0:
+				var icon_aspect := icon_region.size.x / icon_region.size.y
+				var icon_size := Vector2(icon_diameter * icon_aspect, icon_diameter) if icon_aspect < 1.0 else Vector2(icon_diameter, icon_diameter / icon_aspect)
+				var dim := Color(0.5, 0.5, 0.5, 1.0) if (not already_passed and not done_today and not is_today) else Color.WHITE
+				draw_texture_rect_region(icon_texture, Rect2(slot_center - icon_size * 0.5, icon_size), icon_region, dim)
+			if (already_passed or done_today) and attendance_complete_badge_texture != null and attendance_complete_badge_used_region.size.x > 0.0:
+				var badge_size := Vector2.ONE * icon_diameter * 0.55
+				var badge_pos := slot_center + Vector2(icon_diameter, -icon_diameter) * 0.32
+				draw_texture_rect_region(attendance_complete_badge_texture, Rect2(badge_pos - badge_size * 0.5, badge_size), attendance_complete_badge_used_region)
+			draw_string(font, Vector2(slot_center.x - icon_diameter, slot_center.y + icon_diameter * 0.62), "%d" % int(ATTENDANCE_DAY_REWARDS[i]), HORIZONTAL_ALIGNMENT_CENTER, icon_diameter * 2.0, 16, Color("fff0a6") if is_today else Color("d8c9a3"))
+	else:
+		var box_gap := 10.0
+		var box_width := (ATTENDANCE_PANEL_RECT.size.x - 80.0 - box_gap * float(day_count - 1)) / float(day_count)
+		var box_top := 395.0
+		for i in range(day_count):
+			var box := Rect2(ATTENDANCE_PANEL_RECT.position.x + 40.0 + float(i) * (box_width + box_gap), box_top, box_width, 200.0)
+			var day_number := i + 1
+			var done_today := day_number == display_day and _is_attendance_claimed_today()
+			var already_passed := day_number < display_day
+			var is_today := day_number == display_day and not _is_attendance_claimed_today()
+			var fill_color := Color("73f7b4") if (already_passed or done_today) else (Color("ffd23f") if is_today else Color("263a57"))
+			draw_rect(box, fill_color, true)
+			draw_rect(box, Color("fff0a6") if is_today else Color(1.0, 1.0, 1.0, 0.25), false, 4.0 if is_today else 2.0)
+			draw_string(font, Vector2(box.position.x, box.position.y + 30.0), "%d일" % day_number, HORIZONTAL_ALIGNMENT_CENTER, box.size.x, 18, Color.BLACK if (already_passed or done_today or is_today) else Color("a9bad8"))
+			draw_string(font, Vector2(box.position.x, box.position.y + 110.0), "%d" % int(ATTENDANCE_DAY_REWARDS[i]), HORIZONTAL_ALIGNMENT_CENTER, box.size.x, 26, Color.BLACK if (already_passed or done_today or is_today) else Color("a9bad8"))
+			if already_passed or done_today:
+				draw_string(font, Vector2(box.position.x, box.position.y + 170.0), "완료", HORIZONTAL_ALIGNMENT_CENTER, box.size.x, 18, Color.BLACK)
+
+	var claimable := not _is_attendance_claimed_today()
+	draw_rect(ATTENDANCE_CLAIM_BUTTON_RECT, Color("ffd23f") if claimable else Color("4a4f5c"), true)
+	draw_rect(ATTENDANCE_CLAIM_BUTTON_RECT, Color("fff0a6"), false, 4.0)
+	var claim_label := "받기 (+%d 루비)" % int(ATTENDANCE_DAY_REWARDS[display_day - 1]) if claimable else "내일 또 만나요!"
+	draw_string(font, Vector2(ATTENDANCE_CLAIM_BUTTON_RECT.position.x, ATTENDANCE_CLAIM_BUTTON_RECT.position.y + 56.0), claim_label, HORIZONTAL_ALIGNMENT_CENTER, ATTENDANCE_CLAIM_BUTTON_RECT.size.x, 28, Color("633913") if claimable else Color("a9bad8"))
 
 
 func _draw_rotated_texture_region(texture: Texture2D, target: Rect2, source: Rect2, rotation: float, modulate: Color = Color.WHITE) -> void:
@@ -2048,25 +2702,68 @@ func _draw_main_menu_title(font: Font) -> void:
 		draw_string(font, Vector2(160.0, 225.0), "줄넘킹", HORIZONTAL_ALIGNMENT_CENTER, 400.0, 54, Color("ffd23f"))
 
 
+func _draw_tab_button(font: Font, tab: Rect2, active: bool, label: String) -> void:
+	var texture := tab_active_texture if active else tab_inactive_texture
+	var region := tab_active_used_region if active else tab_inactive_used_region
+	if texture != null and region.size.x > 0.0:
+		draw_texture_rect_region(texture, tab, region)
+		draw_string(font, Vector2(tab.position.x, tab.position.y + 30.0), label, HORIZONTAL_ALIGNMENT_CENTER, tab.size.x, 20, Color.BLACK if active else Color("d7e0f2"))
+		return
+	draw_rect(tab, Color("73f7b4") if active else Color("263a57"), true)
+	draw_rect(tab, Color("fff0a6"), false, 3.0)
+	draw_string(font, Vector2(tab.position.x, tab.position.y + 30.0), label, HORIZONTAL_ALIGNMENT_CENTER, tab.size.x, 20, Color.BLACK if active else Color("a9bad8"))
+
+
 func _draw_character_category_tabs(font: Font) -> void:
 	var labels := {"all": "전체", "score": "기록", "gold": "골드"}
 	var categories: Array[String] = ["all", "score", "gold"]
 	for category in categories:
 		var tab: Rect2 = CHARACTER_CATEGORY_TAB_RECTS[category]
 		var active: bool = character_category_filter == category
-		draw_rect(tab, Color("73f7b4") if active else Color("263a57"), true)
-		draw_rect(tab, Color("fff0a6"), false, 3.0)
-		draw_string(font, Vector2(tab.position.x, tab.position.y + 30.0), labels[category], HORIZONTAL_ALIGNMENT_CENTER, tab.size.x, 20, Color.BLACK if active else Color("a9bad8"))
+		_draw_tab_button(font, tab, active, labels[category])
+
+
+func _draw_panel_frame(rect: Rect2) -> void:
+	if panel_frame_texture != null and panel_frame_used_region.size.x > 0.0:
+		draw_texture_rect_region(panel_frame_texture, rect, panel_frame_used_region)
+		return
+	draw_rect(rect, Color("17243b"), true)
+	draw_rect(rect, Color("fff0a6"), false, 7.0)
+
+
+func _draw_character_panel_frame(rect: Rect2) -> void:
+	if character_panel_frame_texture != null and character_panel_frame_used_region.size.x > 0.0:
+		draw_texture_rect_region(character_panel_frame_texture, rect, character_panel_frame_used_region)
+		return
+	_draw_panel_frame(rect)
+
+
+func _draw_row_background(rect: Rect2) -> void:
+	_draw_row_background_on(self, rect)
+
+
+func _draw_row_background_on(canvas: CanvasItem, rect: Rect2) -> void:
+	if input_row_bg_texture != null and input_row_bg_used_region.size.x > 0.0:
+		canvas.draw_texture_rect_region(input_row_bg_texture, rect, input_row_bg_used_region)
+		return
+	canvas.draw_rect(rect, Color("263a57"), true)
+	canvas.draw_rect(rect, Color("fff0a6"), false, 4.0)
+
+
+func _draw_close_button(rect: Rect2) -> void:
+	if close_button_texture != null and close_button_used_region.size.x > 0.0:
+		draw_texture_rect_region(close_button_texture, rect, close_button_used_region)
+		return
+	draw_circle(rect.get_center(), 24.0, Color("ff4d67"))
+	draw_line(rect.get_center() + Vector2(-8.0, -8.0), rect.get_center() + Vector2(8.0, 8.0), Color.WHITE, 5.0, true)
+	draw_line(rect.get_center() + Vector2(8.0, -8.0), rect.get_center() + Vector2(-8.0, 8.0), Color.WHITE, 5.0, true)
 
 
 func _draw_character_menu(font: Font) -> void:
 	draw_rect(Rect2(Vector2.ZERO, DESIGN_SIZE), Color(0.02, 0.03, 0.06, 0.72), true)
-	draw_rect(CHARACTER_PANEL_RECT, Color("17243b"), true)
-	draw_rect(CHARACTER_PANEL_RECT, Color("fff0a6"), false, 7.0)
-	draw_string(font, Vector2(CHARACTER_PANEL_RECT.position.x, 175.0), "캐릭터", HORIZONTAL_ALIGNMENT_CENTER, CHARACTER_PANEL_RECT.size.x, 38, Color.WHITE)
-	draw_circle(CHARACTER_PANEL_CLOSE_RECT.get_center(), 24.0, Color("ff4d67"))
-	draw_line(CHARACTER_PANEL_CLOSE_RECT.get_center() + Vector2(-8.0, -8.0), CHARACTER_PANEL_CLOSE_RECT.get_center() + Vector2(8.0, 8.0), Color.WHITE, 5.0, true)
-	draw_line(CHARACTER_PANEL_CLOSE_RECT.get_center() + Vector2(8.0, -8.0), CHARACTER_PANEL_CLOSE_RECT.get_center() + Vector2(-8.0, 8.0), Color.WHITE, 5.0, true)
+	_draw_character_panel_frame(CHARACTER_PANEL_RECT)
+	draw_string(font, Vector2(CHARACTER_PANEL_RECT.position.x, 300.0), "캐릭터", HORIZONTAL_ALIGNMENT_CENTER, CHARACTER_PANEL_RECT.size.x, 38, Color.WHITE)
+	_draw_close_button(CHARACTER_PANEL_CLOSE_RECT)
 	_draw_character_category_tabs(font)
 	_ensure_character_list_viewport()
 	var scroll_max := _character_scroll_max()
@@ -2083,74 +2780,76 @@ func _draw_character_menu(font: Font) -> void:
 
 func _draw_settings_menu(font: Font) -> void:
 	draw_rect(Rect2(Vector2.ZERO, DESIGN_SIZE), Color(0.02, 0.03, 0.06, 0.72), true)
-	draw_rect(SETTINGS_PANEL_RECT, Color("17243b"), true)
-	draw_rect(SETTINGS_PANEL_RECT, Color("fff0a6"), false, 7.0)
-	draw_string(font, Vector2(SETTINGS_PANEL_RECT.position.x, 175.0), "설정", HORIZONTAL_ALIGNMENT_CENTER, SETTINGS_PANEL_RECT.size.x, 38, Color.WHITE)
-	draw_circle(SETTINGS_PANEL_CLOSE_RECT.get_center(), 24.0, Color("ff4d67"))
-	draw_line(SETTINGS_PANEL_CLOSE_RECT.get_center() + Vector2(-8.0, -8.0), SETTINGS_PANEL_CLOSE_RECT.get_center() + Vector2(8.0, 8.0), Color.WHITE, 5.0, true)
-	draw_line(SETTINGS_PANEL_CLOSE_RECT.get_center() + Vector2(8.0, -8.0), SETTINGS_PANEL_CLOSE_RECT.get_center() + Vector2(-8.0, 8.0), Color.WHITE, 5.0, true)
+	_draw_panel_frame(SETTINGS_PANEL_RECT)
+	draw_string(font, Vector2(SETTINGS_PANEL_RECT.position.x, 300.0), "설정", HORIZONTAL_ALIGNMENT_CENTER, SETTINGS_PANEL_RECT.size.x, 38, Color.WHITE)
+	_draw_close_button(SETTINGS_PANEL_CLOSE_RECT)
 
 	_draw_settings_toggle_row(font, SOUND_TOGGLE_RECT, "소리", feedback.sound_enabled)
 	_draw_settings_toggle_row(font, VIBRATION_TOGGLE_RECT, "진동", feedback.vibration_enabled)
 
-	draw_rect(NICKNAME_ROW_RECT, Color("263a57"), true)
-	draw_rect(NICKNAME_ROW_RECT, Color("fff0a6"), false, 4.0)
+	_draw_row_background(NICKNAME_ROW_RECT)
 	draw_string(font, Vector2(NICKNAME_ROW_RECT.position.x + 16.0, NICKNAME_ROW_RECT.position.y + 46.0), "닉네임", HORIZONTAL_ALIGNMENT_LEFT, 110.0, 22, Color.WHITE)
 	draw_rect(NICKNAME_SAVE_BUTTON_RECT, Color("3b2119"), true)
 	draw_rect(NICKNAME_SAVE_BUTTON_RECT, Color("ffd23f"), false, 3.0)
 	draw_string(font, Vector2(NICKNAME_SAVE_BUTTON_RECT.position.x, NICKNAME_SAVE_BUTTON_RECT.position.y + 46.0), "저장", HORIZONTAL_ALIGNMENT_CENTER, NICKNAME_SAVE_BUTTON_RECT.size.x, 22, Color("ffd23f"))
 
-	draw_rect(CODE_ROW_RECT, Color("263a57"), true)
-	draw_rect(CODE_ROW_RECT, Color("fff0a6"), false, 4.0)
+	_draw_row_background(CODE_ROW_RECT)
 	draw_string(font, Vector2(CODE_ROW_RECT.position.x + 16.0, CODE_ROW_RECT.position.y + 46.0), "코드", HORIZONTAL_ALIGNMENT_LEFT, 110.0, 22, Color.WHITE)
 	draw_rect(CODE_SUBMIT_BUTTON_RECT, Color("3b2119"), true)
 	draw_rect(CODE_SUBMIT_BUTTON_RECT, Color("ffd23f"), false, 3.0)
 	draw_string(font, Vector2(CODE_SUBMIT_BUTTON_RECT.position.x, CODE_SUBMIT_BUTTON_RECT.position.y + 46.0), "확인", HORIZONTAL_ALIGNMENT_CENTER, CODE_SUBMIT_BUTTON_RECT.size.x, 22, Color("ffd23f"))
 
-	draw_rect(RANKING_BUTTON_RECT, Color("3b2119"), true)
-	draw_rect(RANKING_BUTTON_RECT.grow(-5.0), Color("ffd23f"), true)
-	draw_rect(RANKING_BUTTON_RECT.grow(-9.0), Color("7a4317"), false, 3.0)
-	draw_string(font, Vector2(RANKING_BUTTON_RECT.position.x, RANKING_BUTTON_RECT.get_center().y + 8.0), "랭킹 보기", HORIZONTAL_ALIGNMENT_CENTER, RANKING_BUTTON_RECT.size.x, 26, Color("3b2119"))
-
 	if not settings_message.is_empty():
-		draw_string(font, Vector2(SETTINGS_PANEL_RECT.position.x, 770.0), settings_message, HORIZONTAL_ALIGNMENT_CENTER, SETTINGS_PANEL_RECT.size.x, 22, Color("ffd166"))
+		draw_string(font, Vector2(SETTINGS_PANEL_RECT.position.x, 790.0), settings_message, HORIZONTAL_ALIGNMENT_CENTER, SETTINGS_PANEL_RECT.size.x, 22, Color("ffd166"))
+
+
+func _draw_ranking_period_tabs(font: Font) -> void:
+	var labels := {"all": "전체", "week": "주간", "month": "월간"}
+	var periods: Array[String] = ["all", "week", "month"]
+	for period in periods:
+		var tab: Rect2 = RANKING_PERIOD_TAB_RECTS[period]
+		var active: bool = ranking_period_filter == period
+		_draw_tab_button(font, tab, active, labels[period])
 
 
 func _draw_ranking_menu(font: Font) -> void:
 	draw_rect(Rect2(Vector2.ZERO, DESIGN_SIZE), Color(0.02, 0.03, 0.06, 0.72), true)
-	draw_rect(RANKING_PANEL_RECT, Color("17243b"), true)
-	draw_rect(RANKING_PANEL_RECT, Color("fff0a6"), false, 7.0)
-	draw_string(font, Vector2(RANKING_PANEL_RECT.position.x, 175.0), "전체 랭킹", HORIZONTAL_ALIGNMENT_CENTER, RANKING_PANEL_RECT.size.x, 38, Color.WHITE)
-	draw_string(font, Vector2(RANKING_PANEL_RECT.position.x, 215.0), "TOP %d" % LEADERBOARD_TOP_N, HORIZONTAL_ALIGNMENT_CENTER, RANKING_PANEL_RECT.size.x, 22, Color("a9bad8"))
-	draw_circle(RANKING_PANEL_CLOSE_RECT.get_center(), 24.0, Color("ff4d67"))
-	draw_line(RANKING_PANEL_CLOSE_RECT.get_center() + Vector2(-8.0, -8.0), RANKING_PANEL_CLOSE_RECT.get_center() + Vector2(8.0, 8.0), Color.WHITE, 5.0, true)
-	draw_line(RANKING_PANEL_CLOSE_RECT.get_center() + Vector2(8.0, -8.0), RANKING_PANEL_CLOSE_RECT.get_center() + Vector2(-8.0, 8.0), Color.WHITE, 5.0, true)
+	_draw_panel_frame(RANKING_PANEL_RECT)
+	draw_string(font, Vector2(RANKING_PANEL_RECT.position.x, 300.0), "랭킹", HORIZONTAL_ALIGNMENT_CENTER, RANKING_PANEL_RECT.size.x, 38, Color.WHITE)
+	_draw_close_button(RANKING_PANEL_CLOSE_RECT)
+	_draw_ranking_period_tabs(font)
+	draw_string(font, Vector2(RANKING_PANEL_RECT.position.x, 410.0), "TOP %d" % LEADERBOARD_TOP_N, HORIZONTAL_ALIGNMENT_CENTER, RANKING_PANEL_RECT.size.x, 22, Color("a9bad8"))
 
-	if ranking_loading:
-		draw_string(font, Vector2(RANKING_LIST_RECT.position.x, RANKING_LIST_RECT.position.y + 40.0), "불러오는 중...", HORIZONTAL_ALIGNMENT_CENTER, RANKING_LIST_RECT.size.x, 22, Color("a9bad8"))
-		return
-	if not ranking_error.is_empty():
-		draw_string(font, Vector2(RANKING_LIST_RECT.position.x, RANKING_LIST_RECT.position.y + 40.0), ranking_error, HORIZONTAL_ALIGNMENT_CENTER, RANKING_LIST_RECT.size.x, 22, Color("ff8b8b"))
-		return
-	if ranking_entries.is_empty():
-		draw_string(font, Vector2(RANKING_LIST_RECT.position.x, RANKING_LIST_RECT.position.y + 40.0), "아직 기록이 없습니다", HORIZONTAL_ALIGNMENT_CENTER, RANKING_LIST_RECT.size.x, 22, Color("a9bad8"))
-		return
-	for index in range(mini(ranking_entries.size(), LEADERBOARD_TOP_N)):
-		var entry: Dictionary = ranking_entries[index]
-		var row_y := RANKING_LIST_RECT.position.y + float(index) * RANKING_ROW_HEIGHT
-		var row := Rect2(RANKING_LIST_RECT.position.x, row_y, RANKING_LIST_RECT.size.x, RANKING_ROW_HEIGHT - 8.0)
-		draw_rect(row, Color("263a57"), true)
-		draw_rect(row, Color("fff0a6"), false, 3.0)
-		draw_string(font, Vector2(row.position.x + 16.0, row.position.y + 38.0), "%d" % (index + 1), HORIZONTAL_ALIGNMENT_LEFT, 60.0, 22, Color("ffd23f"))
-		draw_string(font, Vector2(row.position.x + 90.0, row.position.y + 38.0), str(entry.get("nickname", "")), HORIZONTAL_ALIGNMENT_LEFT, 280.0, 22, Color.WHITE)
-		draw_string(font, Vector2(row.end.x - 150.0, row.position.y + 38.0), str(int(entry.get("score", 0))), HORIZONTAL_ALIGNMENT_RIGHT, 130.0, 22, Color("73f7b4"))
+	_ensure_ranking_list_viewport()
+	var scroll_max := _ranking_scroll_max()
+	if scroll_max > 0.0:
+		# Same thin track + thumb hint used by the character list — the
+		# ranking list can now hold more rows (LEADERBOARD_TOP_N) than fit
+		# in RANKING_LIST_RECT, so it scrolls instead of spilling out of the
+		# panel frame.
+		var track := Rect2(RANKING_LIST_RECT.end.x - 6.0, RANKING_LIST_RECT.position.y, 6.0, RANKING_LIST_RECT.size.y)
+		draw_rect(track, Color(1.0, 1.0, 1.0, 0.12), true)
+		var thumb_height := maxf(40.0, track.size.y * (track.size.y / (track.size.y + scroll_max)))
+		var thumb_y := track.position.y + (track.size.y - thumb_height) * (ranking_scroll_offset / scroll_max)
+		draw_rect(Rect2(track.position.x, thumb_y, track.size.x, thumb_height), Color("ffd23f"), true)
 
 
 func _draw_settings_toggle_row(font: Font, row: Rect2, label: String, is_on: bool) -> void:
-	draw_rect(row, Color("263a57"), true)
-	draw_rect(row, Color("fff0a6"), false, 4.0)
+	_draw_row_background(row)
 	draw_string(font, Vector2(row.position.x + 16.0, row.position.y + 50.0), label, HORIZONTAL_ALIGNMENT_LEFT, 200.0, 24, Color.WHITE)
 	var toggle_rect := Rect2(row.end.x - 140.0, row.position.y + 15.0, 120.0, 50.0)
+	var toggle_texture := toggle_on_texture if is_on else toggle_off_texture
+	var toggle_region := toggle_on_used_region if is_on else toggle_off_used_region
+	if toggle_texture != null and toggle_region.size.x > 0.0:
+		# The source art keeps its own aspect ratio rather than stretching to
+		# the toggle_rect's fixed 120x50 box, so it fits by height and stays
+		# centered instead of looking squashed.
+		var aspect := toggle_region.size.x / toggle_region.size.y
+		var size := Vector2(toggle_rect.size.y * aspect, toggle_rect.size.y)
+		if size.x > toggle_rect.size.x:
+			size = Vector2(toggle_rect.size.x, toggle_rect.size.x / aspect)
+		draw_texture_rect_region(toggle_texture, Rect2(toggle_rect.get_center() - size * 0.5, size), toggle_region)
+		return
 	draw_rect(toggle_rect, Color("73f7b4") if is_on else Color("4a4f5c"), true)
 	draw_rect(toggle_rect, Color("fff0a6"), false, 3.0)
 	draw_string(font, Vector2(toggle_rect.position.x, toggle_rect.position.y + 34.0), "ON" if is_on else "OFF", HORIZONTAL_ALIGNMENT_CENTER, toggle_rect.size.x, 20, Color.BLACK if is_on else Color.WHITE)
@@ -2189,6 +2888,10 @@ func _draw_character_card(canvas: CanvasItem, font: Font, character_id: String, 
 		# reward for reaching the unlock condition.
 		var tint := Color(1.0, 1.0, 1.0) if owned else Color(0.12, 0.14, 0.2)
 		canvas.draw_texture_rect_region(texture, Rect2(position, size), source, tint)
+		if not owned and lock_icon_texture != null and lock_icon_used_region.size.x > 0.0:
+			var lock_size := Vector2(64.0, 64.0)
+			var lock_rect := Rect2(preview_rect.get_center() - lock_size * 0.5, lock_size)
+			canvas.draw_texture_rect_region(lock_icon_texture, lock_rect, lock_icon_used_region)
 	# Offsets are anchored from the card's BOTTOM (not top) so they keep the
 	# same absolute position regardless of how much extra headroom the top of
 	# the card has for oversized character art.
