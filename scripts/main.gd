@@ -54,8 +54,8 @@ const SLEEPY_START_SCORE := 30
 const SLEEPY_MIN_SLOW_TURNS := 1
 const SLEEPY_MAX_SLOW_TURNS := 3
 const SLEEPY_WAKE_WARNING_SECONDS := 1.0
-const SLEEPY_SLOW_MULTIPLIER := 0.42
-const SLEEPY_FAST_MULTIPLIER := 2.0
+const SLEEPY_SLOW_MULTIPLIER := 0.462
+const SLEEPY_FAST_MULTIPLIER := 2.4
 const PRANKSTER_START_SCORE := 50
 const ROPE_OVERHEAD_ANGLE := PI * 1.5
 const PRANKSTER_STOP_SECONDS := 1.0
@@ -118,6 +118,7 @@ const COIN_ICON_OFFSET := Vector2(8.0, 11.0)
 const RUBY_ICON_OFFSET := Vector2(8.0, 12.0)
 const RESOURCE_ICON_SIZE := Vector2(38.0, 38.0)
 const GAME_OVER_PANEL_PATH := "res://assets/ui/panel_frame.png"
+const REVIVE_GEM_COST := 1
 # Godot's built-in ThemeDB.fallback_font has no Hangul glyphs, so every piece
 # of Korean text drawn via draw_string() rendered as tofu boxes until this
 # was added — it just went unnoticed because most Korean text on screen is
@@ -131,6 +132,7 @@ const CLOSE_BUTTON_TEXTURE_PATH := "res://assets/ui/close_button.png"
 const TAB_INACTIVE_TEXTURE_PATH := "res://assets/ui/tab_inactive.png"
 const TAB_ACTIVE_TEXTURE_PATH := "res://assets/ui/tab_active.png"
 const LOCK_ICON_TEXTURE_PATH := "res://assets/ui/lock_icon.png"
+const CHARACTER_CARD_FRAME_PATH := "res://assets/ui/character_card_frame.png"
 const INPUT_ROW_BG_TEXTURE_PATH := "res://assets/ui/input_row_bg.png"
 const TOGGLE_ON_TEXTURE_PATH := "res://assets/ui/toggle_on.png"
 const TOGGLE_OFF_TEXTURE_PATH := "res://assets/ui/toggle_off.png"
@@ -153,7 +155,7 @@ const COOP_BUTTON_RECT := Rect2(255.0, 1055.0, 210.0, 195.0)
 const SETTINGS_BUTTON_RECT := Rect2(485.0, 1055.0, 210.0, 195.0)
 const TEST_START_50_RECT := Rect2(555.0, 670.0, 145.0, 82.0)
 const TEST_START_130_RECT := Rect2(555.0, 575.0, 145.0, 82.0)
-const GAME_OVER_CLOSE_RECT := Rect2(548.0, 314.0, 58.0, 58.0)
+const GAME_OVER_CLOSE_RECT := Rect2(538.0, 304.0, 78.0, 78.0)
 # Character panel uses its own taller frame (panel_frame_long.png) instead
 # of the shared square one settings/ranking use, so this rect is much taller
 # than SETTINGS_PANEL_RECT/RANKING_PANEL_RECT even though all three used to
@@ -264,6 +266,7 @@ const RANKING_ROW_HEIGHT := 60.0
 @export var tab_inactive_texture: Texture2D
 @export var tab_active_texture: Texture2D
 @export var lock_icon_texture: Texture2D
+@export var character_card_frame_texture: Texture2D
 @export var input_row_bg_texture: Texture2D
 @export var toggle_on_texture: Texture2D
 @export var toggle_off_texture: Texture2D
@@ -476,6 +479,7 @@ var close_button_used_region := Rect2()
 var tab_inactive_used_region := Rect2()
 var tab_active_used_region := Rect2()
 var lock_icon_used_region := Rect2()
+var character_card_frame_used_region := Rect2()
 var input_row_bg_used_region := Rect2()
 var toggle_on_used_region := Rect2()
 var toggle_off_used_region := Rect2()
@@ -559,6 +563,8 @@ func _ready() -> void:
 		tab_active_texture = load(TAB_ACTIVE_TEXTURE_PATH) as Texture2D
 	if lock_icon_texture == null and ResourceLoader.exists(LOCK_ICON_TEXTURE_PATH):
 		lock_icon_texture = load(LOCK_ICON_TEXTURE_PATH) as Texture2D
+	if character_card_frame_texture == null and ResourceLoader.exists(CHARACTER_CARD_FRAME_PATH):
+		character_card_frame_texture = load(CHARACTER_CARD_FRAME_PATH) as Texture2D
 	if input_row_bg_texture == null and ResourceLoader.exists(INPUT_ROW_BG_TEXTURE_PATH):
 		input_row_bg_texture = load(INPUT_ROW_BG_TEXTURE_PATH) as Texture2D
 	if toggle_on_texture == null and ResourceLoader.exists(TOGGLE_ON_TEXTURE_PATH):
@@ -591,6 +597,7 @@ func _ready() -> void:
 	tab_inactive_used_region = _texture_used_region(tab_inactive_texture)
 	tab_active_used_region = _texture_used_region(tab_active_texture)
 	lock_icon_used_region = _texture_used_region(lock_icon_texture)
+	character_card_frame_used_region = _texture_used_region(character_card_frame_texture)
 	input_row_bg_used_region = _texture_used_region(input_row_bg_texture)
 	toggle_on_used_region = _texture_used_region(toggle_on_texture)
 	toggle_off_used_region = _texture_used_region(toggle_off_texture)
@@ -820,6 +827,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			var game_over_position := _screen_to_design(pointer_position)
 			if GAME_OVER_CLOSE_RECT.has_point(game_over_position):
 				_return_to_main()
+				get_viewport().set_input_as_handled()
+				return
+			if _can_revive() and _game_over_revive_rect().has_point(game_over_position):
+				_revive_with_gem()
 				get_viewport().set_input_as_handled()
 				return
 		if game_state == GameState.TITLE and pointer_position.x >= 0.0:
@@ -2861,7 +2872,7 @@ func _draw_hud() -> void:
 		_draw_game_over_panel(font)
 
 
-func _draw_game_over_panel(font: Font) -> void:
+func _game_over_panel_rect() -> Rect2:
 	# Keep panel_frame.png's real (tall/portrait) aspect ratio instead of
 	# stretching it to an arbitrary box — width drives the size, height
 	# follows the source art so the frame never looks squashed.
@@ -2869,15 +2880,61 @@ func _draw_game_over_panel(font: Font) -> void:
 	var panel_height := panel_width
 	if game_over_panel_used_region.size.x > 0.0:
 		panel_height = panel_width * game_over_panel_used_region.size.y / game_over_panel_used_region.size.x
-	var panel := Rect2((DESIGN_SIZE.x - panel_width) * 0.5, 300.0, panel_width, panel_height)
+	return Rect2((DESIGN_SIZE.x - panel_width) * 0.5, 300.0, panel_width, panel_height)
+
+
+func _game_over_revive_rect() -> Rect2:
+	var panel := _game_over_panel_rect()
+	var content_scale := panel.size.y / 430.0
+	return Rect2(panel.position + Vector2(75.0, 335.0 * content_scale), Vector2(380.0, 58.0))
+
+
+func _game_over_retry_rect() -> Rect2:
+	var panel := _game_over_panel_rect()
+	var content_scale := panel.size.y / 430.0
+	return Rect2(panel.position + Vector2(75.0, 401.0 * content_scale), Vector2(380.0, 58.0))
+
+
+func _can_revive() -> bool:
+	return game_state == GameState.GAME_OVER and gems >= REVIVE_GEM_COST
+
+
+func _revive_with_gem() -> void:
+	if not _can_revive():
+		return
+	gems -= REVIVE_GEM_COST
+	game_state = GameState.PLAYING
+	is_jumping = false
+	jump_height = 0.0
+	jump_velocity = 0.0
+	jump_animation_time = 0.0
+	jump_started_in_cue = false
+	hit_reveal_time = 0.0
+	accepting_input = true
+	# Drop back to a single plain rope on revive — resuming straight into a
+	# double-rope boss beat or a mid-transition state the player never saw
+	# coming would just be an unfair second death.
+	rope_b_enabled = false
+	rope_angle = PI
+	turner_transition_active = false
+	turner_transition_phase = TurnerTransitionPhase.NONE
+	message = "부활!  다시 도전하세요!"
+	message_color = Color("73f7b4")
+	flash_time = 0.3
+	_save_progress()
+
+
+func _draw_game_over_panel(font: Font) -> void:
+	var panel := _game_over_panel_rect()
+	var panel_height := panel.size.y
 	if game_over_panel_texture != null and game_over_panel_used_region.size.x > 0.0:
 		draw_texture_rect_region(game_over_panel_texture, panel, game_over_panel_used_region)
 	else:
 		draw_rect(panel, Color(0.035, 0.055, 0.10, 0.94), true)
 		draw_rect(panel, Color("fff0a6"), false, 7.0)
-	draw_circle(GAME_OVER_CLOSE_RECT.get_center(), 26.0, Color("ff4d67"))
-	draw_line(GAME_OVER_CLOSE_RECT.get_center() + Vector2(-9.0, -9.0), GAME_OVER_CLOSE_RECT.get_center() + Vector2(9.0, 9.0), Color.WHITE, 5.0, true)
-	draw_line(GAME_OVER_CLOSE_RECT.get_center() + Vector2(9.0, -9.0), GAME_OVER_CLOSE_RECT.get_center() + Vector2(-9.0, 9.0), Color.WHITE, 5.0, true)
+	draw_circle(GAME_OVER_CLOSE_RECT.get_center(), 39.0, Color("ff4d67"))
+	draw_line(GAME_OVER_CLOSE_RECT.get_center() + Vector2(-13.5, -13.5), GAME_OVER_CLOSE_RECT.get_center() + Vector2(13.5, 13.5), Color.WHITE, 7.5, true)
+	draw_line(GAME_OVER_CLOSE_RECT.get_center() + Vector2(13.5, -13.5), GAME_OVER_CLOSE_RECT.get_center() + Vector2(-13.5, 13.5), Color.WHITE, 7.5, true)
 	# Content offsets are scaled up from the original 430-tall panel's layout
 	# so they spread through the taller frame instead of clumping at the top.
 	var content_scale := panel_height / 430.0
@@ -2902,7 +2959,15 @@ func _draw_game_over_panel(font: Font) -> void:
 	else:
 		record_message = "최고 기록까지 단 %d회" % maxi(1, run_start_best - score)
 	draw_string(font, Vector2(panel.position.x, panel.position.y + 318.0 * content_scale), record_message, HORIZONTAL_ALIGNMENT_CENTER, panel.size.x, 23, Color("73f7b4"))
-	var retry_rect := Rect2(panel.position + Vector2(75.0, 338.0 * content_scale), Vector2(380.0, 58.0))
+
+	var revive_rect := _game_over_revive_rect()
+	var revive_possible := _can_revive()
+	draw_rect(revive_rect, Color("35d0ff") if revive_possible else Color("2a3346"), true)
+	draw_rect(revive_rect, Color("fff0a6") if revive_possible else Color(1.0, 1.0, 1.0, 0.2), false, 5.0)
+	var revive_label := "보석 %d개로 부활!" % REVIVE_GEM_COST if revive_possible else "보석이 부족해요 (%d개 필요)" % REVIVE_GEM_COST
+	draw_string(font, Vector2(revive_rect.position.x, revive_rect.position.y + 39.0), revive_label, HORIZONTAL_ALIGNMENT_CENTER, revive_rect.size.x, 24, Color("102030") if revive_possible else Color("6b7690"))
+
+	var retry_rect := _game_over_retry_rect()
 	draw_rect(retry_rect, Color("ffd23f"), true)
 	draw_rect(retry_rect, Color("fff0a6"), false, 5.0)
 	draw_string(font, Vector2(retry_rect.position.x, retry_rect.position.y + 39.0), "터치해서 다시 도전!", HORIZONTAL_ALIGNMENT_CENTER, retry_rect.size.x, 24, Color("633913"))
@@ -3257,8 +3322,17 @@ func _draw_character_card(canvas: CanvasItem, font: Font, character_id: String, 
 	var border_color := Color("73f7b4") if selected else Color("fff0a6")
 	if not owned:
 		border_color = Color("6b7280")
-	canvas.draw_rect(card, Color("263a57"), true)
-	canvas.draw_rect(card, border_color, false, 6.0)
+	if character_card_frame_texture != null and character_card_frame_used_region.size.x > 0.0:
+		var frame_tint := Color(0.62, 0.6, 0.66) if not owned else Color.WHITE
+		canvas.draw_texture_rect_region(character_card_frame_texture, card, character_card_frame_used_region, frame_tint)
+		if selected:
+			# The card art has its own carved wooden border, so selection reads
+			# as a bright ring drawn just outside it instead of recoloring the
+			# frame itself (which would need re-painting the source art).
+			canvas.draw_rect(card.grow(4.0), border_color, false, 5.0)
+	else:
+		canvas.draw_rect(card, Color("263a57"), true)
+		canvas.draw_rect(card, border_color, false, 6.0)
 	# Anchored to the card's BOTTOM, not its top, so the extra height above
 	# the minimum text layout needs becomes free headroom for tall/scaled-up
 	# character previews instead of shifting the fit-scale math (and
@@ -3288,21 +3362,24 @@ func _draw_character_card(canvas: CanvasItem, font: Font, character_id: String, 
 	# Offsets are anchored from the card's BOTTOM (not top) so they keep the
 	# same absolute position regardless of how much extra headroom the top of
 	# the card has for oversized character art.
+	# Text colors here are tuned for the tan/parchment card art, not the old
+	# dark-navy card — the previous white/pale-gold palette nearly vanished
+	# against the light background.
 	var name: String = character_names.get(character_id, character_id)
-	canvas.draw_string(font, Vector2(card.position.x + 8.0, card.end.y - 95.0), name, HORIZONTAL_ALIGNMENT_CENTER, card.size.x - 16.0, 20, Color.WHITE if owned else Color("9aa4b8"))
+	canvas.draw_string(font, Vector2(card.position.x + 8.0, card.end.y - 95.0), name, HORIZONTAL_ALIGNMENT_CENTER, card.size.x - 16.0, 20, Color("3f2712") if owned else Color("8a7154"))
 	if owned:
-		canvas.draw_string(font, Vector2(card.position.x + 8.0, card.end.y - 58.0), "보유", HORIZONTAL_ALIGNMENT_CENTER, card.size.x - 16.0, 19, Color("ffd166"))
+		canvas.draw_string(font, Vector2(card.position.x + 8.0, card.end.y - 58.0), "보유", HORIZONTAL_ALIGNMENT_CENTER, card.size.x - 16.0, 19, Color("8a5a1a"))
 		var state_text := "사용 중" if selected else "선택"
-		canvas.draw_string(font, Vector2(card.position.x + 8.0, card.end.y - 22.0), state_text, HORIZONTAL_ALIGNMENT_CENTER, card.size.x - 16.0, 21, border_color)
+		canvas.draw_string(font, Vector2(card.position.x + 8.0, card.end.y - 22.0), state_text, HORIZONTAL_ALIGNMENT_CENTER, card.size.x - 16.0, 21, Color("1f7a52") if selected else Color("8a5a1a"))
 		return
 	var price := int(character_prices.get(character_id, 0))
 	var required_score := int(character_unlock_scores.get(character_id, 0))
 	if price > 0:
-		canvas.draw_string(font, Vector2(card.position.x + 8.0, card.end.y - 58.0), "%d 골드" % price, HORIZONTAL_ALIGNMENT_CENTER, card.size.x - 16.0, 19, Color("ffd166"))
-		canvas.draw_string(font, Vector2(card.position.x + 8.0, card.end.y - 22.0), "구매", HORIZONTAL_ALIGNMENT_CENTER, card.size.x - 16.0, 21, Color("73f7b4") if coins >= price else Color("ff8b8b"))
+		canvas.draw_string(font, Vector2(card.position.x + 8.0, card.end.y - 58.0), "%d 골드" % price, HORIZONTAL_ALIGNMENT_CENTER, card.size.x - 16.0, 19, Color("8a5a1a"))
+		canvas.draw_string(font, Vector2(card.position.x + 8.0, card.end.y - 22.0), "구매", HORIZONTAL_ALIGNMENT_CENTER, card.size.x - 16.0, 21, Color("1f7a52") if coins >= price else Color("b0362f"))
 	else:
-		canvas.draw_string(font, Vector2(card.position.x + 8.0, card.end.y - 58.0), "최고기록 %d" % required_score, HORIZONTAL_ALIGNMENT_CENTER, card.size.x - 16.0, 19, Color("9aa4b8"))
-		canvas.draw_string(font, Vector2(card.position.x + 8.0, card.end.y - 22.0), "잠김", HORIZONTAL_ALIGNMENT_CENTER, card.size.x - 16.0, 21, Color("6b7280"))
+		canvas.draw_string(font, Vector2(card.position.x + 8.0, card.end.y - 58.0), "최고기록 %d" % required_score, HORIZONTAL_ALIGNMENT_CENTER, card.size.x - 16.0, 19, Color("6b5842"))
+		canvas.draw_string(font, Vector2(card.position.x + 8.0, card.end.y - 22.0), "잠김", HORIZONTAL_ALIGNMENT_CENTER, card.size.x - 16.0, 21, Color("6b5842"))
 
 
 func _character_preview_texture(character_id: String) -> Texture2D:
