@@ -357,8 +357,12 @@ func _test_perfect_crossing(game: Node) -> void:
 	game.jump_height = -game.PERFECT_MIN_HEIGHT
 	game.jump_velocity = 0.0
 	_expect(game._is_perfect_crossing(), "jump apex at rope crossing was not PERFECT")
-	game.jump_velocity = game.PERFECT_MAX_VERTICAL_SPEED + 1.0
+	game.jump_velocity = game.PERFECT_MAX_FALLING_SPEED
+	_expect(game._is_perfect_crossing(), "slightly early falling jump was not PERFECT")
+	game.jump_velocity = game.PERFECT_MAX_FALLING_SPEED + 1.0
 	_expect(not game._is_perfect_crossing(), "fast falling jump was incorrectly PERFECT")
+	game.jump_velocity = -game.PERFECT_MAX_RISING_SPEED - 1.0
+	_expect(not game._is_perfect_crossing(), "late fast-rising jump was incorrectly PERFECT")
 	game.jump_velocity = 0.0
 	game.jump_height = -game.PERFECT_MIN_HEIGHT + 1.0
 	_expect(not game._is_perfect_crossing(), "low ordinary clear was incorrectly PERFECT")
@@ -517,23 +521,41 @@ func _test_start_at_one_thirty(game: Node) -> void:
 	_expect(not bool(game.air_challenge_active), "disabled air challenge launched at score 130")
 	_expect(not bool(game.rope_b_enabled), "double rope stayed on during the duo stage")
 	_expect(int(game.turner_team) == int(game.TurnerTeam.DUO), "score 130 did not start the athlete/sleepy duo stage")
-	_expect(int(game.challenge_pattern) == 0, "duo stage started with an unfair immediate burst")
+	_expect(not bool(game.duo_sleepy_awake), "duo stage started with an unfair immediate sleepy burst")
 	_expect(is_equal_approx(game.rope_speed, BALANCE.speed_for_score(10)), "duo stage did not hold the flat score-10 baseline")
-	# Force the sudden-burst trigger deterministically instead of relying on
-	# its random gap, the same way _test_athlete_turner_pattern forces its
-	# own burst.
-	game.duo_normal_turns_remaining = 1
-	game._update_turner_team_and_pattern()
-	_expect(int(game.challenge_pattern) == 2, "duo stage's sleepy half never woke up for a burst")
 	game.game_state = 1
 	game.rope_speed = 3.0
 	game.rope_angle = PI
-	_expect(is_equal_approx(game._effective_rope_speed(), 3.0 * game.SLEEPY_FAST_MULTIPLIER), "duo burst did not reuse sleepy's own fast multiplier")
+	# Athlete's own normal-2/burst-2 cycle must keep running on its own turn
+	# count, independent of the sleepy countdown, so its characteristic
+	# pattern stays visible throughout the duo stage instead of going flat.
+	_expect(int(game.duo_athlete_normal_turns_remaining) == game.ATHLETE_NORMAL_TURNS, "duo stage's athlete half did not start its own normal cycle")
+	# Pin the sleepy countdown high while isolating athlete's own cycle below
+	# — it starts at a random DUO_MIN_NORMAL_TURNS..DUO_MAX_NORMAL_TURNS gap,
+	# and at its minimum (2) the athlete-burst loop's extra update calls
+	# could coincidentally also decrement it to zero, waking sleepy early
+	# and making this deterministic athlete check flaky.
+	game.duo_normal_turns_remaining = 1000
+	game.duo_athlete_normal_turns_remaining = 1
+	game._update_turner_team_and_pattern()
+	_expect(bool(game.duo_athlete_bursting), "duo stage's athlete half never entered its own burst")
+	_expect(is_equal_approx(game._effective_rope_speed(), 3.0 * BALANCE.athlete_burst_multiplier), "duo athlete burst did not use athlete's own burst multiplier")
+	for i in range(game.ATHLETE_MAX_BURST_TURNS):
+		game._update_turner_team_and_pattern()
+	_expect(not bool(game.duo_athlete_bursting), "duo stage's athlete burst did not end after its configured turn count")
+	# Force the sleepy sudden-burst trigger deterministically instead of
+	# relying on its random gap, and confirm it overrides athlete's own
+	# cycle for that one turn.
+	game.duo_normal_turns_remaining = 1
+	game.duo_athlete_normal_turns_remaining = 1
+	game._update_turner_team_and_pattern()
+	_expect(bool(game.duo_sleepy_awake), "duo stage's sleepy half never woke up for a burst")
+	_expect(is_equal_approx(game._effective_rope_speed(), 3.0 * game.SLEEPY_FAST_MULTIPLIER), "duo burst did not reuse sleepy's own fast multiplier, or athlete's own burst wrongly took priority")
 	game.rope_angle = fposmod(TARGET_ANGLE - game.rope_speed * BALANCE.jump_cue_seconds * 0.5, TAU)
 	_expect(game._is_jump_cue(), "duo burst red cue test did not enter the cue window")
 	_expect(is_equal_approx(game._effective_rope_speed(), game.rope_speed), "duo burst changed speed during the red cue")
 	game._update_turner_team_and_pattern()
-	_expect(int(game.challenge_pattern) == 0, "duo burst lasted more than a single turn")
+	_expect(not bool(game.duo_sleepy_awake), "duo sleepy burst lasted more than a single turn")
 	_expect(int(game.duo_normal_turns_remaining) >= game.DUO_MIN_NORMAL_TURNS and int(game.duo_normal_turns_remaining) <= game.DUO_MAX_NORMAL_TURNS, "duo stage's next gap fell outside its configured range")
 	game.score = game.DUO_STAGE_END_SCORE
 	game._update_turner_team_and_pattern()

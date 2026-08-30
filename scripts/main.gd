@@ -29,8 +29,9 @@ const ROPE_OVERHEAD_RADIUS := 170.0
 const ROPE_GROUND_RADIUS := 40.0
 # The front half reaches the player's feet without sinking deep into the ground.
 const ROPE_CROSSING_ANGLE := 0.9
-const PERFECT_MIN_HEIGHT := 130.0
-const PERFECT_MAX_VERTICAL_SPEED := 300.0
+const PERFECT_MIN_HEIGHT := 105.0
+const PERFECT_MAX_RISING_SPEED := 300.0
+const PERFECT_MAX_FALLING_SPEED := 520.0
 const PERFECT_DISPLAY_SECONDS := 0.7
 const ROPE_PIXEL_GRID := 4.0
 const ROPE_PIXEL_OUTLINE_SIZE := Vector2(14.0, 14.0)
@@ -53,7 +54,7 @@ const SLEEPY_START_SCORE := 30
 const SLEEPY_MIN_SLOW_TURNS := 1
 const SLEEPY_MAX_SLOW_TURNS := 3
 const SLEEPY_WAKE_WARNING_SECONDS := 1.0
-const SLEEPY_SLOW_MULTIPLIER := 0.34
+const SLEEPY_SLOW_MULTIPLIER := 0.42
 const SLEEPY_FAST_MULTIPLIER := 2.0
 const PRANKSTER_START_SCORE := 50
 const ROPE_OVERHEAD_ANGLE := PI * 1.5
@@ -152,7 +153,7 @@ const COOP_BUTTON_RECT := Rect2(255.0, 1055.0, 210.0, 195.0)
 const SETTINGS_BUTTON_RECT := Rect2(485.0, 1055.0, 210.0, 195.0)
 const TEST_START_50_RECT := Rect2(555.0, 670.0, 145.0, 82.0)
 const TEST_START_130_RECT := Rect2(555.0, 575.0, 145.0, 82.0)
-const GAME_OVER_CLOSE_RECT := Rect2(593.0, 364.0, 58.0, 58.0)
+const GAME_OVER_CLOSE_RECT := Rect2(548.0, 314.0, 58.0, 58.0)
 # Character panel uses its own taller frame (panel_frame_long.png) instead
 # of the shared square one settings/ranking use, so this rect is much taller
 # than SETTINGS_PANEL_RECT/RANKING_PANEL_RECT even though all three used to
@@ -214,7 +215,7 @@ const ATTENDANCE_DAY_REWARDS := [1, 2, 2, 3, 3, 4, 5]
 const RANKING_PERIOD_TAB_RECTS := {
 	"all": Rect2(105.0, 335.0, 163.0, 44.0),
 	"week": Rect2(276.0, 335.0, 163.0, 44.0),
-	"month": Rect2(447.0, 335.0, 163.0, 44.0),
+	"perfect": Rect2(447.0, 335.0, 163.0, 44.0),
 }
 const RANKING_LIST_RECT := Rect2(105.0, 425.0, 505.0, 335.0)
 const RANKING_ROW_HEIGHT := 60.0
@@ -305,6 +306,19 @@ const DUO_STAGE_SLOT := 100000
 const DUO_MIN_NORMAL_TURNS := 2
 const DUO_MAX_NORMAL_TURNS := 5
 var duo_normal_turns_remaining := 0
+# The athlete half keeps running its own normal/burst cycle (same shape as
+# the standalone ATHLETE team) every turn, independent of the sleepy
+# countdown above. Dedicated counters so this never collides with the
+# standalone ATHLETE team's own athlete_normal_turns_remaining/
+# athlete_burst_turns_remaining (only one team is ever active at a time, but
+# keeping them separate avoids any cross-talk if that assumption changes).
+var duo_athlete_bursting := false
+var duo_athlete_normal_turns_remaining := 0
+var duo_athlete_burst_turns_remaining := 0
+# When true, sleepy's single-turn burst overrides whatever the athlete half
+# would otherwise be doing this turn (speed + visual) — sleepy always takes
+# priority over athlete's own cycle.
+var duo_sleepy_awake := false
 var rope_b_enabled := false
 var rope_b_angle := PI
 var jump_height := 0.0
@@ -353,6 +367,10 @@ var departing_turner_team := TurnerTeam.STUDENT
 var turner_transition_is_boss := false
 var flash_time := 0.0
 var perfect_display_time := 0.0
+# Counts PERFECT! crossings for the current run only (reset in _start_run),
+# submitted to the leaderboard alongside score so the "perfect" ranking tab
+# can rank by a single run's best perfect-jump count.
+var perfect_count := 0
 var message := "화면을 눌러 시작"
 var message_color := Color.WHITE
 var menu_notice := ""
@@ -998,6 +1016,7 @@ func _resolve_rope_crossing() -> void:
 	if _player_clears_rope_at_crossing():
 		if _is_perfect_crossing():
 			perfect_display_time = PERFECT_DISPLAY_SECONDS
+			perfect_count += 1
 		score += 1
 		if score > best_score:
 			best_score = score
@@ -1069,8 +1088,10 @@ func _resolve_rope_crossing() -> void:
 			message = "번쩍!  1초 뒤 초고속!"
 		elif turner_team == TurnerTeam.ATHLETE and challenge_pattern == 2:
 			message = "운동부 급가속!"
-		elif turner_team == TurnerTeam.DUO and challenge_pattern == 2:
+		elif turner_team == TurnerTeam.DUO and duo_sleepy_awake:
 			message = "잠꾸러기 급발진!"
+		elif turner_team == TurnerTeam.DUO and duo_athlete_bursting:
+			message = "운동부 급가속!"
 		else:
 			message = "좋아요!  +1"
 		flash_time = 0.22
@@ -1128,7 +1149,8 @@ func _is_perfect_crossing() -> bool:
 	return not coop_mode \
 		and is_jumping \
 		and jump_height <= -PERFECT_MIN_HEIGHT \
-		and absf(jump_velocity) <= PERFECT_MAX_VERTICAL_SPEED
+		and jump_velocity >= -PERFECT_MAX_RISING_SPEED \
+		and jump_velocity <= PERFECT_MAX_FALLING_SPEED
 
 
 func _coop_player_clears_rope(player_x: float, jumping: bool, height: float) -> bool:
@@ -1167,6 +1189,7 @@ func _start_run() -> void:
 	is_jumping = false
 	jump_started_in_cue = false
 	perfect_display_time = 0.0
+	perfect_count = 0
 	_reset_air_challenge()
 	accepting_input = true
 	game_state = GameState.PLAYING
@@ -1639,11 +1662,14 @@ func _effective_rope_speed_raw() -> float:
 		# visible red jump-cue window still runs at the fair, un-randomized speed.
 		return rope_speed if _is_jump_cue() else rope_speed * wizard_speed_multiplier
 	if turner_team == TurnerTeam.DUO:
-		# The sleepy half's sudden burst reuses sleepy's own fast multiplier
-		# (not the athlete's) even though it shares the athlete's flat
-		# baseline and the challenge_pattern==2 turn-counting.
-		if challenge_pattern == 2:
+		# Sleepy's sudden burst reuses sleepy's own fast multiplier (not the
+		# athlete's) and overrides athlete's cycle for that single turn.
+		# Otherwise athlete's own normal/burst cycle runs continuously with
+		# its own multiplier, exactly like the standalone ATHLETE team.
+		if duo_sleepy_awake:
 			return rope_speed if _is_jump_cue() else rope_speed * SLEEPY_FAST_MULTIPLIER
+		if duo_athlete_bursting:
+			return rope_speed if _is_jump_cue() else rope_speed * balance.athlete_burst_multiplier
 		return rope_speed
 	# Keep a stable, fair speed throughout the red input window.
 	if challenge_pattern == 0 or _is_jump_cue():
@@ -1690,6 +1716,10 @@ func _reset_turner_run() -> void:
 	wizard_rope_hidden = false
 	wizard_speed_multiplier = 1.0
 	duo_normal_turns_remaining = 0
+	duo_athlete_bursting = false
+	duo_athlete_normal_turns_remaining = 0
+	duo_athlete_burst_turns_remaining = 0
+	duo_sleepy_awake = false
 	turner_transition_active = false
 	turner_transition_time = 0.0
 	turner_transition_phase = TurnerTransitionPhase.NONE
@@ -1754,6 +1784,10 @@ func _init_turner_team_state(team: TurnerTeam) -> void:
 			wizard_rope_hidden = false
 		TurnerTeam.DUO:
 			duo_normal_turns_remaining = _roll_duo_normal_turns()
+			duo_athlete_bursting = false
+			duo_athlete_normal_turns_remaining = ATHLETE_NORMAL_TURNS
+			duo_athlete_burst_turns_remaining = 0
+			duo_sleepy_awake = false
 
 
 func _update_turner_team_and_pattern() -> bool:
@@ -1799,16 +1833,31 @@ func _update_turner_team_and_pattern() -> bool:
 		wizard_speed_multiplier = randf_range(balance.wizard_speed_min_multiplier, balance.wizard_speed_max_multiplier)
 		return false
 	if turner_team == TurnerTeam.DUO:
-		if challenge_pattern == 2:
-			# The burst is always exactly one turn — the sleepy half wakes
-			# up, bursts once, then goes right back to sleep instead of
-			# athlete's own multi-turn burst.
-			challenge_pattern = 0
+		# Sleepy's own single-turn burst always takes priority over whatever
+		# the athlete half's cycle is doing that turn — it wakes up, bursts
+		# once, then goes right back to sleep instead of athlete's own
+		# multi-turn burst.
+		if duo_sleepy_awake:
+			duo_sleepy_awake = false
 			duo_normal_turns_remaining = _roll_duo_normal_turns()
 		else:
 			duo_normal_turns_remaining -= 1
 			if duo_normal_turns_remaining <= 0:
-				challenge_pattern = 2
+				duo_sleepy_awake = true
+		# The athlete half keeps running its own normal-2/burst-2 cycle every
+		# turn regardless of whether sleepy's burst is overriding this turn,
+		# so athlete's characteristic pattern stays visible throughout the
+		# duo stage instead of going flat.
+		if duo_athlete_bursting:
+			duo_athlete_burst_turns_remaining -= 1
+			if duo_athlete_burst_turns_remaining <= 0:
+				duo_athlete_bursting = false
+				duo_athlete_normal_turns_remaining = ATHLETE_NORMAL_TURNS
+		else:
+			duo_athlete_normal_turns_remaining -= 1
+			if duo_athlete_normal_turns_remaining <= 0:
+				duo_athlete_bursting = true
+				duo_athlete_burst_turns_remaining = ATHLETE_MAX_BURST_TURNS
 		return false
 
 	if challenge_pattern == 2:
@@ -1901,7 +1950,6 @@ func _draw_turner(feet: Vector2, faces_left: bool, display_team := -1) -> void:
 		# sleepy, awake only during the sudden-burst turn (see
 		# _update_turner_team_and_pattern) and asleep otherwise.
 		if faces_left:
-			var duo_sleepy_awake := challenge_pattern == 2
 			base_texture = sleepy_turner_awake_texture if duo_sleepy_awake else sleepy_turner_asleep_texture
 			base_region = sleepy_turner_awake_used_region if duo_sleepy_awake else sleepy_turner_asleep_used_region
 			mirror_texture = mirrored_sleepy_turner_awake_texture if duo_sleepy_awake else mirrored_sleepy_turner_asleep_texture
@@ -2310,7 +2358,8 @@ func _draw_ranking_list_contents() -> void:
 		var rank_color: Color = rank_colors[index] if index < rank_colors.size() else Color("a9bad8")
 		canvas.draw_string(font, Vector2(row.position.x + 16.0, row.position.y + 38.0), "%d" % (index + 1), HORIZONTAL_ALIGNMENT_LEFT, 60.0, 22, rank_color)
 		canvas.draw_string(font, Vector2(row.position.x + 90.0, row.position.y + 38.0), str(entry.get("nickname", "")), HORIZONTAL_ALIGNMENT_LEFT, 280.0, 22, Color.WHITE)
-		canvas.draw_string(font, Vector2(row.end.x - 150.0, row.position.y + 38.0), str(int(entry.get("score", 0))), HORIZONTAL_ALIGNMENT_RIGHT, 130.0, 22, Color("73f7b4"))
+		var value_field := "perfect_count" if ranking_period_filter == "perfect" else "score"
+		canvas.draw_string(font, Vector2(row.end.x - 150.0, row.position.y + 38.0), str(int(entry.get(value_field, 0))), HORIZONTAL_ALIGNMENT_RIGHT, 130.0, 22, Color("73f7b4"))
 
 
 func _open_attendance_menu() -> void:
@@ -2385,10 +2434,11 @@ func _handle_ranking_period_tap(position: Vector2) -> bool:
 
 
 func _ranking_period_cutoff_unix() -> float:
-	# "주간"/"월간" are calendar-boundary windows (this week since Monday
-	# 00:00 UTC, this month since day 1 00:00 UTC), not a rolling N-day
-	# average — recomputed fresh on every fetch, so no backend reset job
-	# is needed for the ranking to "roll over".
+	# "주간" is a calendar-boundary window (this week since Monday 00:00
+	# UTC), not a rolling N-day average — recomputed fresh on every fetch,
+	# so no backend reset job is needed for the ranking to "roll over".
+	# "perfect" is an all-time ranking (like "all") just ordered by a
+	# different column, so it has no time cutoff either.
 	var now_unix := Time.get_unix_time_from_system()
 	if ranking_period_filter == "week":
 		var weekday: int = Time.get_datetime_dict_from_unix_time(now_unix)["weekday"]
@@ -2398,13 +2448,6 @@ func _ranking_period_cutoff_unix() -> float:
 		day_dict["minute"] = 0
 		day_dict["second"] = 0
 		return Time.get_unix_time_from_datetime_dict(day_dict)
-	if ranking_period_filter == "month":
-		var month_dict := Time.get_datetime_dict_from_unix_time(now_unix)
-		month_dict["day"] = 1
-		month_dict["hour"] = 0
-		month_dict["minute"] = 0
-		month_dict["second"] = 0
-		return Time.get_unix_time_from_datetime_dict(month_dict)
 	return -1.0
 
 
@@ -2433,7 +2476,11 @@ func _fetch_ranking() -> void:
 		# fighting the decompressor.
 		leaderboard_fetch_request.accept_gzip = false
 		leaderboard_fetch_request.request_completed.connect(_on_ranking_fetched)
-	var url := "%s/rest/v1/leaderboard?select=nickname,score&order=score.desc&limit=%d%s" % [SUPABASE_URL, LEADERBOARD_TOP_N, _ranking_period_query_filter()]
+	# The "perfect" tab ranks by a run's best perfect-jump count instead of
+	# score — everything else about the fetch (limit, top-N) stays the same.
+	var order_column := "perfect_count" if ranking_period_filter == "perfect" else "score"
+	var select_fields := "nickname,perfect_count" if ranking_period_filter == "perfect" else "nickname,score"
+	var url := "%s/rest/v1/leaderboard?select=%s&order=%s.desc&limit=%d%s" % [SUPABASE_URL, select_fields, order_column, LEADERBOARD_TOP_N, _ranking_period_query_filter()]
 	var headers := ["apikey: %s" % SUPABASE_ANON_KEY, "Accept-Encoding: identity"]
 	var error := leaderboard_fetch_request.request(url, headers)
 	if error != OK:
@@ -2484,7 +2531,7 @@ func _submit_score(final_score: int) -> void:
 		"Content-Type: application/json",
 		"Accept-Encoding: identity",
 	]
-	var payload := JSON.stringify({"nickname": nickname, "score": final_score})
+	var payload := JSON.stringify({"nickname": nickname, "score": final_score, "perfect_count": perfect_count})
 	leaderboard_submit_request.request(url, headers, HTTPClient.METHOD_POST, payload)
 
 
@@ -2812,7 +2859,14 @@ func _draw_hud() -> void:
 
 
 func _draw_game_over_panel(font: Font) -> void:
-	var panel := Rect2(50.0, 350.0, 620.0, 500.0)
+	# Keep panel_frame.png's real (tall/portrait) aspect ratio instead of
+	# stretching it to an arbitrary box — width drives the size, height
+	# follows the source art so the frame never looks squashed.
+	var panel_width := 530.0
+	var panel_height := panel_width
+	if game_over_panel_used_region.size.x > 0.0:
+		panel_height = panel_width * game_over_panel_used_region.size.y / game_over_panel_used_region.size.x
+	var panel := Rect2((DESIGN_SIZE.x - panel_width) * 0.5, 300.0, panel_width, panel_height)
 	if game_over_panel_texture != null and game_over_panel_used_region.size.x > 0.0:
 		draw_texture_rect_region(game_over_panel_texture, panel, game_over_panel_used_region)
 	else:
@@ -2821,12 +2875,15 @@ func _draw_game_over_panel(font: Font) -> void:
 	draw_circle(GAME_OVER_CLOSE_RECT.get_center(), 26.0, Color("ff4d67"))
 	draw_line(GAME_OVER_CLOSE_RECT.get_center() + Vector2(-9.0, -9.0), GAME_OVER_CLOSE_RECT.get_center() + Vector2(9.0, 9.0), Color.WHITE, 5.0, true)
 	draw_line(GAME_OVER_CLOSE_RECT.get_center() + Vector2(9.0, -9.0), GAME_OVER_CLOSE_RECT.get_center() + Vector2(-9.0, 9.0), Color.WHITE, 5.0, true)
-	draw_string(font, Vector2(panel.position.x, panel.position.y + 116.0), "도전 종료!", HORIZONTAL_ALIGNMENT_CENTER, panel.size.x, 40, Color("ff6b6b"))
-	draw_string(font, Vector2(panel.position.x, panel.position.y + 151.0), "이번 기록", HORIZONTAL_ALIGNMENT_CENTER, panel.size.x, 22, Color("fff0a6"))
-	_draw_image_number(str(score), Vector2(panel.position.x + 65.0, panel.position.y + 163.0), 48.0, panel.size.x - 130.0, HORIZONTAL_ALIGNMENT_CENTER)
+	# Content offsets are scaled up from the original 430-tall panel's layout
+	# so they spread through the taller frame instead of clumping at the top.
+	var content_scale := panel_height / 430.0
+	draw_string(font, Vector2(panel.position.x, panel.position.y + 116.0 * content_scale), "도전 종료!", HORIZONTAL_ALIGNMENT_CENTER, panel.size.x, 40, Color("ff6b6b"))
+	draw_string(font, Vector2(panel.position.x, panel.position.y + 151.0 * content_scale), "이번 기록", HORIZONTAL_ALIGNMENT_CENTER, panel.size.x, 22, Color("fff0a6"))
+	_draw_image_number(str(score), Vector2(panel.position.x + 65.0, panel.position.y + 163.0 * content_scale), 48.0, panel.size.x - 130.0, HORIZONTAL_ALIGNMENT_CENTER)
 
-	var best_rect := Rect2(panel.position + Vector2(60.0, 230.0), Vector2(250.0, 54.0))
-	var coin_rect := Rect2(panel.position + Vector2(320.0, 230.0), Vector2(150.0, 54.0))
+	var best_rect := Rect2(panel.position + Vector2(60.0, 230.0 * content_scale), Vector2(250.0, 54.0))
+	var coin_rect := Rect2(panel.position + Vector2(320.0, 230.0 * content_scale), Vector2(150.0, 54.0))
 	draw_rect(best_rect, Color(0.12, 0.06, 0.025, 0.72), true)
 	draw_rect(coin_rect, Color(0.12, 0.06, 0.025, 0.72), true)
 	draw_rect(best_rect, Color("d99b2b"), false, 3.0)
@@ -2841,8 +2898,8 @@ func _draw_game_over_panel(font: Font) -> void:
 		record_message = "최고 기록과 타이!"
 	else:
 		record_message = "최고 기록까지 단 %d회" % maxi(1, run_start_best - score)
-	draw_string(font, Vector2(panel.position.x, panel.position.y + 318.0), record_message, HORIZONTAL_ALIGNMENT_CENTER, panel.size.x, 23, Color("73f7b4"))
-	var retry_rect := Rect2(panel.position + Vector2(75.0, 338.0), Vector2(380.0, 58.0))
+	draw_string(font, Vector2(panel.position.x, panel.position.y + 318.0 * content_scale), record_message, HORIZONTAL_ALIGNMENT_CENTER, panel.size.x, 23, Color("73f7b4"))
+	var retry_rect := Rect2(panel.position + Vector2(75.0, 338.0 * content_scale), Vector2(380.0, 58.0))
 	draw_rect(retry_rect, Color("ffd23f"), true)
 	draw_rect(retry_rect, Color("fff0a6"), false, 5.0)
 	draw_string(font, Vector2(retry_rect.position.x, retry_rect.position.y + 39.0), "터치해서 다시 도전!", HORIZONTAL_ALIGNMENT_CENTER, retry_rect.size.x, 24, Color("633913"))
@@ -3137,8 +3194,8 @@ func _draw_settings_menu(font: Font) -> void:
 
 
 func _draw_ranking_period_tabs(font: Font) -> void:
-	var labels := {"all": "전체", "week": "주간", "month": "월간"}
-	var periods: Array[String] = ["all", "week", "month"]
+	var labels := {"all": "전체", "week": "주간", "perfect": "퍼펙트"}
+	var periods: Array[String] = ["all", "week", "perfect"]
 	for period in periods:
 		var tab: Rect2 = RANKING_PERIOD_TAB_RECTS[period]
 		var active: bool = ranking_period_filter == period
@@ -3288,6 +3345,9 @@ func _prepare_gold_digit_regions() -> void:
 	if image == null or image.is_empty():
 		return
 	var image_size := image.get_size()
+	var raw_regions: Array[Rect2i] = []
+	var shared_top := 2147483647
+	var shared_bottom := -2147483648
 	for digit in range(10):
 		var column := digit % 5
 		var row := digit / 5
@@ -3302,7 +3362,24 @@ func _prepare_gold_digit_regions() -> void:
 		# Ignore the generator's nearly invisible fringe pixels; otherwise those
 		# pixels become fake whitespace and split numbers such as 130 into 13 0.
 		var visible := _image_visible_region(image, Rect2i(cell_start, cell_end - cell_start), 96)
-		gold_digit_regions.append(Rect2(visible))
+		raw_regions.append(visible)
+		if visible.size.y > 0:
+			shared_top = mini(shared_top, visible.position.y)
+			shared_bottom = maxi(shared_bottom, visible.position.y + visible.size.y)
+	# Every digit gets its own tight horizontal crop (so kerning stays snug),
+	# but ALL digits share one vertical span (the union across the whole
+	# sheet). Cropping height per digit independently is fragile — any glyph
+	# whose per-cell alpha bbox comes out even slightly different (texture
+	# compression/mipmap bleed can do this at runtime despite the source PNG
+	# looking fine) ends up scaled into the same fixed draw height with a
+	# different vertical origin, so it visibly sits higher or lower than its
+	# neighbors. A shared Y range makes every digit's baseline identical by
+	# construction, regardless of per-glyph crop noise.
+	for visible in raw_regions:
+		if visible.size.y <= 0 or shared_bottom <= shared_top:
+			gold_digit_regions.append(Rect2(visible))
+			continue
+		gold_digit_regions.append(Rect2(visible.position.x, shared_top, visible.size.x, shared_bottom - shared_top))
 
 
 func _draw_image_number(text: String, position: Vector2, height: float, align_width := 0.0, alignment := HORIZONTAL_ALIGNMENT_LEFT) -> void:
