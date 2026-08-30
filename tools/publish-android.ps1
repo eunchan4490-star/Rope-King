@@ -73,7 +73,13 @@ $apk = Get-ChildItem -LiteralPath $downloadDirectory -Filter "*.apk" -Recurse | 
 if ($null -eq $apk) { throw "다운로드 결과에서 APK를 찾지 못했습니다." }
 
 $repo = (gh repo view --json nameWithOwner -q .nameWithOwner).Trim()
-& gh release view $releaseTag --repo $repo --json tagName 2>$null | Out-Null
+# Deliberately NOT redirecting this native command's stderr (no 2>$null /
+# 2>&1) — under $ErrorActionPreference = "Stop", redirecting a native
+# command's stderr wraps it in a terminating NativeCommandError even on a
+# routine "release not found" (exit 1), which crashed this script the first
+# time a release didn't exist yet. Left unredirected, that line just prints
+# as ordinary console output and $LASTEXITCODE alone decides the branch.
+gh release view $releaseTag --repo $repo --json tagName | Out-Null
 if ($LASTEXITCODE -eq 0) {
     & gh release upload $releaseTag "$($apk.FullName)#Rope-King.apk" --repo $repo --clobber
 } else {
