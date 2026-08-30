@@ -2885,14 +2885,15 @@ func _game_over_panel_rect() -> Rect2:
 
 func _game_over_revive_rect() -> Rect2:
 	var panel := _game_over_panel_rect()
-	var content_scale := panel.size.y / 430.0
-	return Rect2(panel.position + Vector2(75.0, 335.0 * content_scale), Vector2(380.0, 58.0))
+	var retry_rect := _game_over_retry_rect()
+	return Rect2(Vector2(panel.position.x + 75.0, retry_rect.position.y - 68.0), Vector2(380.0, 58.0))
 
 
 func _game_over_retry_rect() -> Rect2:
 	var panel := _game_over_panel_rect()
-	var content_scale := panel.size.y / 430.0
-	return Rect2(panel.position + Vector2(75.0, 401.0 * content_scale), Vector2(380.0, 58.0))
+	# Anchor the retry button to the panel's actual bottom edge. Scaling the old
+	# y-offset independently placed the 58px button below the ornate frame.
+	return Rect2(Vector2(panel.position.x + 75.0, panel.end.y - 74.0), Vector2(380.0, 58.0))
 
 
 func _can_revive() -> bool:
@@ -3323,13 +3324,20 @@ func _draw_character_card(canvas: CanvasItem, font: Font, character_id: String, 
 	if not owned:
 		border_color = Color("6b7280")
 	if character_card_frame_texture != null and character_card_frame_used_region.size.x > 0.0:
+		if selected:
+			# A hard-edged green rectangle clashed with the card's own gold/
+			# wood carving, so selection instead reads as a soft warm glow
+			# radiating from behind the card — layered rects growing outward
+			# with falling alpha, drawn *before* the frame texture so only
+			# the glow peeking past the card's own edges stays visible once
+			# the (larger, opaque) frame is drawn on top.
+			var pulse := 0.7 + 0.3 * sin(Time.get_ticks_msec() * 0.0035)
+			for i in range(5):
+				var grow_amount := 5.0 + float(i) * 6.0
+				var alpha := (0.32 - float(i) * 0.055) * pulse
+				canvas.draw_rect(card.grow(grow_amount), Color(1.0, 0.82, 0.32, alpha), true)
 		var frame_tint := Color(0.62, 0.6, 0.66) if not owned else Color.WHITE
 		canvas.draw_texture_rect_region(character_card_frame_texture, card, character_card_frame_used_region, frame_tint)
-		if selected:
-			# The card art has its own carved wooden border, so selection reads
-			# as a bright ring drawn just outside it instead of recoloring the
-			# frame itself (which would need re-painting the source art).
-			canvas.draw_rect(card.grow(4.0), border_color, false, 5.0)
 	else:
 		canvas.draw_rect(card, Color("263a57"), true)
 		canvas.draw_rect(card, border_color, false, 6.0)
