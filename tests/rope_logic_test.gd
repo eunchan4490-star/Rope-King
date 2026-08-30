@@ -20,6 +20,7 @@ func _init() -> void:
 	_test_wizard_turner_pattern(game)
 	_test_turner_team_randomization(game)
 	_test_physical_clearance_wins(game)
+	_test_perfect_crossing(game)
 	_test_visible_contact_loses(game)
 	_test_coop_mode(game)
 	_test_character_asset_system(game)
@@ -348,6 +349,23 @@ func _test_physical_clearance_wins(game: Node) -> void:
 	game._resolve_rope_crossing()
 	_expect(int(game.score) == 1, "a visibly cleared rope was incorrectly treated as a hit")
 	_expect(int(game.game_state) == 1, "physical clearance incorrectly ended the run")
+
+
+func _test_perfect_crossing(game: Node) -> void:
+	game.coop_mode = false
+	game.is_jumping = true
+	game.jump_height = -game.PERFECT_MIN_HEIGHT
+	game.jump_velocity = 0.0
+	_expect(game._is_perfect_crossing(), "jump apex at rope crossing was not PERFECT")
+	game.jump_velocity = game.PERFECT_MAX_VERTICAL_SPEED + 1.0
+	_expect(not game._is_perfect_crossing(), "fast falling jump was incorrectly PERFECT")
+	game.jump_velocity = 0.0
+	game.jump_height = -game.PERFECT_MIN_HEIGHT + 1.0
+	_expect(not game._is_perfect_crossing(), "low ordinary clear was incorrectly PERFECT")
+	game.jump_height = -game.PERFECT_MIN_HEIGHT
+	game.coop_mode = true
+	_expect(not game._is_perfect_crossing(), "solo PERFECT rule leaked into co-op")
+	game.coop_mode = false
 
 
 func _test_visible_contact_loses(game: Node) -> void:

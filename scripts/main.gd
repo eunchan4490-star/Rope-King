@@ -29,6 +29,9 @@ const ROPE_OVERHEAD_RADIUS := 170.0
 const ROPE_GROUND_RADIUS := 40.0
 # The front half reaches the player's feet without sinking deep into the ground.
 const ROPE_CROSSING_ANGLE := 0.9
+const PERFECT_MIN_HEIGHT := 130.0
+const PERFECT_MAX_VERTICAL_SPEED := 300.0
+const PERFECT_DISPLAY_SECONDS := 0.7
 const ROPE_PIXEL_GRID := 4.0
 const ROPE_PIXEL_OUTLINE_SIZE := Vector2(14.0, 14.0)
 const ROPE_PIXEL_CORE_SIZE := Vector2(8.0, 8.0)
@@ -113,7 +116,7 @@ const RUBY_ICON_PATH := "res://assets/ui/ruby_icon.png"
 const COIN_ICON_OFFSET := Vector2(8.0, 11.0)
 const RUBY_ICON_OFFSET := Vector2(8.0, 12.0)
 const RESOURCE_ICON_SIZE := Vector2(38.0, 38.0)
-const GAME_OVER_PANEL_PATH := "res://assets/ui/game_over_panel.png"
+const GAME_OVER_PANEL_PATH := "res://assets/ui/panel_frame.png"
 # Godot's built-in ThemeDB.fallback_font has no Hangul glyphs, so every piece
 # of Korean text drawn via draw_string() rendered as tofu boxes until this
 # was added — it just went unnoticed because most Korean text on screen is
@@ -149,7 +152,7 @@ const COOP_BUTTON_RECT := Rect2(255.0, 1055.0, 210.0, 195.0)
 const SETTINGS_BUTTON_RECT := Rect2(485.0, 1055.0, 210.0, 195.0)
 const TEST_START_50_RECT := Rect2(555.0, 670.0, 145.0, 82.0)
 const TEST_START_130_RECT := Rect2(555.0, 575.0, 145.0, 82.0)
-const GAME_OVER_CLOSE_RECT := Rect2(548.0, 394.0, 58.0, 58.0)
+const GAME_OVER_CLOSE_RECT := Rect2(593.0, 364.0, 58.0, 58.0)
 # Character panel uses its own taller frame (panel_frame_long.png) instead
 # of the shared square one settings/ranking use, so this rect is much taller
 # than SETTINGS_PANEL_RECT/RANKING_PANEL_RECT even though all three used to
@@ -349,6 +352,7 @@ var departing_turner_team := TurnerTeam.STUDENT
 # shaking red warning instead of the normal "3,2,1,GO" numbers.
 var turner_transition_is_boss := false
 var flash_time := 0.0
+var perfect_display_time := 0.0
 var message := "화면을 눌러 시작"
 var message_color := Color.WHITE
 var menu_notice := ""
@@ -716,6 +720,8 @@ func _process(delta: float) -> void:
 			_submit_score(score)
 	if flash_time > 0.0:
 		flash_time -= delta
+	if perfect_display_time > 0.0:
+		perfect_display_time = maxf(0.0, perfect_display_time - delta)
 	queue_redraw()
 
 
@@ -990,6 +996,8 @@ func _advance_coop_jumps(delta: float) -> void:
 func _resolve_rope_crossing() -> void:
 	# Success is decided when the visible rope actually reaches the player's feet.
 	if _player_clears_rope_at_crossing():
+		if _is_perfect_crossing():
+			perfect_display_time = PERFECT_DISPLAY_SECONDS
 		score += 1
 		if score > best_score:
 			best_score = score
@@ -1113,6 +1121,16 @@ func _player_clears_rope_at_crossing() -> bool:
 	return player_feet_y < rope_top_y
 
 
+func _is_perfect_crossing() -> bool:
+	# Judge the same frame as the visible rope/feet collision. Requiring both
+	# enough height and low vertical speed keeps early rising or late falling
+	# clears as ordinary successes instead of rewarding input time alone.
+	return not coop_mode \
+		and is_jumping \
+		and jump_height <= -PERFECT_MIN_HEIGHT \
+		and absf(jump_velocity) <= PERFECT_MAX_VERTICAL_SPEED
+
+
 func _coop_player_clears_rope(player_x: float, jumping: bool, height: float) -> bool:
 	if not jumping:
 		return false
@@ -1148,6 +1166,7 @@ func _start_run() -> void:
 	jump_animation_time = 0.0
 	is_jumping = false
 	jump_started_in_cue = false
+	perfect_display_time = 0.0
 	_reset_air_challenge()
 	accepting_input = true
 	game_state = GameState.PLAYING
@@ -1329,6 +1348,8 @@ func _draw() -> void:
 		_draw_player()
 	if turner_transition_phase == TurnerTransitionPhase.TURNER_ENTRY_COUNTDOWN:
 		_draw_countdown_overlay()
+	if perfect_display_time > 0.0:
+		_draw_perfect_overlay()
 	# Front ropes pass over the character visually, but only the real rope owns
 	# the crossing/game-over rule.
 	if not turner_transition_active:
@@ -1386,6 +1407,21 @@ func _draw_countdown_overlay() -> void:
 	var draw_size := used_region.size * scale_factor
 	var draw_rect := Rect2(center - draw_size * 0.5, draw_size)
 	draw_texture_rect_region(texture, draw_rect, used_region)
+
+
+func _draw_perfect_overlay() -> void:
+	# Reuse the countdown GO position so the timing result appears in the
+	# player's existing focal area without covering the character or rope.
+	var progress := 1.0 - perfect_display_time / PERFECT_DISPLAY_SECONDS
+	var alpha := clampf(perfect_display_time / 0.18, 0.0, 1.0)
+	var pop_scale := 1.0 + maxf(0.0, 1.0 - progress * 5.0) * 0.18
+	var width := 600.0 * pop_scale
+	var box := Rect2(Vector2(360.0 - width * 0.5, 425.0), Vector2(width, 100.0))
+	var font := _ui_font()
+	var shadow_color := Color(0.18, 0.05, 0.22, 0.75 * alpha)
+	var perfect_color := Color(1.0, 0.86, 0.22, alpha)
+	draw_string(font, box.position + Vector2(5.0, 7.0), "PERFECT!", HORIZONTAL_ALIGNMENT_CENTER, box.size.x, 68, shadow_color)
+	draw_string(font, box.position, "PERFECT!", HORIZONTAL_ALIGNMENT_CENTER, box.size.x, 68, perfect_color)
 
 
 func _draw_background() -> void:
@@ -2776,7 +2812,7 @@ func _draw_hud() -> void:
 
 
 func _draw_game_over_panel(font: Font) -> void:
-	var panel := Rect2(95.0, 380.0, 530.0, 430.0)
+	var panel := Rect2(50.0, 350.0, 620.0, 500.0)
 	if game_over_panel_texture != null and game_over_panel_used_region.size.x > 0.0:
 		draw_texture_rect_region(game_over_panel_texture, panel, game_over_panel_used_region)
 	else:
