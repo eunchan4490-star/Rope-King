@@ -26,6 +26,7 @@ func _init() -> void:
 	_test_save_round_trip()
 	_test_return_to_main(game)
 	_test_start_at_fifty(game)
+	_test_start_at_one_thirty(game)
 	game.free()
 	if failures.is_empty():
 		print("ROPE LOGIC TESTS PASSED")
@@ -482,6 +483,23 @@ func _test_start_at_fifty(game: Node) -> void:
 	_expect(int(game.turner_team) != int(game.TurnerTeam.STUDENT), "50-start test button did not activate a non-default team")
 	_expect(is_equal_approx(game.rope_speed, game._base_speed_for_score(50)), "50-start test button used the wrong rope speed")
 	_expect(not bool(game.turner_transition_active), "50-start test button incorrectly played an entrance transition")
+
+
+func _test_start_at_one_thirty(game: Node) -> void:
+	game._start_game_at_score(130)
+	_expect(int(game.game_state) == int(game.GameState.PLAYING), "130-start test button did not start gameplay")
+	_expect(int(game.score) == 130, "130-start test button used the wrong score")
+	_expect(bool(game.air_challenge_active), "130-start test button did not launch the air challenge")
+	_expect(bool(game.is_jumping), "air challenge did not start the super jump")
+	_expect(is_equal_approx(game.rope_angle, PI), "lower rope did not wait safely behind the player")
+	game.jump_height = float(game.AIR_ROPE_HEIGHTS[0])
+	game._attempt_air_rope_tap()
+	_expect(int(game.air_challenge_combo) == 1, "air-rope timing tap did not award a combo")
+	_expect(int(game.air_challenge_next_rope) == 1, "air challenge did not advance to the next rope")
+	game.jump_height = 1.0
+	game._advance_air_challenge(0.0)
+	_expect(not bool(game.air_challenge_active), "air challenge did not finish on landing")
+	_expect(float(game.air_challenge_landing_time) > 0.0, "safe landing pause was not started")
 	game._return_to_main()
 
 

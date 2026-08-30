@@ -147,6 +147,7 @@ const CHARACTER_BUTTON_RECT := Rect2(25.0, 1055.0, 210.0, 195.0)
 const COOP_BUTTON_RECT := Rect2(255.0, 1055.0, 210.0, 195.0)
 const SETTINGS_BUTTON_RECT := Rect2(485.0, 1055.0, 210.0, 195.0)
 const TEST_START_50_RECT := Rect2(555.0, 670.0, 145.0, 82.0)
+const TEST_START_130_RECT := Rect2(555.0, 575.0, 145.0, 82.0)
 const GAME_OVER_CLOSE_RECT := Rect2(548.0, 394.0, 58.0, 58.0)
 # Character panel uses its own taller frame (panel_frame_long.png) instead
 # of the shared square one settings/ranking use, so this rect is much taller
@@ -276,6 +277,13 @@ var rope_speed := 0.0
 const DOUBLE_ROPE_TEST_ENABLED := true
 const DOUBLE_ROPE_TEST_SCORE_THRESHOLD := 110
 const ROPE_B_PHASE_OFFSET := PI
+const AIR_CHALLENGE_START_SCORE := 130
+const AIR_CHALLENGE_INTERVAL := 5
+const AIR_CHALLENGE_GRAVITY := 1500.0
+const AIR_CHALLENGE_JUMP_VELOCITY := -1350.0
+const AIR_CHALLENGE_TAP_TOLERANCE := 72.0
+const AIR_CHALLENGE_LANDING_PAUSE := 1.0
+const AIR_ROPE_HEIGHTS := [-235.0, -410.0, -555.0]
 var rope_b_enabled := false
 var rope_b_angle := PI
 var jump_height := 0.0
@@ -283,6 +291,11 @@ var jump_velocity := 0.0
 var jump_animation_time := 0.0
 var is_jumping := false
 var jump_started_in_cue := false
+var air_challenge_active := false
+var air_challenge_next_rope := 0
+var air_challenge_combo := 0
+var air_challenge_landing_time := 0.0
+var air_challenge_last_score := -1
 var coop_mode := false
 var coop_left_jump_height := 0.0
 var coop_left_jump_velocity := 0.0
@@ -628,6 +641,8 @@ func _process(delta: float) -> void:
 	if game_state == GameState.PLAYING:
 		if coop_mode:
 			_advance_coop_jumps(delta)
+		elif air_challenge_active:
+			_advance_air_challenge(delta)
 		elif is_jumping:
 			jump_animation_time += delta
 			jump_velocity += 1900.0 * delta
@@ -638,7 +653,20 @@ func _process(delta: float) -> void:
 				jump_animation_time = 0.0
 				is_jumping = false
 				accepting_input = not turner_transition_active
-		if turner_transition_active:
+		if air_challenge_landing_time > 0.0:
+			air_challenge_landing_time = maxf(0.0, air_challenge_landing_time - delta)
+			accepting_input = false
+			if air_challenge_landing_time <= 0.0:
+				rope_angle = PI
+				rope_b_angle = fposmod(PI + ROPE_B_PHASE_OFFSET, TAU)
+				accepting_input = true
+				message = "다시 줄넘기!"
+				message_color = Color("73f7b4")
+		elif air_challenge_active:
+			# The lower ropes visibly wait behind the player for the entire
+			# high-jump sequence, so landing can never produce a surprise hit.
+			accepting_input = true
+		elif turner_transition_active:
 			accepting_input = false
 			_advance_turner_transition(delta)
 		else:
@@ -774,6 +802,10 @@ func _unhandled_input(event: InputEvent) -> void:
 				_start_game_at_score(50)
 				get_viewport().set_input_as_handled()
 				return
+			if TEST_START_130_RECT.has_point(design_position):
+				_start_game_at_score(130)
+				get_viewport().set_input_as_handled()
+				return
 			if CHARACTER_BUTTON_RECT.has_point(design_position):
 				character_menu_open = true
 				get_viewport().set_input_as_handled()
@@ -815,6 +847,9 @@ func attempt_jump() -> void:
 	if game_state != GameState.PLAYING:
 		_start_game()
 		return
+	if air_challenge_active:
+		_attempt_air_rope_tap()
+		return
 	if not accepting_input or is_jumping:
 		return
 	accepting_input = false
@@ -822,6 +857,63 @@ func attempt_jump() -> void:
 	jump_animation_time = 0.0
 	jump_started_in_cue = _is_jump_cue()
 	jump_velocity = -820.0
+
+
+func _start_air_challenge() -> void:
+	if coop_mode or air_challenge_active or game_state != GameState.PLAYING:
+		return
+	air_challenge_active = true
+	air_challenge_next_rope = 0
+	air_challenge_combo = 0
+	air_challenge_last_score = score
+	air_challenge_landing_time = 0.0
+	turner_transition_active = false
+	turner_transition_phase = TurnerTransitionPhase.NONE
+	rope_angle = PI
+	rope_b_angle = fposmod(PI + ROPE_B_PHASE_OFFSET, TAU)
+	is_jumping = true
+	jump_height = 0.0
+	jump_velocity = AIR_CHALLENGE_JUMP_VELOCITY
+	jump_animation_time = 0.0
+	jump_started_in_cue = false
+	accepting_input = true
+	message = "공중 줄 3개를 타이밍에 맞춰 탭!"
+	message_color = Color("ffd84a")
+	flash_time = 0.22
+
+
+func _advance_air_challenge(delta: float) -> void:
+	jump_animation_time += delta
+	jump_velocity += AIR_CHALLENGE_GRAVITY * delta
+	jump_height += jump_velocity * delta
+	if jump_height < 0.0:
+		return
+	jump_height = 0.0
+	jump_velocity = 0.0
+	jump_animation_time = 0.0
+	is_jumping = false
+	air_challenge_active = false
+	air_challenge_landing_time = AIR_CHALLENGE_LANDING_PAUSE
+	accepting_input = false
+	rope_angle = PI
+	rope_b_angle = fposmod(PI + ROPE_B_PHASE_OFFSET, TAU)
+	message = "착지!  공중 콤보 %d/3" % air_challenge_combo
+	message_color = Color("73f7b4") if air_challenge_combo >= AIR_ROPE_HEIGHTS.size() else Color("ffd84a")
+
+
+func _attempt_air_rope_tap() -> void:
+	if air_challenge_next_rope >= AIR_ROPE_HEIGHTS.size():
+		return
+	var target_height := float(AIR_ROPE_HEIGHTS[air_challenge_next_rope])
+	if absf(jump_height - target_height) > AIR_CHALLENGE_TAP_TOLERANCE:
+		message = "조금 더 가까이!"
+		message_color = Color("ffd84a")
+		return
+	air_challenge_combo += 1
+	air_challenge_next_rope += 1
+	message = "공중 콤보 %d!" % air_challenge_combo
+	message_color = Color("73f7b4")
+	flash_time = 0.16
 
 
 func attempt_coop_jump(left_player: bool) -> void:
@@ -886,6 +978,10 @@ func _resolve_rope_crossing() -> void:
 			message_color = Color("35d0ff")
 			flash_time = 0.22
 			jump_started_in_cue = false
+			feedback.play_success(score)
+			return
+		if _should_start_air_challenge():
+			_start_air_challenge()
 			feedback.play_success(score)
 			return
 		var previous_team := turner_team
@@ -1010,6 +1106,7 @@ func _start_run() -> void:
 	jump_animation_time = 0.0
 	is_jumping = false
 	jump_started_in_cue = false
+	_reset_air_challenge()
 	accepting_input = true
 	game_state = GameState.PLAYING
 	_reset_turner_run()
@@ -1031,6 +1128,8 @@ func _start_game_at_score(start_score: int) -> void:
 	rope_speed = _base_speed_for_score(score)
 	message = "테스트 모드: %d회부터 시작!" % score
 	message_color = Color("ffd84a")
+	if score >= AIR_CHALLENGE_START_SCORE:
+		_start_air_challenge()
 
 
 func _return_to_main() -> void:
@@ -1046,6 +1145,7 @@ func _return_to_main() -> void:
 	coop_mode = false
 	_reset_coop_players()
 	jump_started_in_cue = false
+	_reset_air_challenge()
 	accepting_input = true
 	_reset_turner_run()
 	hit_reveal_time = 0.0
@@ -1053,6 +1153,21 @@ func _return_to_main() -> void:
 	message = "화면을 눌러 시작"
 	message_color = Color.WHITE
 	queue_redraw()
+
+
+func _reset_air_challenge() -> void:
+	air_challenge_active = false
+	air_challenge_next_rope = 0
+	air_challenge_combo = 0
+	air_challenge_landing_time = 0.0
+	air_challenge_last_score = -1
+
+
+func _should_start_air_challenge() -> bool:
+	return not coop_mode \
+		and score >= AIR_CHALLENGE_START_SCORE \
+		and score % AIR_CHALLENGE_INTERVAL == 0 \
+		and air_challenge_last_score != score
 
 
 func _reset_coop_players() -> void:
@@ -1161,6 +1276,8 @@ func _draw() -> void:
 		visible_turner_team = turner_team
 	_draw_turner(left_turner_feet, false, visible_turner_team)
 	_draw_turner(right_turner_feet, true, visible_turner_team)
+	if air_challenge_active:
+		_draw_air_challenge_ropes()
 	if coop_mode:
 		_draw_coop_players()
 	else:
@@ -1706,6 +1823,31 @@ func _draw_player() -> void:
 		_draw_default_player(p)
 
 
+func _draw_air_challenge_ropes() -> void:
+	for index in range(AIR_ROPE_HEIGHTS.size()):
+		var rope_y := PLAYER_GROUND_Y + float(AIR_ROPE_HEIGHTS[index])
+		var cleared := index < air_challenge_next_rope
+		var active := index == air_challenge_next_rope
+		var core_color := Color("73f7b4") if cleared else (Color("ffd84a") if active else Color("8bc7e8"))
+		var outline_color := Color("3b2119")
+		var left_handle := Vector2(175.0, rope_y - 12.0)
+		var right_handle := Vector2(545.0, rope_y - 12.0)
+		draw_circle(left_handle, 13.0, outline_color)
+		draw_circle(right_handle, 13.0, outline_color)
+		draw_circle(left_handle, 8.0, core_color)
+		draw_circle(right_handle, 8.0, core_color)
+		var points := PackedVector2Array()
+		for step in range(33):
+			var t := float(step) / 32.0
+			var x := lerpf(left_handle.x, right_handle.x, t)
+			var y := lerpf(left_handle.y, right_handle.y, t) + 4.0 * t * (1.0 - t) * 30.0
+			points.append(Vector2(x, y))
+		draw_polyline(points, outline_color, 11.0, true)
+		draw_polyline(points, core_color, 6.0, true)
+		if active:
+			draw_string(ThemeDB.fallback_font, Vector2(250.0, rope_y - 30.0), "TAP!", HORIZONTAL_ALIGNMENT_CENTER, 220.0, 22, Color("3b2119"))
+
+
 func _draw_coop_players() -> void:
 	_draw_coop_player(COOP_LEFT_PLAYER_X, coop_left_jump_height, coop_left_is_jumping, coop_left_jump_velocity)
 	_draw_coop_player(COOP_RIGHT_PLAYER_X, coop_right_jump_height, coop_right_is_jumping, coop_right_jump_velocity)
@@ -1908,10 +2050,12 @@ func _close_ranking_menu() -> void:
 	ranking_scroll_dragging = false
 	if ranking_list_viewport != null:
 		ranking_list_viewport.visible = false
+	# Only settings actually uses these fields — closing ranking should not
+	# force them visible on the main menu if settings isn't open.
 	if nickname_edit != null:
-		nickname_edit.visible = true
+		nickname_edit.visible = settings_menu_open
 	if code_edit != null:
-		code_edit.visible = true
+		code_edit.visible = settings_menu_open
 
 
 func _handle_ranking_menu_input(position: Vector2) -> void:
@@ -2002,10 +2146,12 @@ func _open_attendance_menu() -> void:
 
 func _close_attendance_menu() -> void:
 	attendance_menu_open = false
+	# Only settings actually uses these fields — closing attendance should not
+	# force them visible on the main menu if settings isn't open.
 	if nickname_edit != null:
-		nickname_edit.visible = true
+		nickname_edit.visible = settings_menu_open
 	if code_edit != null:
-		code_edit.visible = true
+		code_edit.visible = settings_menu_open
 
 
 func _handle_attendance_menu_input(position: Vector2) -> void:
@@ -2089,7 +2235,12 @@ func _ranking_period_query_filter() -> String:
 	var cutoff_unix := _ranking_period_cutoff_unix()
 	if cutoff_unix < 0.0:
 		return ""
-	return "&created_at=gte.%sZ" % Time.get_datetime_string_from_unix_time(int(cutoff_unix), true)
+	# get_datetime_string_from_unix_time's 2nd arg is use_space (date/time
+	# separator), not UTC as its name might suggest — passing true here
+	# produced "2026-08-24 00:00:00Z" with a literal, unencoded space
+	# instead of ISO8601's "T" separator, and that space broke the Supabase
+	# query URL (400 Bad Request). false gives the correct "T" separator.
+	return "&created_at=gte.%sZ" % Time.get_datetime_string_from_unix_time(int(cutoff_unix), false)
 
 
 func _fetch_ranking() -> void:
@@ -2558,6 +2709,11 @@ func _draw_main_menu(font: Font) -> void:
 
 
 func _draw_test_start_button(font: Font) -> void:
+	draw_rect(TEST_START_130_RECT, Color("3b2119"), true)
+	draw_rect(TEST_START_130_RECT.grow(-5.0), Color("73f7b4"), true)
+	draw_rect(TEST_START_130_RECT.grow(-9.0), Color("24705b"), false, 3.0)
+	draw_string(font, Vector2(TEST_START_130_RECT.position.x, TEST_START_130_RECT.position.y + 31.0), "AIR TEST", HORIZONTAL_ALIGNMENT_CENTER, TEST_START_130_RECT.size.x, 17, Color("245446"))
+	draw_string(font, Vector2(TEST_START_130_RECT.position.x, TEST_START_130_RECT.position.y + 62.0), "130 START", HORIZONTAL_ALIGNMENT_CENTER, TEST_START_130_RECT.size.x, 23, Color("173f35"))
 	draw_rect(TEST_START_50_RECT, Color("3b2119"), true)
 	draw_rect(TEST_START_50_RECT.grow(-5.0), Color("ffd23f"), true)
 	draw_rect(TEST_START_50_RECT.grow(-9.0), Color("7a4317"), false, 3.0)
