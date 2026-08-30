@@ -277,6 +277,10 @@ var rope_speed := 0.0
 const DOUBLE_ROPE_TEST_ENABLED := true
 const DOUBLE_ROPE_TEST_SCORE_THRESHOLD := 110
 const ROPE_B_PHASE_OFFSET := PI
+# Built but held off for now — past AIR_CHALLENGE_START_SCORE the game just
+# holds a plain single-rope basic pattern (see _turner_slot_for_score and
+# _resolve_rope_crossing) until this is tuned and ready to turn on.
+const AIR_CHALLENGE_ENABLED := false
 const AIR_CHALLENGE_START_SCORE := 130
 const AIR_CHALLENGE_INTERVAL := 5
 const AIR_CHALLENGE_GRAVITY := 1500.0
@@ -284,6 +288,9 @@ const AIR_CHALLENGE_JUMP_VELOCITY := -1350.0
 const AIR_CHALLENGE_TAP_TOLERANCE := 72.0
 const AIR_CHALLENGE_LANDING_PAUSE := 1.0
 const AIR_ROPE_HEIGHTS := [-235.0, -410.0, -555.0]
+const SIDE_SWING_START_SCORE := 130
+const SIDE_SWING_END_SCORE := 150
+const SIDE_SWING_LATERAL_OFFSET := 245.0
 var rope_b_enabled := false
 var rope_b_angle := PI
 var jump_height := 0.0
@@ -296,6 +303,8 @@ var air_challenge_next_rope := 0
 var air_challenge_combo := 0
 var air_challenge_landing_time := 0.0
 var air_challenge_last_score := -1
+var side_swing_turns_remaining := 0
+var side_swing_side := -1
 var coop_mode := false
 var coop_left_jump_height := 0.0
 var coop_left_jump_velocity := 0.0
@@ -677,7 +686,10 @@ func _process(delta: float) -> void:
 			var previous_rope_angle := rope_angle
 			rope_angle = fposmod(rope_angle + _effective_rope_speed() * delta, TAU)
 			if _angle_crossed(previous_rope_angle, rope_angle, ROPE_CROSSING_ANGLE):
-				_resolve_rope_crossing()
+				if _side_swing_is_decoying():
+					_complete_side_swing_turn()
+				else:
+					_resolve_rope_crossing()
 			if rope_b_enabled and game_state == GameState.PLAYING:
 				var previous_rope_b_angle := rope_b_angle
 				rope_b_angle = fposmod(rope_b_angle + _effective_rope_speed() * delta, TAU)
@@ -970,7 +982,24 @@ func _resolve_rope_crossing() -> void:
 			new_best_this_run = true
 			_check_score_unlocks()
 		total_success += 1
-		if DOUBLE_ROPE_TEST_ENABLED and not rope_b_enabled and score >= DOUBLE_ROPE_TEST_SCORE_THRESHOLD:
+		if rope_b_enabled and score >= AIR_CHALLENGE_START_SCORE:
+			# Double rope is a boss-only gimmick for now, capped at the same
+			# score the (still disabled — see AIR_CHALLENGE_ENABLED) air
+			# challenge would otherwise start. Past this point there's no
+			# real content designed yet, so it drops back to a plain single
+			# rope with the basic student turner/pattern instead of leaving
+			# the boss gimmick running forever.
+			rope_b_enabled = false
+		if _side_swing_score_is_active():
+			_prepare_side_swing_sequence()
+			jump_started_in_cue = false
+			feedback.play_success(score)
+			return
+		if score >= SIDE_SWING_END_SCORE and side_swing_turns_remaining > 0:
+			_reset_side_swing()
+			message = "사이드 스윙 구간 클리어!"
+			message_color = Color("73f7b4")
+		if DOUBLE_ROPE_TEST_ENABLED and not rope_b_enabled and score >= DOUBLE_ROPE_TEST_SCORE_THRESHOLD and score < AIR_CHALLENGE_START_SCORE:
 			rope_speed = _base_speed_for_score(score)
 			rope_b_enabled = true
 			rope_b_angle = fposmod(rope_angle + ROPE_B_PHASE_OFFSET, TAU)
@@ -980,7 +1009,7 @@ func _resolve_rope_crossing() -> void:
 			jump_started_in_cue = false
 			feedback.play_success(score)
 			return
-		if _should_start_air_challenge():
+		if AIR_CHALLENGE_ENABLED and _should_start_air_challenge():
 			_start_air_challenge()
 			feedback.play_success(score)
 			return
@@ -1107,6 +1136,7 @@ func _start_run() -> void:
 	is_jumping = false
 	jump_started_in_cue = false
 	_reset_air_challenge()
+	_reset_side_swing()
 	accepting_input = true
 	game_state = GameState.PLAYING
 	_reset_turner_run()
@@ -1128,8 +1158,10 @@ func _start_game_at_score(start_score: int) -> void:
 	rope_speed = _base_speed_for_score(score)
 	message = "테스트 모드: %d회부터 시작!" % score
 	message_color = Color("ffd84a")
-	if score >= AIR_CHALLENGE_START_SCORE:
+	if AIR_CHALLENGE_ENABLED and score >= AIR_CHALLENGE_START_SCORE:
 		_start_air_challenge()
+	elif _side_swing_score_is_active():
+		_prepare_side_swing_sequence()
 
 
 func _return_to_main() -> void:
@@ -1146,6 +1178,7 @@ func _return_to_main() -> void:
 	_reset_coop_players()
 	jump_started_in_cue = false
 	_reset_air_challenge()
+	_reset_side_swing()
 	accepting_input = true
 	_reset_turner_run()
 	hit_reveal_time = 0.0
@@ -1168,6 +1201,64 @@ func _should_start_air_challenge() -> bool:
 		and score >= AIR_CHALLENGE_START_SCORE \
 		and score % AIR_CHALLENGE_INTERVAL == 0 \
 		and air_challenge_last_score != score
+
+
+func _side_swing_score_is_active() -> bool:
+	return not coop_mode and score >= SIDE_SWING_START_SCORE and score < SIDE_SWING_END_SCORE
+
+
+func _side_swing_is_decoying() -> bool:
+	return _side_swing_score_is_active() and side_swing_turns_remaining > 0
+
+
+func _prepare_side_swing_sequence() -> void:
+	# The default student pair owns this score band regardless of whichever
+	# randomized team was active during the preceding boss gauntlet.
+	turner_team = TurnerTeam.STUDENT
+	turner_change_slot = 0
+	challenge_pattern = 0
+	rope_b_enabled = false
+	rope_angle = PI
+	var progress := score - SIDE_SWING_START_SCORE
+	if progress < 6:
+		side_swing_turns_remaining = 1
+	elif progress < 12:
+		side_swing_turns_remaining = 2
+	else:
+		side_swing_turns_remaining = 1 + progress % 3
+	side_swing_side = -1 if score % 2 == 0 else 1
+	message = "%s 사이드 스윙 %d회!  아직 점프 금지" % ["왼쪽" if side_swing_side < 0 else "오른쪽", side_swing_turns_remaining]
+	message_color = Color("35d0ff")
+
+
+func _complete_side_swing_turn() -> void:
+	side_swing_turns_remaining = maxi(0, side_swing_turns_remaining - 1)
+	jump_started_in_cue = false
+	if side_swing_turns_remaining > 0:
+		side_swing_side *= -1
+		rope_angle = PI
+		message = "%s으로 한 번 더!" % ("왼쪽" if side_swing_side < 0 else "오른쪽")
+		message_color = Color("35d0ff")
+		return
+	# Re-entry always starts safely behind the player and owns a complete,
+	# readable approach before the real red crossing can score or hit.
+	rope_angle = PI
+	message = "중앙 진입!  빨간 줄에 점프!"
+	message_color = Color("ff5c65")
+	flash_time = 0.18
+
+
+func _reset_side_swing() -> void:
+	side_swing_turns_remaining = 0
+	side_swing_side = -1
+
+
+func _side_swing_lateral_offset() -> float:
+	if not _side_swing_is_decoying():
+		return 0.0
+	# The centre of the long rope sweeps into the otherwise empty upper-left
+	# or upper-right play space while both ends stay locked to the hands.
+	return float(side_swing_side) * SIDE_SWING_LATERAL_OFFSET
 
 
 func _reset_coop_players() -> void:
@@ -1389,7 +1480,7 @@ func _draw_rope_layer(draw_behind: bool) -> void:
 			if _rope_angle_is_behind(illusion_angle) == draw_behind:
 				_draw_rope_curve(illusion_angle, illusion_core, illusion_highlight, illusion_outline, Color.TRANSPARENT, cos(illusion_angle) * WIZARD_ILLUSION_LATERAL_SWAY)
 	if _rope_angle_is_behind(rope_angle) == draw_behind:
-		_draw_rope_curve(rope_angle, rope_color, highlight_color, outline_color, shadow_color)
+		_draw_rope_curve(rope_angle, rope_color, highlight_color, outline_color, shadow_color, _side_swing_lateral_offset())
 		_draw_pixel_rope_grip(_active_left_hand(), wizard_ghosted)
 		_draw_pixel_rope_grip(_active_right_hand(), wizard_ghosted)
 	if rope_b_enabled and _rope_angle_is_behind(rope_b_angle) == draw_behind:
@@ -1491,7 +1582,7 @@ func _rope_is_behind() -> bool:
 
 
 func _is_jump_cue() -> bool:
-	if game_state != GameState.PLAYING or rope_speed <= 0.0 or _rope_is_behind():
+	if game_state != GameState.PLAYING or rope_speed <= 0.0 or _rope_is_behind() or _side_swing_is_decoying():
 		return false
 	var seconds_until_crossing := fposmod(ROPE_CROSSING_ANGLE - rope_angle, TAU) / rope_speed
 	return seconds_until_crossing <= balance.jump_cue_seconds
@@ -1581,6 +1672,12 @@ func _turner_slot_for_score(current_score: int) -> int:
 	# Slot number only matters for detecting "did it change" — the exact
 	# value doesn't matter as long as it's monotonic and distinct per stretch.
 	if current_score < TURNER_CHANGE_INTERVAL:
+		return 0
+	if current_score >= AIR_CHALLENGE_START_SCORE:
+		# Nothing designed for past the boss encounter yet — slot 0 is the
+		# same "reset to plain student, no fanfare" branch the pre-score-10
+		# grace period uses (see _update_turner_team_and_pattern), so this
+		# just holds a basic single-rope pattern until real content exists.
 		return 0
 	if current_score < BOSS_TURNER_SCORE_THRESHOLD:
 		return int((current_score - TURNER_CHANGE_INTERVAL) / TURNER_RANDOM_INTERVAL) + 1
@@ -1738,6 +1835,8 @@ func _draw_turner(feet: Vector2, faces_left: bool, display_team := -1) -> void:
 	var base_region := turner_used_region
 	var mirror_texture := mirrored_turner_texture
 	var mirror_region := mirrored_turner_used_region
+	if _side_swing_score_is_active():
+		active_team = TurnerTeam.STUDENT
 	if active_team == TurnerTeam.ATHLETE:
 		base_texture = athlete_turner_texture
 		base_region = athlete_turner_used_region
@@ -1759,9 +1858,13 @@ func _draw_turner(feet: Vector2, faces_left: bool, display_team := -1) -> void:
 		base_region = wizard_turner_used_region
 		mirror_texture = mirrored_wizard_turner_texture
 		mirror_region = mirrored_wizard_turner_used_region
-	# From score 90 on, the boss look takes over the rope turners regardless
-	# of whichever team pattern is currently active underneath.
-	if score >= BOSS_TURNER_SCORE_THRESHOLD and boss_turner_texture != null:
+	# From score 90 up to AIR_CHALLENGE_START_SCORE, the boss look takes over
+	# the rope turners regardless of whichever team pattern is currently
+	# active underneath. Past that there's no designed content yet, so it
+	# reverts to whatever the plain (student) turner_texture resolved to
+	# above instead of staying boss-skinned forever.
+	var boss_active := score >= BOSS_TURNER_SCORE_THRESHOLD and score < AIR_CHALLENGE_START_SCORE
+	if boss_active and boss_turner_texture != null:
 		base_texture = boss_turner_texture
 		base_region = boss_turner_used_region
 		mirror_texture = mirrored_boss_turner_texture
@@ -1772,7 +1875,7 @@ func _draw_turner(feet: Vector2, faces_left: bool, display_team := -1) -> void:
 		# Match the helper's height to the playable character and preserve the
 		# original aspect ratio so the sprite never looks stretched sideways.
 		var sprite_height := 165.0
-		var is_boss := score >= BOSS_TURNER_SCORE_THRESHOLD and boss_turner_texture != null
+		var is_boss := boss_active and boss_turner_texture != null
 		if is_boss:
 			sprite_height *= 1.5
 		var sprite_width := sprite_height * active_region.size.x / active_region.size.y
@@ -2712,7 +2815,7 @@ func _draw_test_start_button(font: Font) -> void:
 	draw_rect(TEST_START_130_RECT, Color("3b2119"), true)
 	draw_rect(TEST_START_130_RECT.grow(-5.0), Color("73f7b4"), true)
 	draw_rect(TEST_START_130_RECT.grow(-9.0), Color("24705b"), false, 3.0)
-	draw_string(font, Vector2(TEST_START_130_RECT.position.x, TEST_START_130_RECT.position.y + 31.0), "AIR TEST", HORIZONTAL_ALIGNMENT_CENTER, TEST_START_130_RECT.size.x, 17, Color("245446"))
+	draw_string(font, Vector2(TEST_START_130_RECT.position.x, TEST_START_130_RECT.position.y + 31.0), "SWING TEST", HORIZONTAL_ALIGNMENT_CENTER, TEST_START_130_RECT.size.x, 16, Color("245446"))
 	draw_string(font, Vector2(TEST_START_130_RECT.position.x, TEST_START_130_RECT.position.y + 62.0), "130 START", HORIZONTAL_ALIGNMENT_CENTER, TEST_START_130_RECT.size.x, 23, Color("173f35"))
 	draw_rect(TEST_START_50_RECT, Color("3b2119"), true)
 	draw_rect(TEST_START_50_RECT.grow(-5.0), Color("ffd23f"), true)

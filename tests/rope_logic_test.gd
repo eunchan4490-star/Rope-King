@@ -489,17 +489,22 @@ func _test_start_at_one_thirty(game: Node) -> void:
 	game._start_game_at_score(130)
 	_expect(int(game.game_state) == int(game.GameState.PLAYING), "130-start test button did not start gameplay")
 	_expect(int(game.score) == 130, "130-start test button used the wrong score")
-	_expect(bool(game.air_challenge_active), "130-start test button did not launch the air challenge")
-	_expect(bool(game.is_jumping), "air challenge did not start the super jump")
-	_expect(is_equal_approx(game.rope_angle, PI), "lower rope did not wait safely behind the player")
-	game.jump_height = float(game.AIR_ROPE_HEIGHTS[0])
-	game._attempt_air_rope_tap()
-	_expect(int(game.air_challenge_combo) == 1, "air-rope timing tap did not award a combo")
-	_expect(int(game.air_challenge_next_rope) == 1, "air challenge did not advance to the next rope")
-	game.jump_height = 1.0
-	game._advance_air_challenge(0.0)
-	_expect(not bool(game.air_challenge_active), "air challenge did not finish on landing")
-	_expect(float(game.air_challenge_landing_time) > 0.0, "safe landing pause was not started")
+	_expect(not bool(game.air_challenge_active), "disabled air challenge launched at score 130")
+	_expect(not bool(game.rope_b_enabled), "double rope stayed on during side-swing mode")
+	_expect(int(game.turner_team) == int(game.TurnerTeam.STUDENT), "side-swing mode did not use the default student turner")
+	_expect(int(game.side_swing_turns_remaining) == 1, "score 130 did not begin with one side swing")
+	_expect(not game._is_jump_cue(), "side swing incorrectly showed a real jump cue")
+	_expect(absf(game._side_swing_lateral_offset()) > 0.0, "side swing did not move into the upper side space")
+	game.rope_angle = game.ROPE_CROSSING_ANGLE - 0.05
+	game._process(0.01)
+	_expect(int(game.score) == 130, "side swing incorrectly awarded a normal rope score")
+	_expect(int(game.side_swing_turns_remaining) == 0, "completed side swing did not advance to centre entry")
+	_expect(is_equal_approx(game.rope_angle, PI), "centre entry did not restart safely behind the player")
+	game.score = 149
+	game._prepare_side_swing_sequence()
+	_expect(int(game.side_swing_turns_remaining) >= 1 and int(game.side_swing_turns_remaining) <= 3, "late side-swing sequence fell outside the 1-3 turn range")
+	game.score = 150
+	_expect(not game._side_swing_score_is_active(), "side-swing mode did not end at score 150")
 	game._return_to_main()
 
 
