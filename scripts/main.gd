@@ -3353,9 +3353,6 @@ func _prepare_gold_digit_regions() -> void:
 	if image == null or image.is_empty():
 		return
 	var image_size := image.get_size()
-	var raw_regions: Array[Rect2i] = []
-	var shared_top := 2147483647
-	var shared_bottom := -2147483648
 	for digit in range(10):
 		var column := digit % 5
 		var row := digit / 5
@@ -3370,24 +3367,7 @@ func _prepare_gold_digit_regions() -> void:
 		# Ignore the generator's nearly invisible fringe pixels; otherwise those
 		# pixels become fake whitespace and split numbers such as 130 into 13 0.
 		var visible := _image_visible_region(image, Rect2i(cell_start, cell_end - cell_start), 96)
-		raw_regions.append(visible)
-		if visible.size.y > 0:
-			shared_top = mini(shared_top, visible.position.y)
-			shared_bottom = maxi(shared_bottom, visible.position.y + visible.size.y)
-	# Every digit gets its own tight horizontal crop (so kerning stays snug),
-	# but ALL digits share one vertical span (the union across the whole
-	# sheet). Cropping height per digit independently is fragile — any glyph
-	# whose per-cell alpha bbox comes out even slightly different (texture
-	# compression/mipmap bleed can do this at runtime despite the source PNG
-	# looking fine) ends up scaled into the same fixed draw height with a
-	# different vertical origin, so it visibly sits higher or lower than its
-	# neighbors. A shared Y range makes every digit's baseline identical by
-	# construction, regardless of per-glyph crop noise.
-	for visible in raw_regions:
-		if visible.size.y <= 0 or shared_bottom <= shared_top:
-			gold_digit_regions.append(Rect2(visible))
-			continue
-		gold_digit_regions.append(Rect2(visible.position.x, shared_top, visible.size.x, shared_bottom - shared_top))
+		gold_digit_regions.append(Rect2(visible))
 
 
 func _draw_image_number(text: String, position: Vector2, height: float, align_width := 0.0, alignment := HORIZONTAL_ALIGNMENT_LEFT) -> void:
