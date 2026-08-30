@@ -60,8 +60,15 @@ func _test_athlete_base_speed_stays_fixed(game: Node) -> void:
 	_expect(is_equal_approx(game._base_speed_for_score(70), athlete_base), "wizard base speed increased at score 70")
 	game.turner_team = game.TurnerTeam.STUDENT
 	_expect(is_equal_approx(game._base_speed_for_score(9), BALANCE.speed_for_score(9)), "student speed curve changed before athlete entry")
+	# Sleepy now holds the same flat score-10 baseline as every other
+	# patterned team — only the plain student turner keeps a rising
+	# baseline (see _base_speed_for_score) — so sleepy's own slow/fast
+	# swings are the only thing that changes with it, not a compounding
+	# rising number on top.
 	game.turner_team = game.TurnerTeam.SLEEPY
-	_expect(is_equal_approx(game._base_speed_for_score(30), BALANCE.speed_for_score(30)), "sleepy student speed curve did not resume at score 30")
+	_expect(is_equal_approx(game._base_speed_for_score(30), athlete_base), "sleepy base speed did not hold the flat score-10 baseline")
+	game.turner_team = game.TurnerTeam.DUO
+	_expect(is_equal_approx(game._base_speed_for_score(130), athlete_base), "duo base speed did not hold the flat score-10 baseline")
 
 
 func _test_high_speed_crossings(game: Node) -> void:
@@ -490,22 +497,29 @@ func _test_start_at_one_thirty(game: Node) -> void:
 	_expect(int(game.game_state) == int(game.GameState.PLAYING), "130-start test button did not start gameplay")
 	_expect(int(game.score) == 130, "130-start test button used the wrong score")
 	_expect(not bool(game.air_challenge_active), "disabled air challenge launched at score 130")
-	_expect(not bool(game.rope_b_enabled), "double rope stayed on during side-swing mode")
-	_expect(int(game.turner_team) == int(game.TurnerTeam.STUDENT), "side-swing mode did not use the default student turner")
-	_expect(is_equal_approx(game.rope_speed, BALANCE.speed_for_score(8)), "score 130 side swing did not use the score-8 rope speed")
-	_expect(int(game.side_swing_turns_remaining) == 1, "score 130 did not begin with one side swing")
-	_expect(not game._is_jump_cue(), "side swing incorrectly showed a real jump cue")
-	_expect(absf(game._side_swing_lateral_offset()) > 0.0, "side swing did not move into the upper side space")
-	game.rope_angle = game.ROPE_CROSSING_ANGLE - 0.05
-	game._process(0.02)
-	_expect(int(game.score) == 130, "side swing incorrectly awarded a normal rope score")
-	_expect(int(game.side_swing_turns_remaining) == 0, "completed side swing did not advance to centre entry")
-	_expect(is_equal_approx(game.rope_angle, PI), "centre entry did not restart safely behind the player")
-	game.score = 149
-	game._prepare_side_swing_sequence()
-	_expect(int(game.side_swing_turns_remaining) >= 1 and int(game.side_swing_turns_remaining) <= 3, "late side-swing sequence fell outside the 1-3 turn range")
-	game.score = 150
-	_expect(not game._side_swing_score_is_active(), "side-swing mode did not end after the 150th rope")
+	_expect(not bool(game.rope_b_enabled), "double rope stayed on during the duo stage")
+	_expect(int(game.turner_team) == int(game.TurnerTeam.DUO), "score 130 did not start the athlete/sleepy duo stage")
+	_expect(int(game.challenge_pattern) == 0, "duo stage started with an unfair immediate burst")
+	_expect(is_equal_approx(game.rope_speed, BALANCE.speed_for_score(10)), "duo stage did not hold the flat score-10 baseline")
+	# Force the sudden-burst trigger deterministically instead of relying on
+	# its random gap, the same way _test_athlete_turner_pattern forces its
+	# own burst.
+	game.duo_normal_turns_remaining = 1
+	game._update_turner_team_and_pattern()
+	_expect(int(game.challenge_pattern) == 2, "duo stage's sleepy half never woke up for a burst")
+	game.game_state = 1
+	game.rope_speed = 3.0
+	game.rope_angle = PI
+	_expect(is_equal_approx(game._effective_rope_speed(), 3.0 * game.SLEEPY_FAST_MULTIPLIER), "duo burst did not reuse sleepy's own fast multiplier")
+	game.rope_angle = fposmod(TARGET_ANGLE - game.rope_speed * BALANCE.jump_cue_seconds * 0.5, TAU)
+	_expect(game._is_jump_cue(), "duo burst red cue test did not enter the cue window")
+	_expect(is_equal_approx(game._effective_rope_speed(), game.rope_speed), "duo burst changed speed during the red cue")
+	game._update_turner_team_and_pattern()
+	_expect(int(game.challenge_pattern) == 0, "duo burst lasted more than a single turn")
+	_expect(int(game.duo_normal_turns_remaining) >= game.DUO_MIN_NORMAL_TURNS and int(game.duo_normal_turns_remaining) <= game.DUO_MAX_NORMAL_TURNS, "duo stage's next gap fell outside its configured range")
+	game.score = game.DUO_STAGE_END_SCORE
+	game._update_turner_team_and_pattern()
+	_expect(int(game.turner_team) == int(game.TurnerTeam.STUDENT), "duo stage did not fall back to the basic student turner at its end score")
 	game._return_to_main()
 
 

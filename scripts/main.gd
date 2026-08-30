@@ -1,7 +1,7 @@
 extends Node2D
 
 enum GameState { TITLE, PLAYING, HIT, GAME_OVER }
-enum TurnerTeam { STUDENT, ATHLETE, SLEEPY, PRANKSTER, WIZARD }
+enum TurnerTeam { STUDENT, ATHLETE, SLEEPY, PRANKSTER, WIZARD, DUO }
 enum TurnerTransitionPhase { NONE, TURNER_EXIT, TURNER_ENTRY_COUNTDOWN }
 
 const SUPABASE_URL := "https://zjluakxiiynlzbfxztrl.supabase.co"
@@ -137,6 +137,7 @@ const COUNTDOWN_PATHS := [
 	"res://assets/ui/countdown_1.png",
 	"res://assets/ui/countdown_go.png",
 ]
+const BOSS_WARNING_PATH := "res://assets/ui/boss_warning.png"
 const DEFAULT_CHARACTER_ID := "default"
 const JUMP_FRAME_COUNT := 2
 const JUMP_FRAME_AIR := 0
@@ -288,10 +289,19 @@ const AIR_CHALLENGE_JUMP_VELOCITY := -1350.0
 const AIR_CHALLENGE_TAP_TOLERANCE := 72.0
 const AIR_CHALLENGE_LANDING_PAUSE := 1.0
 const AIR_ROPE_HEIGHTS := [-235.0, -410.0, -555.0]
-const SIDE_SWING_START_SCORE := 130
-const SIDE_SWING_END_SCORE := 150
-const SIDE_SWING_SPEED_REFERENCE_SCORE := 8
-const SIDE_SWING_LATERAL_OFFSET := 245.0
+# Duo stage: from AIR_CHALLENGE_START_SCORE (130) to DUO_STAGE_END_SCORE
+# (150), the left turner is always athlete and the right is always sleepy
+# (see _draw_turner) — normally running athlete's burst pattern, but the
+# sleepy half randomly "wakes up" for one sudden-burst turn before going
+# back to normal (see _update_turner_team_and_pattern). DUO_STAGE_SLOT is
+# just a sentinel distinct from every gauntlet slot number so
+# _update_turner_team_and_pattern detects the one-time entry into this
+# stage instead of re-rolling a random team.
+const DUO_STAGE_END_SCORE := 150
+const DUO_STAGE_SLOT := 100000
+const DUO_MIN_NORMAL_TURNS := 2
+const DUO_MAX_NORMAL_TURNS := 5
+var duo_normal_turns_remaining := 0
 var rope_b_enabled := false
 var rope_b_angle := PI
 var jump_height := 0.0
@@ -304,8 +314,6 @@ var air_challenge_next_rope := 0
 var air_challenge_combo := 0
 var air_challenge_landing_time := 0.0
 var air_challenge_last_score := -1
-var side_swing_turns_remaining := 0
-var side_swing_side := -1
 var coop_mode := false
 var coop_left_jump_height := 0.0
 var coop_left_jump_velocity := 0.0
@@ -452,6 +460,8 @@ var toggle_off_used_region := Rect2()
 var gold_digit_regions: Array[Rect2] = []
 var countdown_textures: Array[Texture2D] = []
 var countdown_used_regions: Array[Rect2] = []
+var boss_warning_texture: Texture2D
+var boss_warning_used_region := Rect2()
 var design_draw_offset := Vector2.ZERO
 var design_draw_scale := 1.0
 
@@ -648,6 +658,9 @@ func _prepare_countdown_visuals() -> void:
 		var texture := load(path) as Texture2D if ResourceLoader.exists(path) else null
 		countdown_textures.append(texture)
 		countdown_used_regions.append(_texture_used_region(texture))
+	if boss_warning_texture == null and ResourceLoader.exists(BOSS_WARNING_PATH):
+		boss_warning_texture = load(BOSS_WARNING_PATH) as Texture2D
+	boss_warning_used_region = _texture_used_region(boss_warning_texture)
 
 
 func _process(delta: float) -> void:
@@ -690,10 +703,7 @@ func _process(delta: float) -> void:
 			var previous_rope_angle := rope_angle
 			rope_angle = fposmod(rope_angle + _effective_rope_speed() * delta, TAU)
 			if _angle_crossed(previous_rope_angle, rope_angle, ROPE_CROSSING_ANGLE):
-				if _side_swing_is_decoying():
-					_complete_side_swing_turn()
-				else:
-					_resolve_rope_crossing()
+				_resolve_rope_crossing()
 			if rope_b_enabled and game_state == GameState.PLAYING:
 				var previous_rope_b_angle := rope_b_angle
 				rope_b_angle = fposmod(rope_b_angle + _effective_rope_speed() * delta, TAU)
@@ -994,15 +1004,6 @@ func _resolve_rope_crossing() -> void:
 			# rope with the basic student turner/pattern instead of leaving
 			# the boss gimmick running forever.
 			rope_b_enabled = false
-		if _side_swing_score_is_active():
-			_prepare_side_swing_sequence()
-			jump_started_in_cue = false
-			feedback.play_success(score)
-			return
-		if score >= SIDE_SWING_END_SCORE and side_swing_turns_remaining > 0:
-			_reset_side_swing()
-			message = "사이드 스윙 구간 클리어!"
-			message_color = Color("73f7b4")
 		if DOUBLE_ROPE_TEST_ENABLED and not rope_b_enabled and score >= DOUBLE_ROPE_TEST_SCORE_THRESHOLD and score < AIR_CHALLENGE_START_SCORE:
 			rope_speed = _base_speed_for_score(score)
 			rope_b_enabled = true
@@ -1029,18 +1030,22 @@ func _resolve_rope_crossing() -> void:
 		rope_speed = _base_speed_for_score(score)
 		message_color = Color("73f7b4")
 		if team_changed:
-			# The boss gauntlet gets the same exit + entry-countdown
-			# transition every other team-change uses (see
-			# _start_turner_transition) — just with the entry countdown
-			# replaced by a shaking red warning instead of "3,2,1,GO"
-			# (see _draw_boss_warning_overlay), since a full number
-			# countdown didn't fit the boss's urgency.
-			var is_boss_change := score >= BOSS_TURNER_SCORE_THRESHOLD
-			_start_turner_transition(previous_team, is_boss_change)
-			if is_boss_change:
-				message = "패턴 변경!"
+			# Boss gauntlet (90..AIR_CHALLENGE_START_SCORE): the pattern still
+			# rerolls every BOSS_GAUNTLET_TURNER_INTERVAL points underneath,
+			# but only the very first entry (score == BOSS_TURNER_SCORE_
+			# THRESHOLD) gets an announcement + transition pause. Every later
+			# reroll in that stretch swaps silently so the run isn't
+			# interrupted every few points.
+			var is_boss_change := score >= BOSS_TURNER_SCORE_THRESHOLD and score < AIR_CHALLENGE_START_SCORE
+			var is_first_boss_entry := score == BOSS_TURNER_SCORE_THRESHOLD
+			if is_boss_change and not is_first_boss_entry:
+				message = "좋아요!  +1"
+			elif is_boss_change:
+				_start_turner_transition(previous_team, true)
+				message = "보스 등장!  패턴이 계속 무작위로 바뀝니다!"
 				message_color = Color("ff6b6b")
 			else:
+				_start_turner_transition(previous_team, false)
 				match turner_team:
 					TurnerTeam.ATHLETE:
 						message = "운동부 등장!  기본 2회 뒤 급가속!"
@@ -1050,10 +1055,14 @@ func _resolve_rope_crossing() -> void:
 						message = "장난꾸러기 등장!  멈추는 척을 조심!"
 					TurnerTeam.WIZARD:
 						message = "마법사 등장!  사라진 줄은 빨간색을 봐!"
+					TurnerTeam.DUO:
+						message = "운동부&잠꾸러기 등장!  잠꾸러기가 깨면 급발진!"
 		elif turner_team == TurnerTeam.SLEEPY and sleepy_wake_warning_time > 0.0:
 			message = "번쩍!  1초 뒤 초고속!"
 		elif turner_team == TurnerTeam.ATHLETE and challenge_pattern == 2:
 			message = "운동부 급가속!"
+		elif turner_team == TurnerTeam.DUO and challenge_pattern == 2:
+			message = "잠꾸러기 급발진!"
 		else:
 			message = "좋아요!  +1"
 		flash_time = 0.22
@@ -1140,7 +1149,6 @@ func _start_run() -> void:
 	is_jumping = false
 	jump_started_in_cue = false
 	_reset_air_challenge()
-	_reset_side_swing()
 	accepting_input = true
 	game_state = GameState.PLAYING
 	_reset_turner_run()
@@ -1154,7 +1162,10 @@ func _start_game_at_score(start_score: int) -> void:
 	_start_game()
 	score = maxi(0, start_score)
 	turner_change_slot = _turner_slot_for_score(score)
-	if turner_change_slot > 0:
+	if turner_change_slot == DUO_STAGE_SLOT:
+		turner_team = TurnerTeam.DUO
+		_init_turner_team_state(turner_team)
+	elif turner_change_slot > 0:
 		turner_team = _random_turner_team(TurnerTeam.STUDENT)
 		_init_turner_team_state(turner_team)
 	else:
@@ -1164,8 +1175,6 @@ func _start_game_at_score(start_score: int) -> void:
 	message_color = Color("ffd84a")
 	if AIR_CHALLENGE_ENABLED and score >= AIR_CHALLENGE_START_SCORE:
 		_start_air_challenge()
-	elif _side_swing_score_is_active():
-		_prepare_side_swing_sequence()
 
 
 func _return_to_main() -> void:
@@ -1182,7 +1191,6 @@ func _return_to_main() -> void:
 	_reset_coop_players()
 	jump_started_in_cue = false
 	_reset_air_challenge()
-	_reset_side_swing()
 	accepting_input = true
 	_reset_turner_run()
 	hit_reveal_time = 0.0
@@ -1205,65 +1213,6 @@ func _should_start_air_challenge() -> bool:
 		and score >= AIR_CHALLENGE_START_SCORE \
 		and score % AIR_CHALLENGE_INTERVAL == 0 \
 		and air_challenge_last_score != score
-
-
-func _side_swing_score_is_active() -> bool:
-	return not coop_mode and score >= SIDE_SWING_START_SCORE and score < SIDE_SWING_END_SCORE
-
-
-func _side_swing_is_decoying() -> bool:
-	return _side_swing_score_is_active() and side_swing_turns_remaining > 0
-
-
-func _prepare_side_swing_sequence() -> void:
-	# The default student pair owns this score band regardless of whichever
-	# randomized team was active during the preceding boss gauntlet.
-	turner_team = TurnerTeam.STUDENT
-	turner_change_slot = 0
-	challenge_pattern = 0
-	rope_b_enabled = false
-	rope_speed = balance.speed_for_score(SIDE_SWING_SPEED_REFERENCE_SCORE)
-	rope_angle = PI
-	var progress := score - SIDE_SWING_START_SCORE
-	if progress < 6:
-		side_swing_turns_remaining = 1
-	elif progress < 12:
-		side_swing_turns_remaining = 2
-	else:
-		side_swing_turns_remaining = 1 + progress % 3
-	side_swing_side = -1 if score % 2 == 0 else 1
-	message = "%s 사이드 스윙 %d회!  아직 점프 금지" % ["왼쪽" if side_swing_side < 0 else "오른쪽", side_swing_turns_remaining]
-	message_color = Color("35d0ff")
-
-
-func _complete_side_swing_turn() -> void:
-	side_swing_turns_remaining = maxi(0, side_swing_turns_remaining - 1)
-	jump_started_in_cue = false
-	if side_swing_turns_remaining > 0:
-		side_swing_side *= -1
-		rope_angle = PI
-		message = "%s으로 한 번 더!" % ("왼쪽" if side_swing_side < 0 else "오른쪽")
-		message_color = Color("35d0ff")
-		return
-	# Re-entry always starts safely behind the player and owns a complete,
-	# readable approach before the real red crossing can score or hit.
-	rope_angle = PI
-	message = "중앙 진입!  빨간 줄에 점프!"
-	message_color = Color("ff5c65")
-	flash_time = 0.18
-
-
-func _reset_side_swing() -> void:
-	side_swing_turns_remaining = 0
-	side_swing_side = -1
-
-
-func _side_swing_lateral_offset() -> float:
-	if not _side_swing_is_decoying():
-		return 0.0
-	# The centre of the long rope sweeps into the otherwise empty upper-left
-	# or upper-right play space while both ends stay locked to the hands.
-	return float(side_swing_side) * SIDE_SWING_LATERAL_OFFSET
 
 
 func _reset_coop_players() -> void:
@@ -1403,6 +1352,13 @@ func _draw_boss_warning_overlay() -> void:
 	var shake_x := roundf(sin(turner_transition_time * TAU * 9.0) * 16.0)
 	var pulse := 0.5 + 0.5 * sin(turner_transition_time * TAU * 5.0)
 	draw_rect(Rect2(Vector2.ZERO, DESIGN_SIZE), Color(0.75, 0.03, 0.05, 0.10 + pulse * 0.14), true)
+	if boss_warning_texture != null and boss_warning_used_region.size.x > 0.0:
+		var target_size := Vector2(600.0, 200.0)
+		var scale_factor := minf(target_size.x / boss_warning_used_region.size.x, target_size.y / boss_warning_used_region.size.y)
+		var draw_size := boss_warning_used_region.size * scale_factor
+		var center := Vector2(360.0 + shake_x, 450.0)
+		draw_texture_rect_region(boss_warning_texture, Rect2(center - draw_size * 0.5, draw_size), boss_warning_used_region)
+		return
 	var font := _ui_font()
 	var box := Rect2(shake_x + 60.0, 400.0, 600.0, 100.0)
 	draw_string(font, box.position + Vector2(0.0, 4.0), "경고!", HORIZONTAL_ALIGNMENT_CENTER, box.size.x, 76, Color(0.0, 0.0, 0.0, 0.6))
@@ -1502,12 +1458,17 @@ func _draw_rope_layer(draw_behind: bool) -> void:
 			if _rope_angle_is_behind(illusion_angle) == draw_behind:
 				_draw_rope_curve(illusion_angle, illusion_core, illusion_highlight, illusion_outline, Color.TRANSPARENT, cos(illusion_angle) * WIZARD_ILLUSION_LATERAL_SWAY)
 	if _rope_angle_is_behind(rope_angle) == draw_behind:
-		_draw_rope_curve(rope_angle, rope_color, highlight_color, outline_color, shadow_color, _side_swing_lateral_offset())
+		_draw_rope_curve(rope_angle, rope_color, highlight_color, outline_color, shadow_color)
 		_draw_pixel_rope_grip(_active_left_hand(), wizard_ghosted)
 		_draw_pixel_rope_grip(_active_right_hand(), wizard_ghosted)
 	if rope_b_enabled and _rope_angle_is_behind(rope_b_angle) == draw_behind:
-		var rope_b_color := Color("ff334f") if show_jump_cue else Color("35d0ff")
-		var rope_b_highlight := Color("ff9a8d") if show_jump_cue else Color("bdf3ff")
+		# rope_b is offset by ROPE_B_PHASE_OFFSET (half a turn) from the main
+		# rope, so it reaches its own crossing at a different moment — using
+		# the main rope's show_jump_cue here left it blue right through its
+		# own crossing. It needs its own cue check against rope_b_angle.
+		var show_rope_b_cue := _is_rope_b_jump_cue()
+		var rope_b_color := Color("ff334f") if show_rope_b_cue else Color("35d0ff")
+		var rope_b_highlight := Color("ff9a8d") if show_rope_b_cue else Color("bdf3ff")
 		_draw_rope_curve(rope_b_angle, rope_b_color, rope_b_highlight, outline_color, shadow_color)
 
 
@@ -1604,9 +1565,20 @@ func _rope_is_behind() -> bool:
 
 
 func _is_jump_cue() -> bool:
-	if game_state != GameState.PLAYING or rope_speed <= 0.0 or _rope_is_behind() or _side_swing_is_decoying():
+	if game_state != GameState.PLAYING or rope_speed <= 0.0 or _rope_is_behind():
 		return false
 	var seconds_until_crossing := fposmod(ROPE_CROSSING_ANGLE - rope_angle, TAU) / rope_speed
+	return seconds_until_crossing <= balance.jump_cue_seconds
+
+
+func _is_rope_b_jump_cue() -> bool:
+	# Same check as _is_jump_cue(), but against rope_b_angle — the boss's
+	# second rope shares the main rope's angular speed (see the _process
+	# update) but is offset by ROPE_B_PHASE_OFFSET, so it needs its own
+	# independent cue window rather than borrowing the main rope's.
+	if game_state != GameState.PLAYING or rope_speed <= 0.0 or cos(rope_b_angle) < 0.0:
+		return false
+	var seconds_until_crossing := fposmod(ROPE_CROSSING_ANGLE - rope_b_angle, TAU) / rope_speed
 	return seconds_until_crossing <= balance.jump_cue_seconds
 
 
@@ -1630,6 +1602,13 @@ func _effective_rope_speed_raw() -> float:
 		# means the hidden-rope wait can't be timed by a steady rhythm — but the
 		# visible red jump-cue window still runs at the fair, un-randomized speed.
 		return rope_speed if _is_jump_cue() else rope_speed * wizard_speed_multiplier
+	if turner_team == TurnerTeam.DUO:
+		# The sleepy half's sudden burst reuses sleepy's own fast multiplier
+		# (not the athlete's) even though it shares the athlete's flat
+		# baseline and the challenge_pattern==2 turn-counting.
+		if challenge_pattern == 2:
+			return rope_speed if _is_jump_cue() else rope_speed * SLEEPY_FAST_MULTIPLIER
+		return rope_speed
 	# Keep a stable, fair speed throughout the red input window.
 	if challenge_pattern == 0 or _is_jump_cue():
 		return rope_speed
@@ -1646,17 +1625,15 @@ func _effective_rope_speed_raw() -> float:
 
 
 func _base_speed_for_score(current_score: int) -> float:
-	if current_score >= SIDE_SWING_START_SCORE and current_score < SIDE_SWING_END_SCORE:
-		return balance.speed_for_score(SIDE_SWING_SPEED_REFERENCE_SCORE)
-	# Only the student (below score 10) and sleepy teams have their baseline
-	# speed keep rising with score — sleepy's difficulty already comes from
-	# its own slow/fast swings, and letting the baseline rise too keeps later
-	# sleepy stretches from going stale. Every other team's difficulty comes
-	# entirely from its turn pattern (athlete bursts, prankster fakes, wizard
-	# ghosting), so their baseline holds flat at the score-10 speed. Team
-	# assignment is random past score 10 (see _update_turner_team_and_pattern),
-	# so this keys off the live team instead of fixed score bands.
-	if turner_team == TurnerTeam.STUDENT or turner_team == TurnerTeam.SLEEPY:
+	# Only the plain student turner has its baseline speed keep rising with
+	# score. Every patterned team's difficulty comes entirely from its own
+	# turn pattern (athlete/duo bursts, sleepy's slow/fast swings, prankster
+	# fakes, wizard ghosting) — a rising baseline on top of that made sleepy
+	# get disproportionately fast at high scores since its fast-turn
+	# multiplier was compounding with an ever-rising number. Team assignment
+	# is random past score 10 (see _update_turner_team_and_pattern), so this
+	# keys off the live team instead of fixed score bands.
+	if turner_team == TurnerTeam.STUDENT:
 		return balance.speed_for_score(current_score)
 	return balance.speed_for_score(TURNER_CHANGE_INTERVAL)
 
@@ -1676,6 +1653,7 @@ func _reset_turner_run() -> void:
 	prankster_fake_time = 0.0
 	wizard_rope_hidden = false
 	wizard_speed_multiplier = 1.0
+	duo_normal_turns_remaining = 0
 	turner_transition_active = false
 	turner_transition_time = 0.0
 	turner_transition_phase = TurnerTransitionPhase.NONE
@@ -1699,12 +1677,14 @@ func _turner_slot_for_score(current_score: int) -> int:
 	# value doesn't matter as long as it's monotonic and distinct per stretch.
 	if current_score < TURNER_CHANGE_INTERVAL:
 		return 0
-	if current_score >= AIR_CHALLENGE_START_SCORE:
-		# Nothing designed for past the boss encounter yet — slot 0 is the
-		# same "reset to plain student, no fanfare" branch the pre-score-10
-		# grace period uses (see _update_turner_team_and_pattern), so this
-		# just holds a basic single-rope pattern until real content exists.
+	if current_score >= DUO_STAGE_END_SCORE:
+		# Nothing designed for past the duo stage yet — slot 0 is the same
+		# "reset to plain student, no fanfare" branch the pre-score-10 grace
+		# period uses (see _update_turner_team_and_pattern), so this just
+		# holds a basic single-rope pattern until real content exists.
 		return 0
+	if current_score >= AIR_CHALLENGE_START_SCORE:
+		return DUO_STAGE_SLOT
 	if current_score < BOSS_TURNER_SCORE_THRESHOLD:
 		return int((current_score - TURNER_CHANGE_INTERVAL) / TURNER_RANDOM_INTERVAL) + 1
 	var pre_gauntlet_slot := int((BOSS_TURNER_SCORE_THRESHOLD - TURNER_CHANGE_INTERVAL) / TURNER_RANDOM_INTERVAL) + 1
@@ -1736,6 +1716,8 @@ func _init_turner_team_state(team: TurnerTeam) -> void:
 			prankster_normal_turns_remaining = _roll_prankster_normal_turns()
 		TurnerTeam.WIZARD:
 			wizard_rope_hidden = false
+		TurnerTeam.DUO:
+			duo_normal_turns_remaining = _roll_duo_normal_turns()
 
 
 func _update_turner_team_and_pattern() -> bool:
@@ -1750,7 +1732,7 @@ func _update_turner_team_and_pattern() -> bool:
 		if target_slot <= 0:
 			turner_team = TurnerTeam.STUDENT
 			return false
-		var new_team := _random_turner_team(turner_team)
+		var new_team := TurnerTeam.DUO if target_slot == DUO_STAGE_SLOT else _random_turner_team(turner_team)
 		turner_team = new_team
 		_init_turner_team_state(new_team)
 		return true
@@ -1779,6 +1761,18 @@ func _update_turner_team_and_pattern() -> bool:
 		# timed by a steady rhythm alone — only the actual jump-cue window
 		# (checked in _effective_rope_speed) stays at the fair, visible speed.
 		wizard_speed_multiplier = randf_range(balance.wizard_speed_min_multiplier, balance.wizard_speed_max_multiplier)
+		return false
+	if turner_team == TurnerTeam.DUO:
+		if challenge_pattern == 2:
+			# The burst is always exactly one turn — the sleepy half wakes
+			# up, bursts once, then goes right back to sleep instead of
+			# athlete's own multi-turn burst.
+			challenge_pattern = 0
+			duo_normal_turns_remaining = _roll_duo_normal_turns()
+		else:
+			duo_normal_turns_remaining -= 1
+			if duo_normal_turns_remaining <= 0:
+				challenge_pattern = 2
 		return false
 
 	if challenge_pattern == 2:
@@ -1812,6 +1806,10 @@ func _roll_sleepy_slow_turns() -> int:
 
 func _roll_prankster_normal_turns() -> int:
 	return randi_range(PRANKSTER_MIN_NORMAL_TURNS, PRANKSTER_MAX_NORMAL_TURNS)
+
+
+func _roll_duo_normal_turns() -> int:
+	return randi_range(DUO_MIN_NORMAL_TURNS, DUO_MAX_NORMAL_TURNS)
 
 
 func _update_prankster_fake(delta: float) -> bool:
@@ -1861,9 +1859,23 @@ func _draw_turner(feet: Vector2, faces_left: bool, display_team := -1) -> void:
 	var base_region := turner_used_region
 	var mirror_texture := mirrored_turner_texture
 	var mirror_region := mirrored_turner_used_region
-	if _side_swing_score_is_active():
-		active_team = TurnerTeam.STUDENT
-	if active_team == TurnerTeam.ATHLETE:
+	if active_team == TurnerTeam.DUO:
+		# Left turner (faces_left == false — see the two _draw_turner call
+		# sites) is always athlete; right (faces_left == true) is always
+		# sleepy, awake only during the sudden-burst turn (see
+		# _update_turner_team_and_pattern) and asleep otherwise.
+		if faces_left:
+			var duo_sleepy_awake := challenge_pattern == 2
+			base_texture = sleepy_turner_awake_texture if duo_sleepy_awake else sleepy_turner_asleep_texture
+			base_region = sleepy_turner_awake_used_region if duo_sleepy_awake else sleepy_turner_asleep_used_region
+			mirror_texture = mirrored_sleepy_turner_awake_texture if duo_sleepy_awake else mirrored_sleepy_turner_asleep_texture
+			mirror_region = mirrored_sleepy_turner_awake_used_region if duo_sleepy_awake else mirrored_sleepy_turner_asleep_used_region
+		else:
+			base_texture = athlete_turner_texture
+			base_region = athlete_turner_used_region
+			mirror_texture = mirrored_athlete_turner_texture
+			mirror_region = mirrored_athlete_turner_used_region
+	elif active_team == TurnerTeam.ATHLETE:
 		base_texture = athlete_turner_texture
 		base_region = athlete_turner_used_region
 		mirror_texture = mirrored_athlete_turner_texture
@@ -2841,7 +2853,7 @@ func _draw_test_start_button(font: Font) -> void:
 	draw_rect(TEST_START_130_RECT, Color("3b2119"), true)
 	draw_rect(TEST_START_130_RECT.grow(-5.0), Color("73f7b4"), true)
 	draw_rect(TEST_START_130_RECT.grow(-9.0), Color("24705b"), false, 3.0)
-	draw_string(font, Vector2(TEST_START_130_RECT.position.x, TEST_START_130_RECT.position.y + 31.0), "SWING TEST", HORIZONTAL_ALIGNMENT_CENTER, TEST_START_130_RECT.size.x, 16, Color("245446"))
+	draw_string(font, Vector2(TEST_START_130_RECT.position.x, TEST_START_130_RECT.position.y + 31.0), "DUO TEST", HORIZONTAL_ALIGNMENT_CENTER, TEST_START_130_RECT.size.x, 16, Color("245446"))
 	draw_string(font, Vector2(TEST_START_130_RECT.position.x, TEST_START_130_RECT.position.y + 62.0), "130 START", HORIZONTAL_ALIGNMENT_CENTER, TEST_START_130_RECT.size.x, 23, Color("173f35"))
 	draw_rect(TEST_START_50_RECT, Color("3b2119"), true)
 	draw_rect(TEST_START_50_RECT.grow(-5.0), Color("ffd23f"), true)
