@@ -492,11 +492,12 @@ func _test_start_at_one_thirty(game: Node) -> void:
 	_expect(not bool(game.air_challenge_active), "disabled air challenge launched at score 130")
 	_expect(not bool(game.rope_b_enabled), "double rope stayed on during side-swing mode")
 	_expect(int(game.turner_team) == int(game.TurnerTeam.STUDENT), "side-swing mode did not use the default student turner")
+	_expect(is_equal_approx(game.rope_speed, BALANCE.speed_for_score(8)), "score 130 side swing did not use the score-8 rope speed")
 	_expect(int(game.side_swing_turns_remaining) == 1, "score 130 did not begin with one side swing")
 	_expect(not game._is_jump_cue(), "side swing incorrectly showed a real jump cue")
 	_expect(absf(game._side_swing_lateral_offset()) > 0.0, "side swing did not move into the upper side space")
 	game.rope_angle = game.ROPE_CROSSING_ANGLE - 0.05
-	game._process(0.01)
+	game._process(0.02)
 	_expect(int(game.score) == 130, "side swing incorrectly awarded a normal rope score")
 	_expect(int(game.side_swing_turns_remaining) == 0, "completed side swing did not advance to centre entry")
 	_expect(is_equal_approx(game.rope_angle, PI), "centre entry did not restart safely behind the player")
@@ -504,7 +505,7 @@ func _test_start_at_one_thirty(game: Node) -> void:
 	game._prepare_side_swing_sequence()
 	_expect(int(game.side_swing_turns_remaining) >= 1 and int(game.side_swing_turns_remaining) <= 3, "late side-swing sequence fell outside the 1-3 turn range")
 	game.score = 150
-	_expect(not game._side_swing_score_is_active(), "side-swing mode did not end at score 150")
+	_expect(not game._side_swing_score_is_active(), "side-swing mode did not end after the 150th rope")
 	game._return_to_main()
 
 

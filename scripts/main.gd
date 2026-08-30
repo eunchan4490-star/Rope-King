@@ -290,6 +290,7 @@ const AIR_CHALLENGE_LANDING_PAUSE := 1.0
 const AIR_ROPE_HEIGHTS := [-235.0, -410.0, -555.0]
 const SIDE_SWING_START_SCORE := 130
 const SIDE_SWING_END_SCORE := 150
+const SIDE_SWING_SPEED_REFERENCE_SCORE := 8
 const SIDE_SWING_LATERAL_OFFSET := 245.0
 var rope_b_enabled := false
 var rope_b_angle := PI
@@ -336,6 +337,9 @@ var turner_transition_time := 0.0
 var countdown_vibration_index := -1
 var turner_transition_phase := TurnerTransitionPhase.NONE
 var departing_turner_team := TurnerTeam.STUDENT
+# True when the current transition's entry countdown should show the boss's
+# shaking red warning instead of the normal "3,2,1,GO" numbers.
+var turner_transition_is_boss := false
 var flash_time := 0.0
 var message := "화면을 눌러 시작"
 var message_color := Color.WHITE
@@ -1023,35 +1027,35 @@ func _resolve_rope_crossing() -> void:
 		# into athlete's burst multiplier, or vice versa into sleepy looking
 		# like it barely moves).
 		rope_speed = _base_speed_for_score(score)
-		if team_changed and score >= BOSS_TURNER_SCORE_THRESHOLD:
-			# The boss gauntlet cycles patterns every few turns — a full
-			# exit + "3,2,1,GO" transition every time would be far too
-			# disruptive for a fast-paced boss fight, so the pattern just
-			# swaps instantly with no stoppage.
-			message = "패턴 변경!"
-			message_color = Color("ff6b6b")
-			flash_time = 0.22
-			jump_started_in_cue = false
-			feedback.play_success(score)
-			return
+		message_color = Color("73f7b4")
 		if team_changed:
-			_start_turner_transition(previous_team)
-			match turner_team:
-				TurnerTeam.ATHLETE:
-					message = "운동부 등장!  기본 2회 뒤 급가속!"
-				TurnerTeam.SLEEPY:
-					message = "졸보 등장!  깨면 1초 뒤 초고속!"
-				TurnerTeam.PRANKSTER:
-					message = "장난꾸러기 등장!  멈추는 척을 조심!"
-				TurnerTeam.WIZARD:
-					message = "마법사 등장!  사라진 줄은 빨간색을 봐!"
+			# The boss gauntlet gets the same exit + entry-countdown
+			# transition every other team-change uses (see
+			# _start_turner_transition) — just with the entry countdown
+			# replaced by a shaking red warning instead of "3,2,1,GO"
+			# (see _draw_boss_warning_overlay), since a full number
+			# countdown didn't fit the boss's urgency.
+			var is_boss_change := score >= BOSS_TURNER_SCORE_THRESHOLD
+			_start_turner_transition(previous_team, is_boss_change)
+			if is_boss_change:
+				message = "패턴 변경!"
+				message_color = Color("ff6b6b")
+			else:
+				match turner_team:
+					TurnerTeam.ATHLETE:
+						message = "운동부 등장!  기본 2회 뒤 급가속!"
+					TurnerTeam.SLEEPY:
+						message = "졸보 등장!  깨면 1초 뒤 초고속!"
+					TurnerTeam.PRANKSTER:
+						message = "장난꾸러기 등장!  멈추는 척을 조심!"
+					TurnerTeam.WIZARD:
+						message = "마법사 등장!  사라진 줄은 빨간색을 봐!"
 		elif turner_team == TurnerTeam.SLEEPY and sleepy_wake_warning_time > 0.0:
 			message = "번쩍!  1초 뒤 초고속!"
 		elif turner_team == TurnerTeam.ATHLETE and challenge_pattern == 2:
 			message = "운동부 급가속!"
 		else:
 			message = "좋아요!  +1"
-		message_color = Color("73f7b4")
 		flash_time = 0.22
 		jump_started_in_cue = false
 		feedback.play_success(score)
@@ -1218,6 +1222,7 @@ func _prepare_side_swing_sequence() -> void:
 	turner_change_slot = 0
 	challenge_pattern = 0
 	rope_b_enabled = false
+	rope_speed = balance.speed_for_score(SIDE_SWING_SPEED_REFERENCE_SCORE)
 	rope_angle = PI
 	var progress := score - SIDE_SWING_START_SCORE
 	if progress < 6:
@@ -1390,7 +1395,24 @@ func _draw_coop_divider() -> void:
 	draw_line(Vector2(DESIGN_SIZE.x * 0.5, 0.0), Vector2(DESIGN_SIZE.x * 0.5, DESIGN_SIZE.y), Color(1.0, 1.0, 1.0, 0.72), 5.0, true)
 
 
+func _draw_boss_warning_overlay() -> void:
+	# Stands in for the normal "3,2,1,GO" countdown during a boss pattern
+	# change — same transition timing (see _start_turner_transition), just
+	# a continuously shaking red warning instead of counting down numbers,
+	# to read as urgent rather than a calm countdown.
+	var shake_x := roundf(sin(turner_transition_time * TAU * 9.0) * 16.0)
+	var pulse := 0.5 + 0.5 * sin(turner_transition_time * TAU * 5.0)
+	draw_rect(Rect2(Vector2.ZERO, DESIGN_SIZE), Color(0.75, 0.03, 0.05, 0.10 + pulse * 0.14), true)
+	var font := _ui_font()
+	var box := Rect2(shake_x + 60.0, 400.0, 600.0, 100.0)
+	draw_string(font, box.position + Vector2(0.0, 4.0), "경고!", HORIZONTAL_ALIGNMENT_CENTER, box.size.x, 76, Color(0.0, 0.0, 0.0, 0.6))
+	draw_string(font, box.position + Vector2(-4.0, 0.0), "경고!", HORIZONTAL_ALIGNMENT_CENTER, box.size.x, 76, Color("ff1f33"))
+
+
 func _draw_countdown_overlay() -> void:
+	if turner_transition_is_boss:
+		_draw_boss_warning_overlay()
+		return
 	var countdown_index := mini(3, int(turner_transition_time / COUNTDOWN_NUMBER_SECONDS))
 	if countdown_index < 0 or countdown_index >= countdown_textures.size():
 		return
@@ -1624,6 +1646,8 @@ func _effective_rope_speed_raw() -> float:
 
 
 func _base_speed_for_score(current_score: int) -> float:
+	if current_score >= SIDE_SWING_START_SCORE and current_score < SIDE_SWING_END_SCORE:
+		return balance.speed_for_score(SIDE_SWING_SPEED_REFERENCE_SCORE)
 	# Only the student (below score 10) and sleepy teams have their baseline
 	# speed keep rising with score — sleepy's difficulty already comes from
 	# its own slow/fast swings, and letting the baseline rise too keeps later
@@ -1656,13 +1680,15 @@ func _reset_turner_run() -> void:
 	turner_transition_time = 0.0
 	turner_transition_phase = TurnerTransitionPhase.NONE
 	departing_turner_team = TurnerTeam.STUDENT
+	turner_transition_is_boss = false
 
 
-func _start_turner_transition(previous_team := TurnerTeam.STUDENT) -> void:
+func _start_turner_transition(previous_team := TurnerTeam.STUDENT, is_boss := false) -> void:
 	turner_transition_active = true
 	turner_transition_time = 0.0
 	turner_transition_phase = TurnerTransitionPhase.TURNER_EXIT
 	departing_turner_team = previous_team
+	turner_transition_is_boss = is_boss
 	accepting_input = false
 	# Resume with the rope safely behind the player after GO! finishes.
 	rope_angle = PI
