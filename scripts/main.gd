@@ -52,7 +52,7 @@ const ATHLETE_NORMAL_TURNS := 2
 const ATHLETE_MAX_BURST_TURNS := 2
 const SLEEPY_START_SCORE := 30
 const SLEEPY_MIN_SLOW_TURNS := 1
-const SLEEPY_MAX_SLOW_TURNS := 3
+const SLEEPY_MAX_SLOW_TURNS := 2
 const SLEEPY_WAKE_WARNING_SECONDS := 1.0
 const SLEEPY_SLOW_MULTIPLIER := 0.462
 const SLEEPY_FAST_MULTIPLIER := 2.4
@@ -150,6 +150,15 @@ const JUMP_FRAME_AIR := 0
 const JUMP_FRAME_MID := 1
 const JUMP_APEX_VELOCITY_BAND := 180.0
 const DEFAULT_BALANCE := preload("res://resources/balance/default_balance.tres")
+# The current title_logo.png bakes the "최고기록" plaque into the same image
+# as the "줄넘킹" title (crown, clouds, and an empty gold-bordered number
+# slot near the bottom) — MAIN_MENU_TITLE_RECT positions that whole image,
+# and MAIN_MENU_BEST_SCORE_NUMBER_RECT is where the number slot lands within
+# it, both measured by eye against a screenshot of the actual render (see
+# the title_logo art's proportions — the slot sits at roughly 63%/78% of the
+# image's width/height, matching these two rects' relationship).
+const MAIN_MENU_TITLE_RECT := Rect2(107.0, 80.0, 506.0, 380.0)
+const MAIN_MENU_BEST_SCORE_NUMBER_RECT := Rect2(375.0, 367.0, 100.0, 18.0)
 const CHARACTER_BUTTON_RECT := Rect2(25.0, 1055.0, 210.0, 195.0)
 const COOP_BUTTON_RECT := Rect2(255.0, 1055.0, 210.0, 195.0)
 const SETTINGS_BUTTON_RECT := Rect2(485.0, 1055.0, 210.0, 195.0)
@@ -2979,14 +2988,16 @@ func _draw_main_menu(font: Font) -> void:
 	_draw_resource_counter(font, Rect2(380.0, 22.0, 300.0, 62.0), ruby_icon_texture, ruby_icon_used_region, gems, RUBY_ICON_OFFSET)
 
 	_draw_main_menu_title(font)
-	var best_rect := Rect2(235.0, 306.0, 250.0, 64.0)
-	if best_score_frame_texture != null and best_score_frame_used_region.size.x > 0.0:
-		# The current best_score_frame art already has "최고 기록" baked in —
-		# drawing the label again on top double-prints the text.
+	if hud_title_logo_texture == null and best_score_frame_texture != null and best_score_frame_used_region.size.x > 0.0:
+		# title_logo.png now bakes the "최고기록" plaque into the same image as
+		# the title (see MAIN_MENU_TITLE_RECT) — this separate frame is only a
+		# fallback for if that combined asset fails to load.
+		var best_rect := Rect2(235.0, 306.0, 250.0, 64.0)
 		draw_texture_rect_region(best_score_frame_texture, best_rect, best_score_frame_used_region)
-	else:
+	elif hud_title_logo_texture == null:
 		draw_string(font, Vector2(278.0, 347.0), "최고 기록", HORIZONTAL_ALIGNMENT_CENTER, 105.0, 21, Color("fff0a6"))
-	_draw_image_number(str(best_score), Vector2(390.0, 326.0), 22.0, 76.0, HORIZONTAL_ALIGNMENT_CENTER)
+	var best_number_rect := MAIN_MENU_BEST_SCORE_NUMBER_RECT
+	_draw_image_number(str(best_score), best_number_rect.position, best_number_rect.size.y, best_number_rect.size.x, HORIZONTAL_ALIGNMENT_CENTER)
 
 	var prompt_alpha := 0.78 + sin(Time.get_ticks_msec() * 0.004) * 0.18
 	var prompt_rect := Rect2(201.0, 462.0, 408.0, 154.0)
@@ -3145,8 +3156,7 @@ func _draw_rotated_texture_region(texture: Texture2D, target: Rect2, source: Rec
 
 
 func _draw_main_menu_title(font: Font) -> void:
-	# Both rectangles share the exact screen center (x = 360).
-	var frame_rect := Rect2(125.0, 116.0, 470.0, 188.0)
+	var frame_rect := MAIN_MENU_TITLE_RECT
 	if hud_title_logo_texture != null:
 		# The current title_logo art is a self-contained plaque with its own
 		# border baked in, so it replaces the separate frame texture outright
