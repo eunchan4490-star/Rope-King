@@ -2,5 +2,7 @@
   "display_name": "햄찡이",
   "order": 35,
   "price": 500,
+  "scale_multiplier": 0.9,
+  "gameplay_scale_multiplier": 0.9,
   "disable_jump_rescale": true
 }

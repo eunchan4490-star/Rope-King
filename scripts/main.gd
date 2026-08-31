@@ -448,6 +448,7 @@ var character_disable_jump_rescale: Dictionary = {}
 var character_unlock_scores: Dictionary = {}
 var character_prices: Dictionary = {}
 var owned_character_ids: Array[String] = []
+var revived_this_run := false
 var newly_unlocked_this_run: Array[String] = []
 var character_reveal_active := false
 var character_reveal_index := 0
@@ -773,7 +774,12 @@ func _process(delta: float) -> void:
 		hit_reveal_time -= delta
 		if hit_reveal_time <= 0.0:
 			game_state = GameState.GAME_OVER
-			_submit_score(score)
+			# A gem-revive continues the same run past its first death, so the
+			# score at this point already includes revive-earned progress.
+			# Ranking should reflect the run's very first death only — that
+			# submission already happened before any revive was possible.
+			if not revived_this_run:
+				_submit_score(score)
 			if not coop_mode and not newly_unlocked_this_run.is_empty():
 				newly_unlocked_this_run.sort_custom(func(a: String, b: String) -> bool:
 					return int(character_unlock_scores.get(a, 0)) < int(character_unlock_scores.get(b, 0)))
@@ -1245,6 +1251,7 @@ func _start_run() -> void:
 	new_best_this_run = false
 	run_coins_earned = 0
 	hit_reveal_time = 0.0
+	revived_this_run = false
 	newly_unlocked_this_run.clear()
 	character_reveal_active = false
 	character_reveal_index = 0
@@ -3045,6 +3052,7 @@ func _revive_with_gem() -> void:
 	if not _can_revive():
 		return
 	gems -= REVIVE_GEM_COST
+	revived_this_run = true
 	game_state = GameState.PLAYING
 	is_jumping = false
 	jump_height = 0.0
