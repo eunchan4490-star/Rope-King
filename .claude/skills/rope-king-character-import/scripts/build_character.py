@@ -22,15 +22,6 @@ import numpy as np
 from PIL import Image
 from scipy import ndimage
 
-SHADOW_COLOR = np.array([197, 178, 148])
-SHADOW_DISTANCE_THRESHOLD = 40
-SHADOW_MIN_SIZE = 300  # a real drop-shadow ellipse is a big, contiguous blob;
-                       # anything smaller is shading texture that happens to
-                       # be color-close to the shadow tone (seen on stone/gray
-                       # characters), not an actual baked-in shadow.
-SHADOW_MAX_ASPECT = 0.5  # height must be well under width — a footer shadow
-                          # ellipse is flat and wide, unlike body shading blobs.
-MATTE_ITERATIONS = 2
 CROP_PADDING = 3
 
 
@@ -63,42 +54,6 @@ def check_alpha(img: Image.Image) -> None:
         )
 
 
-def remove_shadow(arr: np.ndarray) -> np.ndarray:
-    """Zero out alpha for pixels matching the baked-in drop shadow color.
-
-    The game draws its own shadow ellipse at runtime, so a shadow baked into
-    the source art would just double up.
-    """
-    r, g, b = arr[:, :, 0].astype(np.int16), arr[:, :, 1].astype(np.int16), arr[:, :, 2].astype(np.int16)
-    a = arr[:, :, 3]
-    dist = np.sqrt((r - SHADOW_COLOR[0]) ** 2 + (g - SHADOW_COLOR[1]) ** 2 + (b - SHADOW_COLOR[2]) ** 2)
-    candidate = (a > 0) & (dist < SHADOW_DISTANCE_THRESHOLD)
-
-    # Only treat a color match as the baked-in shadow if it forms a real
-    # footer-shadow-shaped blob (big and flat/wide) — small or tall/narrow
-    # matches are body shading that happens to land near the shadow tone
-    # (common on stone/gray/tan characters), and erasing those punches
-    # speckled holes through the character instead of removing a shadow.
-    labeled, n = ndimage.label(candidate, structure=np.ones((3, 3)))
-    is_shadow = np.zeros_like(candidate)
-    for lid in range(1, n + 1):
-        comp = labeled == lid
-        size = comp.sum()
-        if size < SHADOW_MIN_SIZE:
-            continue
-        ys, xs = np.where(comp)
-        w = xs.max() - xs.min() + 1
-        h = ys.max() - ys.min() + 1
-        if h > w * SHADOW_MAX_ASPECT:
-            continue
-        is_shadow |= comp
-
-    a2 = np.where(is_shadow, 0, a)
-    out = arr.copy()
-    out[:, :, 3] = a2
-    return out
-
-
 def find_pose_boxes(alpha: np.ndarray) -> tuple[list[tuple[int, int, int, int, int]], np.ndarray]:
     """Return the 3 largest opaque blobs' (bbox + label id), left to right,
     plus the full label map so crop_pose can mask out other poses' pixels
@@ -108,7 +63,7 @@ def find_pose_boxes(alpha: np.ndarray) -> tuple[list[tuple[int, int, int, int, i
     labeled, n = ndimage.label(mask, structure=np.ones((3, 3)))
     if n < 3:
         raise SystemExit(
-            f"Only found {n} separate opaque region(s) after removing background/shadow — "
+            f"Only found {n} separate opaque region(s) — "
             "expected 3 poses (idle, air, mid). Check the source has 3 clearly separated "
             "characters with a real gap of transparent pixels between them."
         )
@@ -142,34 +97,6 @@ def crop_pose(img: Image.Image, box: tuple[int, int, int, int, int], labeled: np
     foreign = (label_crop != 0) & (label_crop != lid)
     arr[foreign, 3] = 0
     return Image.fromarray(arr, "RGBA")
-
-
-def clean_matte_edge(pose: Image.Image) -> Image.Image:
-    """Erode leftover anti-aliasing halo along the transparent boundary.
-
-    Original background removal often leaves a thin ring of blended
-    gray/neutral pixels around the silhouette (the source was anti-aliased
-    against a solid background, not a true alpha edge). Iterating a few times
-    eats through a 1-2px halo without touching interior shading.
-    """
-    arr = np.array(pose.convert("RGBA")).astype(np.int16)
-    a = arr[:, :, 3]
-    r, g, b = arr[:, :, 0], arr[:, :, 1], arr[:, :, 2]
-    for _ in range(MATTE_ITERATIONS):
-        opaque = a > 0
-        transparent = a == 0
-        touch = np.zeros_like(opaque)
-        touch[1:, :] |= transparent[:-1, :]
-        touch[:-1, :] |= transparent[1:, :]
-        touch[:, 1:] |= transparent[:, :-1]
-        touch[:, :-1] |= transparent[:, 1:]
-        mx = np.maximum(np.maximum(r, g), b)
-        mn = np.minimum(np.minimum(r, g), b)
-        sat = mx - mn
-        matte = opaque & touch & (sat < 15) & (mx > 35) & (mx < 200)
-        a = np.where(matte, 0, a)
-    arr[:, :, 3] = a
-    return Image.fromarray(arr.astype(np.uint8), "RGBA")
 
 
 def assemble_jump_sheet(air: Image.Image, mid: Image.Image) -> Image.Image:
@@ -271,12 +198,11 @@ def main() -> None:
         raise SystemExit(f"{dest} already exists. Pass --force to overwrite.")
     (dest / "_source").mkdir(parents=True, exist_ok=True)
 
-    arr = remove_shadow(np.array(img))
+    arr = np.array(img)
     boxes, labeled = find_pose_boxes(arr[:, :, 3])
     cleaned = Image.fromarray(arr.astype(np.uint8), "RGBA")
 
     poses = [crop_pose(cleaned, box, labeled) for box in boxes]
-    poses = [clean_matte_edge(p) for p in poses]
     idle, air, mid = poses
 
     idle.save(dest / "idle.png")

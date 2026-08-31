@@ -28,6 +28,7 @@ func _init() -> void:
 	_test_return_to_main(game)
 	_test_start_at_fifty(game)
 	_test_start_at_one_thirty(game)
+	_test_start_at_one_hundred_fifty_one(game)
 	game.free()
 	if failures.is_empty():
 		print("ROPE LOGIC TESTS PASSED")
@@ -567,6 +568,54 @@ func _test_start_at_one_thirty(game: Node) -> void:
 	game.score = game.DUO_STAGE_END_SCORE
 	game._update_turner_team_and_pattern()
 	_expect(int(game.turner_team) == int(game.TurnerTeam.STUDENT), "duo stage did not fall back to the basic student turner at its end score")
+	game._return_to_main()
+
+
+func _test_start_at_one_hundred_fifty_one(game: Node) -> void:
+	game._start_game_at_score(151)
+	_expect(int(game.game_state) == int(game.GameState.PLAYING), "151-start test did not start gameplay")
+	_expect(int(game.score) == 151, "151-start test used the wrong score")
+	_expect(int(game.turner_team) == int(game.TurnerTeam.WIZARD_PRANKSTER_DUO), "score 151 did not start the wizard/prankster duo stage")
+	_expect(not bool(game.duo2_prankster_triggered), "wizard/prankster duo started with an unfair immediate trick")
+	_expect(is_equal_approx(game.rope_speed, BALANCE.speed_for_score(10)), "wizard/prankster duo did not hold the flat score-10 baseline")
+	game.game_state = 1
+	game.rope_speed = 3.0
+	game.rope_angle = PI
+	# Pin the trick countdown high while checking wizard's own default toggle
+	# runs each turn, the same reasoning _test_start_at_one_thirty uses to
+	# avoid its random gap coincidentally firing early.
+	game.duo2_normal_turns_remaining = 1000
+	var hidden_before := bool(game.wizard_rope_hidden)
+	game._update_turner_team_and_pattern()
+	_expect(bool(game.wizard_rope_hidden) != hidden_before, "wizard/prankster duo's default wizard toggle did not run on a normal turn")
+	_expect(not bool(game.duo2_prankster_triggered), "wizard/prankster duo's normal turn incorrectly triggered prankster's trick")
+	game.wizard_speed_multiplier = 1.6
+	_expect(is_equal_approx(game._effective_rope_speed(), 3.0 * 1.6), "wizard/prankster duo's default turn did not use wizard's own speed multiplier")
+	# Force the prankster trick trigger deterministically instead of relying
+	# on its random gap.
+	game.duo2_normal_turns_remaining = 1
+	game._update_turner_team_and_pattern()
+	_expect(bool(game.duo2_prankster_triggered), "wizard/prankster duo's trick half never triggered")
+	_expect(bool(game.prankster_fake_pending), "wizard/prankster duo's trick trigger did not queue prankster's fake")
+	_expect(is_equal_approx(game._effective_rope_speed(), game.rope_speed), "wizard/prankster duo's trick turn changed speed away from the flat baseline")
+	_expect(game._wizard_rope_is_ghosted(), "wizard/prankster duo's trick turn did not render the rope invisible")
+	game.rope_angle = fposmod(TARGET_ANGLE - game.rope_speed * BALANCE.jump_cue_seconds * 0.5, TAU)
+	_expect(game._is_jump_cue(), "wizard/prankster duo trick red cue test did not enter the cue window")
+	_expect(is_equal_approx(game._effective_rope_speed(), game.rope_speed), "wizard/prankster duo trick changed speed during the red cue")
+	_expect(not game._wizard_rope_is_ghosted(), "wizard/prankster duo kept the rope invisible during the fair red cue window")
+	# Drive the queued fake to completion the same way _update_prankster_fake
+	# does at runtime: reach the overhead angle to start it, then let its
+	# timer run out.
+	game.rope_angle = game.ROPE_OVERHEAD_ANGLE - 0.01
+	game._update_prankster_fake(1.0)
+	_expect(int(game.prankster_fake_mode) != 0, "wizard/prankster duo's trick fake never started once the rope reached the top")
+	game._update_prankster_fake(maxf(game.PRANKSTER_STOP_SECONDS, game.PRANKSTER_REVERSE_SECONDS))
+	_expect(not bool(game.duo2_prankster_triggered), "wizard/prankster duo's trick did not clear after the fake finished")
+	_expect(int(game.duo2_normal_turns_remaining) >= game.WIZARD_PRANKSTER_DUO_MIN_NORMAL_TURNS and int(game.duo2_normal_turns_remaining) <= game.WIZARD_PRANKSTER_DUO_MAX_NORMAL_TURNS, "wizard/prankster duo's next gap fell outside its configured range")
+	# No further stage is designed past this one — it should hold indefinitely.
+	game.score = 1000
+	game._update_turner_team_and_pattern()
+	_expect(int(game.turner_team) == int(game.TurnerTeam.WIZARD_PRANKSTER_DUO), "wizard/prankster duo did not hold at a much higher score")
 	game._return_to_main()
 
 

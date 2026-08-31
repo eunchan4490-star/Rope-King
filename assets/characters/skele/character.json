@@ -1,0 +1,7 @@
+{
+  "display_name": "스켈레",
+  "order": 35,
+  "unlocked_by_default": false,
+  "disable_jump_rescale": true,
+  "price": 250
+}

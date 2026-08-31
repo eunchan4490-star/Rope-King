@@ -1,7 +1,7 @@
 extends Node2D
 
 enum GameState { TITLE, PLAYING, HIT, GAME_OVER }
-enum TurnerTeam { STUDENT, ATHLETE, SLEEPY, PRANKSTER, WIZARD, DUO }
+enum TurnerTeam { STUDENT, ATHLETE, SLEEPY, PRANKSTER, WIZARD, DUO, WIZARD_PRANKSTER_DUO }
 enum TurnerTransitionPhase { NONE, TURNER_EXIT, TURNER_ENTRY_COUNTDOWN }
 
 const SUPABASE_URL := "https://zjluakxiiynlzbfxztrl.supabase.co"
@@ -331,6 +331,24 @@ var duo_athlete_burst_turns_remaining := 0
 # would otherwise be doing this turn (speed + visual) — sleepy always takes
 # priority over athlete's own cycle.
 var duo_sleepy_awake := false
+# Second duo stage: from WIZARD_PRANKSTER_DUO_START_SCORE (151) onward, the
+# left turner is always wizard and the right is always prankster (see
+# _draw_turner) — the rope defaults to wizard's own pattern (periodic hide +
+# speed variance) every turn, and every so often the rope's pattern for a
+# single turn switches to prankster's stop/reverse fake instead, with the
+# rope also rendered invisible for that one turn (reusing wizard's own
+# ghosting so it reads as "the wizard vanishes the trick rope" rather than a
+# separate visual). WIZARD_PRANKSTER_DUO_SLOT is a sentinel distinct from
+# DUO_STAGE_SLOT and every gauntlet slot number, same purpose as that one.
+const WIZARD_PRANKSTER_DUO_START_SCORE := 151
+const WIZARD_PRANKSTER_DUO_SLOT := 100001
+const WIZARD_PRANKSTER_DUO_MIN_NORMAL_TURNS := 2
+const WIZARD_PRANKSTER_DUO_MAX_NORMAL_TURNS := 5
+var duo2_normal_turns_remaining := 0
+# True only during the one turn prankster's fake overrides wizard's own
+# pattern — drives both the fake motion (_update_prankster_fake, gated to
+# also accept this team) and the rope's forced invisibility.
+var duo2_prankster_triggered := false
 var rope_b_enabled := false
 var rope_b_angle := PI
 var jump_height := 0.0
@@ -430,6 +448,10 @@ var character_disable_jump_rescale: Dictionary = {}
 var character_unlock_scores: Dictionary = {}
 var character_prices: Dictionary = {}
 var owned_character_ids: Array[String] = []
+var newly_unlocked_this_run: Array[String] = []
+var character_reveal_active := false
+var character_reveal_index := 0
+var character_reveal_time := 0.0
 var character_list_viewport: Control
 var character_scroll_offset := 0.0
 var character_scroll_dragging := false
@@ -752,6 +774,14 @@ func _process(delta: float) -> void:
 		if hit_reveal_time <= 0.0:
 			game_state = GameState.GAME_OVER
 			_submit_score(score)
+			if not coop_mode and not newly_unlocked_this_run.is_empty():
+				newly_unlocked_this_run.sort_custom(func(a: String, b: String) -> bool:
+					return int(character_unlock_scores.get(a, 0)) < int(character_unlock_scores.get(b, 0)))
+				character_reveal_active = true
+				character_reveal_index = 0
+				character_reveal_time = 0.0
+	if character_reveal_active:
+		character_reveal_time += delta
 	if flash_time > 0.0:
 		flash_time -= delta
 	if perfect_display_time > 0.0:
@@ -832,6 +862,13 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event is InputEventMouseButton:
 		pointer_position = event.position
 	if pressed:
+		if game_state == GameState.GAME_OVER and character_reveal_active:
+			character_reveal_index += 1
+			character_reveal_time = 0.0
+			if character_reveal_index >= newly_unlocked_this_run.size():
+				character_reveal_active = false
+			get_viewport().set_input_as_handled()
+			return
 		if game_state == GameState.GAME_OVER and pointer_position.x >= 0.0:
 			var game_over_position := _screen_to_design(pointer_position)
 			if GAME_OVER_CLOSE_RECT.has_point(game_over_position):
@@ -1054,9 +1091,14 @@ func _resolve_rope_crossing() -> void:
 		if DOUBLE_ROPE_TEST_ENABLED and not rope_b_enabled and score >= DOUBLE_ROPE_TEST_SCORE_THRESHOLD and score < AIR_CHALLENGE_START_SCORE:
 			rope_speed = _base_speed_for_score(score)
 			rope_b_enabled = true
-			rope_b_angle = fposmod(rope_angle + ROPE_B_PHASE_OFFSET, TAU)
-			message = "[테스트] 보스 등장! 줄 2개를 동시에 넘어라!"
-			message_color = Color("35d0ff")
+			# Same exit+countdown pause and red "경고!" warning as the boss's
+			# initial pattern-random entry at BOSS_TURNER_SCORE_THRESHOLD —
+			# adding a second rope mid-run is a big enough rule change to
+			# deserve the same heads-up instead of appearing instantly.
+			_start_turner_transition(turner_team, true)
+			rope_b_angle = fposmod(PI + ROPE_B_PHASE_OFFSET, TAU)
+			message = "보스 등장! 줄 2개를 동시에 넘어라!"
+			message_color = Color("ff6b6b")
 			flash_time = 0.22
 			jump_started_in_cue = false
 			feedback.play_success(score)
@@ -1104,6 +1146,8 @@ func _resolve_rope_crossing() -> void:
 						message = "마법사 등장!  사라진 줄은 빨간색을 봐!"
 					TurnerTeam.DUO:
 						message = "운동부&잠꾸러기 등장!  잠꾸러기가 깨면 급발진!"
+					TurnerTeam.WIZARD_PRANKSTER_DUO:
+						message = "마법사&장난꾸러기 등장!  가끔 줄이 사라지며 멈칫해요!"
 		elif turner_team == TurnerTeam.SLEEPY and sleepy_wake_warning_time > 0.0:
 			message = "번쩍!  1초 뒤 초고속!"
 		elif turner_team == TurnerTeam.ATHLETE and challenge_pattern == 2:
@@ -1112,6 +1156,9 @@ func _resolve_rope_crossing() -> void:
 			message = "잠꾸러기 급발진!"
 		elif turner_team == TurnerTeam.DUO and duo_athlete_bursting:
 			message = "운동부 급가속!"
+		elif turner_team == TurnerTeam.WIZARD_PRANKSTER_DUO and duo2_prankster_triggered:
+			message = "장난꾸러기 줄속임!"
+			message_color = Color("ffd84a")
 		else:
 			message = "좋아요!  +1"
 		flash_time = 0.22
@@ -1198,6 +1245,10 @@ func _start_run() -> void:
 	new_best_this_run = false
 	run_coins_earned = 0
 	hit_reveal_time = 0.0
+	newly_unlocked_this_run.clear()
+	character_reveal_active = false
+	character_reveal_index = 0
+	character_reveal_time = 0.0
 	score = 0
 	rope_angle = PI
 	rope_speed = balance.base_rope_speed
@@ -1226,6 +1277,9 @@ func _start_game_at_score(start_score: int) -> void:
 	turner_change_slot = _turner_slot_for_score(score)
 	if turner_change_slot == DUO_STAGE_SLOT:
 		turner_team = TurnerTeam.DUO
+		_init_turner_team_state(turner_team)
+	elif turner_change_slot == WIZARD_PRANKSTER_DUO_SLOT:
+		turner_team = TurnerTeam.WIZARD_PRANKSTER_DUO
 		_init_turner_team_state(turner_team)
 	elif turner_change_slot > 0:
 		turner_team = _random_turner_team(TurnerTeam.STUDENT)
@@ -1322,6 +1376,7 @@ func _check_score_unlocks() -> void:
 		var required_score := int(character_unlock_scores.get(character_id, 0))
 		if required_score > 0 and best_score >= required_score:
 			owned_character_ids.append(character_id)
+			newly_unlocked_this_run.append(character_id)
 
 
 func _save_progress() -> void:
@@ -1580,6 +1635,8 @@ func _draw_rope_curve(curve_angle: float, rope_color: Color, highlight_color: Co
 
 
 func _wizard_rope_is_ghosted() -> bool:
+	if turner_team == TurnerTeam.WIZARD_PRANKSTER_DUO:
+		return duo2_prankster_triggered and not _is_jump_cue()
 	return turner_team == TurnerTeam.WIZARD and wizard_rope_hidden and not _is_jump_cue()
 
 
@@ -1662,11 +1719,23 @@ func _is_rope_b_jump_cue() -> bool:
 
 
 const DOUBLE_ROPE_SPEED_MULTIPLIER := 0.65
+# Deviation from the fair rope_speed baseline gets pulled in during the
+# double-rope stretch specifically — with two ropes to track at once, a full
+# team-pattern speed swing (e.g. sleepy's fast-turn multiplier) compounding
+# on top read as too jarring, even after the flat DOUBLE_ROPE_SPEED_
+# MULTIPLIER slowdown above (that scales everything down uniformly, so it
+# doesn't reduce how much faster/slower a burst feels relative to the calm
+# turns). This only softens the swing, not the fair jump-cue window, since
+# _effective_rope_speed_raw() already returns exactly rope_speed (zero
+# deviation) during the visible red cue for every team.
+const DOUBLE_ROPE_VARIANCE_DAMPING := 0.5
 
 
 func _effective_rope_speed() -> float:
 	var speed := _effective_rope_speed_raw()
 	if rope_b_enabled:
+		var deviation := speed - rope_speed
+		speed = rope_speed + deviation * DOUBLE_ROPE_VARIANCE_DAMPING
 		speed *= DOUBLE_ROPE_SPEED_MULTIPLIER
 	return speed
 
@@ -1691,6 +1760,14 @@ func _effective_rope_speed_raw() -> float:
 		if duo_athlete_bursting:
 			return rope_speed if _is_jump_cue() else rope_speed * balance.athlete_burst_multiplier
 		return rope_speed
+	if turner_team == TurnerTeam.WIZARD_PRANKSTER_DUO:
+		# During prankster's triggered turn, the fake stop/reverse itself
+		# (see _update_prankster_fake) manipulates rope_angle directly rather
+		# than a speed multiplier — same as standalone PRANKSTER, which never
+		# sets challenge_pattern either — so speed just stays flat here.
+		if duo2_prankster_triggered:
+			return rope_speed
+		return rope_speed if _is_jump_cue() else rope_speed * wizard_speed_multiplier
 	# Keep a stable, fair speed throughout the red input window.
 	if challenge_pattern == 0 or _is_jump_cue():
 		return rope_speed
@@ -1743,6 +1820,8 @@ func _reset_turner_run() -> void:
 	duo_athlete_normal_turns_remaining = 0
 	duo_athlete_burst_turns_remaining = 0
 	duo_sleepy_awake = false
+	duo2_normal_turns_remaining = 0
+	duo2_prankster_triggered = false
 	turner_transition_active = false
 	turner_transition_time = 0.0
 	turner_transition_phase = TurnerTransitionPhase.NONE
@@ -1766,11 +1845,13 @@ func _turner_slot_for_score(current_score: int) -> int:
 	# value doesn't matter as long as it's monotonic and distinct per stretch.
 	if current_score < TURNER_CHANGE_INTERVAL:
 		return 0
+	if current_score >= WIZARD_PRANKSTER_DUO_START_SCORE:
+		return WIZARD_PRANKSTER_DUO_SLOT
 	if current_score >= DUO_STAGE_END_SCORE:
-		# Nothing designed for past the duo stage yet — slot 0 is the same
+		# Between the athlete/sleepy duo ending and the wizard/prankster duo
+		# starting at WIZARD_PRANKSTER_DUO_START_SCORE, slot 0 is the same
 		# "reset to plain student, no fanfare" branch the pre-score-10 grace
-		# period uses (see _update_turner_team_and_pattern), so this just
-		# holds a basic single-rope pattern until real content exists.
+		# period uses (see _update_turner_team_and_pattern).
 		return 0
 	if current_score >= AIR_CHALLENGE_START_SCORE:
 		return DUO_STAGE_SLOT
@@ -1811,6 +1892,11 @@ func _init_turner_team_state(team: TurnerTeam) -> void:
 			duo_athlete_normal_turns_remaining = ATHLETE_NORMAL_TURNS
 			duo_athlete_burst_turns_remaining = 0
 			duo_sleepy_awake = false
+		TurnerTeam.WIZARD_PRANKSTER_DUO:
+			wizard_rope_hidden = false
+			wizard_speed_multiplier = 1.0
+			duo2_normal_turns_remaining = _roll_duo2_normal_turns()
+			duo2_prankster_triggered = false
 
 
 func _update_turner_team_and_pattern() -> bool:
@@ -1825,7 +1911,11 @@ func _update_turner_team_and_pattern() -> bool:
 		if target_slot <= 0:
 			turner_team = TurnerTeam.STUDENT
 			return false
-		var new_team := TurnerTeam.DUO if target_slot == DUO_STAGE_SLOT else _random_turner_team(turner_team)
+		var new_team := _random_turner_team(turner_team)
+		if target_slot == DUO_STAGE_SLOT:
+			new_team = TurnerTeam.DUO
+		elif target_slot == WIZARD_PRANKSTER_DUO_SLOT:
+			new_team = TurnerTeam.WIZARD_PRANKSTER_DUO
 		turner_team = new_team
 		_init_turner_team_state(new_team)
 		return true
@@ -1882,6 +1972,22 @@ func _update_turner_team_and_pattern() -> bool:
 				duo_athlete_bursting = true
 				duo_athlete_burst_turns_remaining = ATHLETE_MAX_BURST_TURNS
 		return false
+	if turner_team == TurnerTeam.WIZARD_PRANKSTER_DUO:
+		# Wizard's own hide/speed-variance toggle runs every turn by
+		# default. When the countdown below hits zero, this turn's
+		# pattern switches to prankster's stop/reverse fake instead (see
+		# _update_prankster_fake, extended to also accept this team) and
+		# the rope renders invisible for it (_wizard_rope_is_ghosted) --
+		# duo2_prankster_triggered is cleared and the gap re-rolled once
+		# that fake finishes, not here.
+		duo2_normal_turns_remaining -= 1
+		if duo2_normal_turns_remaining <= 0:
+			duo2_prankster_triggered = true
+			prankster_fake_pending = true
+		else:
+			wizard_rope_hidden = not wizard_rope_hidden
+			wizard_speed_multiplier = randf_range(balance.wizard_speed_min_multiplier, balance.wizard_speed_max_multiplier)
+		return false
 
 	if challenge_pattern == 2:
 		athlete_burst_turns_remaining -= 1
@@ -1920,8 +2026,12 @@ func _roll_duo_normal_turns() -> int:
 	return randi_range(DUO_MIN_NORMAL_TURNS, DUO_MAX_NORMAL_TURNS)
 
 
+func _roll_duo2_normal_turns() -> int:
+	return randi_range(WIZARD_PRANKSTER_DUO_MIN_NORMAL_TURNS, WIZARD_PRANKSTER_DUO_MAX_NORMAL_TURNS)
+
+
 func _update_prankster_fake(delta: float) -> bool:
-	if turner_team != TurnerTeam.PRANKSTER:
+	if turner_team != TurnerTeam.PRANKSTER and turner_team != TurnerTeam.WIZARD_PRANKSTER_DUO:
 		return false
 	if prankster_fake_time > 0.0:
 		if prankster_fake_mode == 2:
@@ -1933,7 +2043,11 @@ func _update_prankster_fake(delta: float) -> bool:
 		if prankster_fake_time <= 0.0:
 			prankster_fake_mode = 0
 			prankster_fake_pending = false
-			prankster_normal_turns_remaining = _roll_prankster_normal_turns()
+			if turner_team == TurnerTeam.WIZARD_PRANKSTER_DUO:
+				duo2_prankster_triggered = false
+				duo2_normal_turns_remaining = _roll_duo2_normal_turns()
+			else:
+				prankster_normal_turns_remaining = _roll_prankster_normal_turns()
 			message = "다시 돈다!"
 			message_color = Color("73f7b4")
 		return true
@@ -2003,6 +2117,22 @@ func _draw_turner(feet: Vector2, faces_left: bool, display_team := -1) -> void:
 		base_region = wizard_turner_used_region
 		mirror_texture = mirrored_wizard_turner_texture
 		mirror_region = mirrored_wizard_turner_used_region
+	elif active_team == TurnerTeam.WIZARD_PRANKSTER_DUO:
+		# Left turner (faces_left == false) is always wizard; right
+		# (faces_left == true) is always prankster — same fixed-side
+		# convention as TurnerTeam.DUO. Unlike that duo's sleepy half, this
+		# doesn't swap sprite/pose when prankster's pattern triggers — only
+		# the rope itself changes (see _wizard_rope_is_ghosted).
+		if faces_left:
+			base_texture = prankster_turner_texture
+			base_region = prankster_turner_used_region
+			mirror_texture = mirrored_prankster_turner_texture
+			mirror_region = mirrored_prankster_turner_used_region
+		else:
+			base_texture = wizard_turner_texture
+			base_region = wizard_turner_used_region
+			mirror_texture = mirrored_wizard_turner_texture
+			mirror_region = mirrored_wizard_turner_used_region
 	# From score 90 up to AIR_CHALLENGE_START_SCORE, the boss look takes over
 	# the rope turners regardless of whichever team pattern is currently
 	# active underneath. Past that there's no designed content yet, so it
@@ -2879,6 +3009,8 @@ func _draw_hud() -> void:
 	draw_string(font, Vector2(0, 1190), control_text, HORIZONTAL_ALIGNMENT_CENTER, DESIGN_SIZE.x, 22, Color("8293b7"))
 	if game_state == GameState.GAME_OVER:
 		_draw_game_over_panel(font)
+		if character_reveal_active:
+			_draw_character_unlock_reveal(font)
 
 
 func _game_over_panel_rect() -> Rect2:
@@ -2981,6 +3113,54 @@ func _draw_game_over_panel(font: Font) -> void:
 	draw_rect(retry_rect, Color("ffd23f"), true)
 	draw_rect(retry_rect, Color("fff0a6"), false, 5.0)
 	draw_string(font, Vector2(retry_rect.position.x, retry_rect.position.y + 39.0), "터치해서 다시 도전!", HORIZONTAL_ALIGNMENT_CENTER, retry_rect.size.x, 24, Color("633913"))
+
+
+func _draw_character_unlock_reveal(font: Font) -> void:
+	# Fullscreen "짜잔" card shown once per newly-crossed unlock_score
+	# threshold, on top of the normal game-over panel — tap advances to the
+	# next unlocked character (if several thresholds were crossed in one
+	# run) or dismisses back to the plain game-over panel.
+	if character_reveal_index >= newly_unlocked_this_run.size():
+		return
+	var character_id: String = newly_unlocked_this_run[character_reveal_index]
+	draw_rect(Rect2(Vector2.ZERO, DESIGN_SIZE), Color(0.03, 0.04, 0.08, 0.88), true)
+	# Pop-in scale eases from slightly-big down to 1.0 instead of growing
+	# from zero, so the card reads as "landing" rather than inflating.
+	var pop_progress := clampf(character_reveal_time / 0.28, 0.0, 1.0)
+	var eased_pop := 1.0 - pow(1.0 - pop_progress, 3.0)
+	var pop_scale := lerpf(1.35, 1.0, eased_pop)
+	var glow_pulse := 0.6 + 0.4 * sin(Time.get_ticks_msec() * 0.005)
+
+	var card_center := DESIGN_SIZE * 0.5
+	var card_size := Vector2(460.0, 560.0)
+	var card_rect := Rect2(card_center - card_size * 0.5, card_size)
+	for i in range(4):
+		var grow_amount := 6.0 + float(i) * 10.0
+		var alpha := (0.30 - float(i) * 0.06) * glow_pulse
+		draw_rect(card_rect.grow(grow_amount * pop_scale), Color(1.0, 0.82, 0.32, alpha), true)
+	draw_rect(card_rect, Color(0.09, 0.07, 0.04, 0.96), true)
+	draw_rect(card_rect, Color("ffd23f"), false, 6.0)
+
+	draw_string(font, Vector2(card_rect.position.x, card_rect.position.y + 54.0), "NEW 캐릭터 해금!", HORIZONTAL_ALIGNMENT_CENTER, card_rect.size.x, 30, Color("ffd23f"))
+
+	var preview_rect := Rect2(card_rect.position + Vector2(30.0, 90.0), Vector2(card_rect.size.x - 60.0, 300.0))
+	var texture := _character_preview_texture(character_id)
+	if texture != null:
+		var source: Rect2 = character_preview_regions.get(character_id, Rect2(Vector2.ZERO, texture.get_size()))
+		var scale := minf(preview_rect.size.x / source.size.x, preview_rect.size.y / source.size.y)
+		scale *= float(character_scale_multipliers.get(character_id, 1.0)) * pop_scale
+		var size := source.size * scale
+		var position := Vector2(preview_rect.get_center().x - size.x * 0.5, preview_rect.end.y - size.y)
+		draw_texture_rect_region(texture, Rect2(position, size), source)
+
+	var name: String = character_names.get(character_id, character_id)
+	var required_score := int(character_unlock_scores.get(character_id, 0))
+	draw_string(font, Vector2(card_rect.position.x, card_rect.end.y - 150.0), name, HORIZONTAL_ALIGNMENT_CENTER, card_rect.size.x, 32, Color.WHITE)
+	draw_string(font, Vector2(card_rect.position.x, card_rect.end.y - 112.0), "기록 %d회 달성 보상" % required_score, HORIZONTAL_ALIGNMENT_CENTER, card_rect.size.x, 22, Color("8dd6ff"))
+
+	var hint := "화면을 눌러 계속" if character_reveal_index >= newly_unlocked_this_run.size() - 1 else "화면을 눌러 다음 캐릭터"
+	var hint_alpha := 0.55 + 0.35 * sin(Time.get_ticks_msec() * 0.006)
+	draw_string(font, Vector2(card_rect.position.x, card_rect.end.y - 40.0), hint, HORIZONTAL_ALIGNMENT_CENTER, card_rect.size.x, 20, Color(1.0, 1.0, 1.0, hint_alpha))
 
 
 func _draw_main_menu(font: Font) -> void:

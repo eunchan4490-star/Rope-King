@@ -1,6 +1,6 @@
 ---
 name: rope-king-character-import
-description: Turn a 3-pose transparent PNG character sheet (idle/air/mid) into a playable 줄넘킹(Rope King) character — background/shadow cleanup, pose splitting, idle.png + jump_sheet.png + character.json, and a rebuild+test pass. Use this whenever the user drops a new character image into the "julnumking asset" folder (or anywhere else) and wants it added, replaced, or fixed in this project — including requests like "이 캐릭터 추가해줘", "새 캐릭터 넣어줘", or "에셋 다시 넣어줘" after re-exporting a PNG.
+description: Turn a 3-pose transparent PNG character sheet (idle/air/mid) into a playable 줄넘킹(Rope King) character — pose splitting (pure crop, no pixel retouching), idle.png + jump_sheet.png + character.json, and a rebuild+test pass. Use this whenever the user drops a new character image into the "julnumking asset" folder (or anywhere else) and wants it added, replaced, or fixed in this project — including requests like "이 캐릭터 추가해줘", "새 캐릭터 넣어줘", or "에셋 다시 넣어줘" after re-exporting a PNG.
 ---
 
 # Rope King character import
@@ -9,8 +9,24 @@ This packages the workflow we iterated on manually: taking a hand-made or
 AI-generated character sheet and turning it into the two files the game
 actually loads (`idle.png`, `jump_sheet.png`) plus its `character.json`,
 without reintroducing the mistakes that caused real regressions along the
-way — an invisible hole punched through the shirt, a growing-on-jump bug,
-and images that looked transparent but weren't.
+way — an invisible hole punched through the shirt, a bite eaten out of a
+character's own light-colored fur, a growing-on-jump bug, and images that
+looked transparent but weren't.
+
+The pipeline is now **pure crop-and-split — it never repaints or erases any
+pixel of the source art**. Every earlier version of this script that tried
+to "clean up" the art automatically (shadow-color removal, enclosed-hole
+filling, matte-edge erosion) ended up eating real character art on some
+character sooner or later, because a heuristic that recognizes "background
+residue" by color/brightness/shape can't reliably tell that apart from a
+character's own light fur, white shirt, or baked-in shading. The sources for
+this project are always already-clean transparent PNGs the user cuts out
+themselves, so there's nothing for a cleanup pass to legitimately fix — only
+things for it to accidentally break. Do not reintroduce any pixel-level
+cleanup step; if a source genuinely has background residue, a baked-in
+shadow, or a soft-alpha halo, that's a re-export problem to fix at the
+source, not something to paper over with a heuristic that also eats real
+art.
 
 ## Input contract
 
@@ -62,35 +78,32 @@ flat image, guessing would just fabricate a cutout.
 
 Every step here exists because a simpler version of it broke something:
 
-- **Shadow removal by color, not by position.** The source art often bakes
-  in a soft drop shadow ellipse under each pose. The game already draws its
-  own shadow at runtime, so leaving it in doubles up. Matching by color
-  distance (not "everything near the feet") means it survives poses where
-  the shadow overlaps the standing pose's own feet.
-- **Enclosed-hole removal was removed entirely.** An earlier version of the
-  pipeline treated any enclosed light-colored blob (near-white, low
-  saturation) as background residue and deleted it, on the theory that real
-  gaps (between legs, under an arm) are narrow while a torso/sleeve is wide.
-  Even with a width cap that heuristic still punched holes through
-  legitimate light-colored art it had no business touching — white shirt
-  fronts, eye highlights, a light character belly. The project's sources are
-  now always already-clean transparent PNGs the user cut out themselves, so
-  this step bought nothing but risk — it's gone, not just disabled. Do not
-  reintroduce color-based enclosed-region deletion; if a source genuinely has
-  baked-in background residue, that's a re-export problem, not something to
-  paper over with a heuristic that also eats real art.
-- **Verify against a dark background, not white.** A transparent hole and
-  white fabric render identically against a white or light-checkered
-  backdrop, which is how the hole above went unnoticed on first pass. The
-  script writes `_source/dark_background_preview.png` — always look at that
-  file (or composite the poses over a dark color yourself) before telling
-  the user it's done, especially after touching the hole-removal or matte
-  logic.
-- **Matte erosion is capped at a couple of iterations with a mid-brightness
-  band.** This cleans up the thin anti-aliased halo left from the original
-  background removal without eating into legitimate dark shading or bright
-  fabric — a wider brightness range or more iterations will start eroding
-  real art, not just the halo.
+- **No shadow removal, no enclosed-hole removal, no matte-edge erosion —
+  all three were tried and all three were removed for the same reason.**
+  Shadow removal matched a baked-in drop-shadow color, but on gray/tan/stone
+  characters (`moai_human`) it also matched real body shading and punched
+  speckled holes through it. Enclosed-hole removal treated any near-white
+  enclosed blob as background residue, but that's also what a white shirt
+  front, an eye highlight, or a light character belly looks like — it ate
+  those on multiple characters even with a width cap meant to prevent it.
+  Matte-edge erosion trimmed a couple pixels of "anti-aliasing halo" at the
+  silhouette boundary, but on `kungfu_koala`'s pale gray-white ears that
+  criteria matched the character's own real fur and ate a visible bite out
+  of the top of its head. Three different heuristics, three different
+  characters broken, same root cause: there is no reliable way to tell "this
+  pixel is background residue" from "this pixel is legitimately
+  light-colored art" by color/brightness/shape alone. **Do not add any new
+  pixel-level cleanup step to this pipeline.** If a source genuinely has
+  background residue, a baked-in shadow, or a soft-alpha halo, that's a
+  re-export problem — ask the user to fix it at the source.
+- **Verify against a dark background anyway, even with no cleanup step to
+  break things.** A transparent hole and white fabric still render
+  identically against a white or light-checkered backdrop, so this is still
+  the fastest way to catch a source PNG that itself has a real problem (e.g.
+  a translucent instead of fully-transparent background). The script writes
+  `_source/dark_background_preview.png` — always look at that file (or
+  composite the poses over a dark color yourself) before telling the user
+  it's done.
 - **Tall accessories (ears, hats, antennae) need `body_top_fraction`.** The
   game fits a character's whole silhouette height into a fixed-size box
   (`_scale_for_region` in `scripts/main.gd`). If a character wears something
