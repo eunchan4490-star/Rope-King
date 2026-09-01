@@ -558,6 +558,9 @@ func _test_start_at_one_thirty(game: Node) -> void:
 	game.duo_normal_turns_remaining = 1
 	game.duo_athlete_normal_turns_remaining = 1
 	game._update_turner_team_and_pattern()
+	_expect(not bool(game.duo_sleepy_awake), "duo stage's sleepy wake skipped its warning delay")
+	_expect(is_equal_approx(game.sleepy_wake_warning_time, game.SLEEPY_WAKE_WARNING_SECONDS), "duo stage's sleepy wake warning was not exactly one second")
+	game._update_sleepy_warning(game.SLEEPY_WAKE_WARNING_SECONDS)
 	_expect(bool(game.duo_sleepy_awake), "duo stage's sleepy half never woke up for a burst")
 	_expect(is_equal_approx(game._effective_rope_speed(), 3.0 * game.SLEEPY_FAST_MULTIPLIER), "duo burst did not reuse sleepy's own fast multiplier, or athlete's own burst wrongly took priority")
 	game.rope_angle = fposmod(TARGET_ANGLE - game.rope_speed * BALANCE.jump_cue_seconds * 0.5, TAU)

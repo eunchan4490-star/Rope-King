@@ -50,11 +50,13 @@ const TURNER_CHANGE_INTERVAL := 10
 # used to have (ATHLETE@10, SLEEPY@30, PRANKSTER@50, WIZARD@70), just with
 # the team at each of those boundaries now chosen at random instead of fixed.
 const TURNER_RANDOM_INTERVAL := 20
-# From BOSS_TURNER_SCORE_THRESHOLD up to the double-rope reveal, the turner
-# team rerolls much more often so every existing pattern (athlete/sleepy/
-# prankster/wizard) gets a chance to show up before the boss's real gimmick
-# (the second rope) kicks in.
+# From BOSS_TURNER_SCORE_THRESHOLD to the double-rope reveal, the turner
+# team still rerolls much more often so every existing pattern (athlete/
+# sleepy/prankster/wizard) gets a chance to show up before the boss's real
+# gimmick (the second rope, plus the pattern locking to plain default) kicks
+# in — see _turner_slot_for_score.
 const BOSS_GAUNTLET_TURNER_INTERVAL := 3
+const BOSS_GAUNTLET_SLOT := 99999
 const ATHLETE_NORMAL_TURNS := 2
 const ATHLETE_MAX_BURST_TURNS := 2
 const SLEEPY_START_SCORE := 30
@@ -95,6 +97,8 @@ const SLEEPY_TURNER_AWAKE_PATH := "res://assets/turners/sleepy_student_awake.png
 const PRANKSTER_TURNER_PATH := "res://assets/turners/prankster_student.png"
 const WIZARD_TURNER_PATH := "res://assets/turners/wizard_student.png"
 const BOSS_TURNER_PATH := "res://assets/turners/boss_king.png"
+const BOSS_TURNER_ANGRY_PATH := "res://assets/turners/boss_king_angry.png"
+const BOSS_TURNER_SHOCKED_PATH := "res://assets/turners/boss_king_shocked.png"
 const BOSS_TURNER_SCORE_THRESHOLD := 90
 const MENU_CHARACTER_TEXTURE_PATH := "res://assets/ui/menu_character.png"
 const RANKING_BUTTON_TEXTURE_PATH := "res://assets/ui/ranking_button.png"
@@ -127,6 +131,19 @@ const RUBY_ICON_OFFSET := Vector2(8.0, 12.0)
 const RESOURCE_ICON_SIZE := Vector2(38.0, 38.0)
 const GAME_OVER_PANEL_PATH := "res://assets/ui/panel_frame.png"
 const REVIVE_GEM_COST := 1
+# Shown once, the very first time a new player taps the title screen — this
+# runs the player's actual first game (real rope, real turner, real score),
+# just with the world frozen at a few checkpoints for an explanation instead
+# of a separate slideshow. `at_score` is the score value at which play
+# pauses (0 == before the very first jump, i.e. immediately after the run
+# starts); the tap that dismisses a checkpoint doubles as that tap's normal
+# game input (see _unhandled_input), so dismissing checkpoint 0 is itself
+# the player's first jump attempt.
+const TUTORIAL_CHECKPOINTS: Array[Dictionary] = [
+	{"at_score": 0, "text": "화면을 터치하면 캐릭터가 점프해요.\n터치해서 첫 점프를 해보세요!"},
+	{"at_score": 1, "text": "잘했어요! 줄이 빨간색으로 바뀌는 순간\n터치하면 성공이에요."},
+	{"at_score": 5, "text": "좋아요! 여기부터는 진짜 게임이에요.\n최고 기록에 도전해보세요!"},
+]
 # Godot's built-in ThemeDB.fallback_font has no Hangul glyphs, so every piece
 # of Korean text drawn via draw_string() rendered as tofu boxes until this
 # was added — it just went unnoticed because most Korean text on screen is
@@ -223,6 +240,7 @@ const NICKNAME_ROW_RECT := Rect2(105.0, 560.0, 505.0, 70.0)
 const NICKNAME_FIELD_RECT := Rect2(235.0, 560.0, 245.0, 70.0)
 const NICKNAME_SAVE_BUTTON_RECT := Rect2(490.0, 560.0, 120.0, 70.0)
 const CODE_ROW_RECT := Rect2(105.0, 650.0, 505.0, 70.0)
+const DATA_RESET_ROW_RECT := Rect2(105.0, 735.0, 505.0, 70.0)
 const CODE_FIELD_RECT := Rect2(235.0, 650.0, 245.0, 70.0)
 const CODE_SUBMIT_BUTTON_RECT := Rect2(490.0, 650.0, 120.0, 70.0)
 const RANKING_MAIN_BUTTON_RECT := Rect2(531.0, 306.0, 189.0, 107.0)
@@ -260,6 +278,8 @@ const RANKING_ROW_HEIGHT := 60.0
 @export var prankster_turner_texture: Texture2D
 @export var wizard_turner_texture: Texture2D
 @export var boss_turner_texture: Texture2D
+@export var boss_turner_angry_texture: Texture2D
+@export var boss_turner_shocked_texture: Texture2D
 @export_group("Menu Button Assets")
 @export var character_button_texture: Texture2D
 @export var ranking_button_texture: Texture2D
@@ -442,6 +462,11 @@ var player_base_region := Rect2()
 var player_jump_regions: Array[Rect2] = []
 var player_base_scale := 1.0
 var player_jump_scale := Vector2.ONE
+var data_reset_confirm_pending := false
+var tutorial_seen := false
+var tutorial_active := false
+var tutorial_pause_active := false
+var tutorial_checkpoint_index := 0
 var character_menu_open := false
 var settings_menu_open := false
 var nickname := RopeSaveManager.DEFAULT_NICKNAME
@@ -512,6 +537,12 @@ var mirrored_wizard_turner_used_region := Rect2()
 var boss_turner_used_region := Rect2()
 var mirrored_boss_turner_texture: Texture2D
 var mirrored_boss_turner_used_region := Rect2()
+var boss_turner_angry_used_region := Rect2()
+var mirrored_boss_turner_angry_texture: Texture2D
+var mirrored_boss_turner_angry_used_region := Rect2()
+var boss_turner_shocked_used_region := Rect2()
+var mirrored_boss_turner_shocked_texture: Texture2D
+var mirrored_boss_turner_shocked_used_region := Rect2()
 var character_button_used_region := Rect2()
 var ranking_button_used_region := Rect2()
 var attendance_button_used_region := Rect2()
@@ -739,6 +770,26 @@ func _prepare_turner_visuals() -> void:
 			mirrored_boss_image.flip_x()
 			mirrored_boss_turner_texture = ImageTexture.create_from_image(mirrored_boss_image)
 			mirrored_boss_turner_used_region = _texture_used_region(mirrored_boss_turner_texture)
+	if boss_turner_angry_texture == null and ResourceLoader.exists(BOSS_TURNER_ANGRY_PATH):
+		boss_turner_angry_texture = load(BOSS_TURNER_ANGRY_PATH) as Texture2D
+	if boss_turner_angry_texture != null:
+		boss_turner_angry_used_region = _texture_used_region(boss_turner_angry_texture)
+		var boss_angry_image := boss_turner_angry_texture.get_image()
+		if boss_angry_image != null and not boss_angry_image.is_empty():
+			var mirrored_boss_angry_image := boss_angry_image.duplicate()
+			mirrored_boss_angry_image.flip_x()
+			mirrored_boss_turner_angry_texture = ImageTexture.create_from_image(mirrored_boss_angry_image)
+			mirrored_boss_turner_angry_used_region = _texture_used_region(mirrored_boss_turner_angry_texture)
+	if boss_turner_shocked_texture == null and ResourceLoader.exists(BOSS_TURNER_SHOCKED_PATH):
+		boss_turner_shocked_texture = load(BOSS_TURNER_SHOCKED_PATH) as Texture2D
+	if boss_turner_shocked_texture != null:
+		boss_turner_shocked_used_region = _texture_used_region(boss_turner_shocked_texture)
+		var boss_shocked_image := boss_turner_shocked_texture.get_image()
+		if boss_shocked_image != null and not boss_shocked_image.is_empty():
+			var mirrored_boss_shocked_image := boss_shocked_image.duplicate()
+			mirrored_boss_shocked_image.flip_x()
+			mirrored_boss_turner_shocked_texture = ImageTexture.create_from_image(mirrored_boss_shocked_image)
+			mirrored_boss_turner_shocked_used_region = _texture_used_region(mirrored_boss_turner_shocked_texture)
 
 
 func _prepare_countdown_visuals() -> void:
@@ -754,6 +805,9 @@ func _prepare_countdown_visuals() -> void:
 
 
 func _process(delta: float) -> void:
+	if tutorial_pause_active:
+		queue_redraw()
+		return
 	if game_state == GameState.PLAYING:
 		if coop_mode:
 			_advance_coop_jumps(delta)
@@ -897,6 +951,15 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event is InputEventMouseButton:
 		pointer_position = event.position
 	if pressed:
+		if tutorial_pause_active:
+			# Dismissing a tutorial checkpoint deliberately falls through
+			# instead of returning — the same tap that closes the explanation
+			# also performs whatever it was explaining (e.g. checkpoint 0's
+			# dismiss tap is the player's actual first jump).
+			tutorial_pause_active = false
+			tutorial_checkpoint_index += 1
+			if tutorial_checkpoint_index >= TUTORIAL_CHECKPOINTS.size():
+				tutorial_active = false
 		if game_state == GameState.GAME_OVER and character_reveal_active:
 			character_reveal_index += 1
 			character_reveal_time = 0.0
@@ -991,6 +1054,9 @@ func attempt_jump() -> void:
 	if game_state == GameState.HIT:
 		return
 	if game_state != GameState.PLAYING:
+		if game_state == GameState.TITLE and not tutorial_seen:
+			_start_tutorial_run()
+			return
 		_start_game()
 		return
 	if air_challenge_active:
@@ -1119,6 +1185,9 @@ func _resolve_rope_crossing() -> void:
 			new_best_this_run = true
 			_check_score_unlocks()
 		total_success += 1
+		if tutorial_active and tutorial_checkpoint_index < TUTORIAL_CHECKPOINTS.size() and int(TUTORIAL_CHECKPOINTS[tutorial_checkpoint_index].at_score) == score:
+			tutorial_pause_active = true
+			return
 		if rope_b_enabled and score >= AIR_CHALLENGE_START_SCORE:
 			# Double rope is a boss-only gimmick for now, capped at the same
 			# score the (still disabled — see AIR_CHALLENGE_ENABLED) air
@@ -1174,12 +1243,14 @@ func _resolve_rope_crossing() -> void:
 		rope_speed = _base_speed_for_score(score)
 		message_color = Color("73f7b4")
 		if team_changed:
-			# Boss gauntlet (90..AIR_CHALLENGE_START_SCORE): the pattern still
-			# rerolls every BOSS_GAUNTLET_TURNER_INTERVAL points underneath,
-			# but only the very first entry (score == BOSS_TURNER_SCORE_
-			# THRESHOLD) gets an announcement + transition pause. Every later
-			# reroll in that stretch swaps silently so the run isn't
-			# interrupted every few points.
+			# Boss fight has two halves (see _turner_slot_for_score): 90..110
+			# still rerolls the normal pattern every BOSS_GAUNTLET_TURNER_
+			# INTERVAL points — same as before the boss showed up, just under
+			# the calm-king reskin — so only the very first entry gets an
+			# announcement; every later reroll in that stretch swaps silently.
+			# 110..AIR_CHALLENGE_START_SCORE locks to the plain default pattern
+			# (the angry king's phase) — that transition is silent too, since
+			# the double-rope intro turn already announced the phase change.
 			var is_boss_change := score >= BOSS_TURNER_SCORE_THRESHOLD and score < AIR_CHALLENGE_START_SCORE
 			var is_first_boss_entry := score == BOSS_TURNER_SCORE_THRESHOLD
 			if is_boss_change and not is_first_boss_entry:
@@ -1207,6 +1278,8 @@ func _resolve_rope_crossing() -> void:
 			message = "번쩍!  1초 뒤 초고속!"
 		elif turner_team == TurnerTeam.ATHLETE and challenge_pattern == 2:
 			message = "운동부 급가속!"
+		elif turner_team == TurnerTeam.DUO and sleepy_wake_warning_time > 0.0:
+			message = "번쩍!  1초 뒤 잠꾸러기 급발진!"
 		elif turner_team == TurnerTeam.DUO and duo_sleepy_awake:
 			message = "잠꾸러기 급발진!"
 		elif turner_team == TurnerTeam.DUO and duo_athlete_bursting:
@@ -1282,6 +1355,18 @@ func _coop_player_clears_rope(player_x: float, jumping: bool, height: float) -> 
 	return PLAYER_GROUND_Y + height + player_sprite_ground_offset.y < rope_top_y
 
 
+func _start_tutorial_run() -> void:
+	# Marked seen immediately, not on completion — a player who bails out
+	# mid-tutorial (backs out, gets hit early) should still never see it
+	# again, same as most games' one-shot onboarding.
+	tutorial_seen = true
+	_save_progress()
+	_start_game()
+	tutorial_active = true
+	tutorial_checkpoint_index = 0
+	tutorial_pause_active = true
+
+
 func _start_game() -> void:
 	coop_mode = false
 	_reset_coop_players()
@@ -1296,6 +1381,10 @@ func _start_coop_game() -> void:
 
 
 func _start_run() -> void:
+	# Off by default for every run — _start_tutorial_run() turns these back
+	# on right after calling this, only for the player's very first run.
+	tutorial_active = false
+	tutorial_pause_active = false
 	run_start_best = best_score
 	new_best_this_run = false
 	run_coins_earned = 0
@@ -1399,6 +1488,22 @@ func _reset_coop_players() -> void:
 	coop_hit_player = 0
 
 
+func _reset_all_data() -> void:
+	# Settings → "데이터 초기화", gated behind a second confirming tap (see
+	# _handle_settings_menu_input). Wipes the save file back to defaults and
+	# reloads every in-memory field from it, same as a fresh install — most
+	# notably tutorial_seen goes back to false, so the very next title tap
+	# runs the guided first-run tutorial again.
+	save_manager.save_game(save_manager.default_data())
+	owned_character_ids.clear()
+	_load_character_catalog()
+	_load_saved_progress()
+	character_reveal_active = false
+	newly_unlocked_this_run.clear()
+	data_reset_confirm_pending = false
+	settings_message = "초기화 완료! 처음부터 다시 시작합니다"
+
+
 func _load_saved_progress() -> void:
 	var data := save_manager.load_game()
 	best_score = int(data.best_score)
@@ -1418,6 +1523,7 @@ func _load_saved_progress() -> void:
 	nickname = str(data.nickname)
 	attendance_streak = int(data.attendance.streak)
 	attendance_last_claim_date = str(data.attendance.last_claim_date)
+	tutorial_seen = bool(data.tutorial_seen)
 
 
 func _check_score_unlocks() -> void:
@@ -1456,6 +1562,7 @@ func _save_progress() -> void:
 			"streak": attendance_streak,
 			"last_claim_date": attendance_last_claim_date,
 		},
+		"tutorial_seen": tutorial_seen,
 	})
 
 
@@ -1510,6 +1617,8 @@ func _draw() -> void:
 		_draw_rope_layer(false)
 	if game_state == GameState.HIT:
 		_draw_hit_feedback()
+	if game_state != GameState.TITLE and score >= BOSS_TURNER_SCORE_THRESHOLD and score < AIR_CHALLENGE_START_SCORE:
+		_draw_boss_edge_vignette()
 	_draw_hud()
 
 
@@ -1517,6 +1626,22 @@ func _draw_coop_divider() -> void:
 	draw_rect(Rect2(0.0, 0.0, DESIGN_SIZE.x * 0.5, DESIGN_SIZE.y), Color(0.20, 0.55, 1.0, 0.055), true)
 	draw_rect(Rect2(DESIGN_SIZE.x * 0.5, 0.0, DESIGN_SIZE.x * 0.5, DESIGN_SIZE.y), Color(1.0, 0.35, 0.48, 0.055), true)
 	draw_line(Vector2(DESIGN_SIZE.x * 0.5, 0.0), Vector2(DESIGN_SIZE.x * 0.5, DESIGN_SIZE.y), Color(1.0, 1.0, 1.0, 0.72), 5.0, true)
+
+
+func _draw_boss_edge_vignette() -> void:
+	# A pulsing red frame around the screen edges for the whole boss gauntlet
+	# (90..AIR_CHALLENGE_START_SCORE), not just the entrance warning — layered
+	# semi-transparent strokes fake a vignette without needing a shader.
+	# Noticeably stronger from 110 on (angry king + locked pattern + double
+	# rope) so the edge glow itself telegraphs the difficulty spike, not just
+	# the character reskin.
+	var intensity := 1.5 if score >= DOUBLE_ROPE_TEST_SCORE_THRESHOLD else 1.0
+	var pulse := (0.55 + 0.45 * sin(Time.get_ticks_msec() * 0.0035)) * intensity
+	var full := Rect2(Vector2.ZERO, DESIGN_SIZE)
+	for i in range(4):
+		var width := 18.0 + float(i) * 24.0
+		var alpha := (0.22 - float(i) * 0.045) * pulse
+		draw_rect(full, Color(0.85, 0.05, 0.05, alpha), false, width)
 
 
 func _draw_boss_warning_overlay() -> void:
@@ -1913,6 +2038,15 @@ func _turner_slot_for_score(current_score: int) -> int:
 		return WIZARD_PRANKSTER_DUO_SLOT
 	if current_score >= AIR_CHALLENGE_START_SCORE:
 		return DUO_STAGE_SLOT
+	# Boss fight has two halves: BOSS_TURNER_SCORE_THRESHOLD (90) to
+	# DOUBLE_ROPE_TEST_SCORE_THRESHOLD (110) still rerolls the normal
+	# athlete/sleepy/prankster/wizard pattern at random, same as before the
+	# boss even showed up — only the calm-king reskin is new. From 110
+	# onward the pattern locks to the plain default (the angry king's phase,
+	# double rope included), since stacking a second rope on top of a still-
+	# randomizing pattern was too much at once.
+	if current_score >= DOUBLE_ROPE_TEST_SCORE_THRESHOLD:
+		return BOSS_GAUNTLET_SLOT
 	if current_score < BOSS_TURNER_SCORE_THRESHOLD:
 		return int((current_score - TURNER_CHANGE_INTERVAL) / TURNER_RANDOM_INTERVAL) + 1
 	var pre_gauntlet_slot := int((BOSS_TURNER_SCORE_THRESHOLD - TURNER_CHANGE_INTERVAL) / TURNER_RANDOM_INTERVAL) + 1
@@ -1968,7 +2102,7 @@ func _update_turner_team_and_pattern() -> bool:
 		if target_slot <= 0:
 			turner_team = TurnerTeam.STUDENT
 			return false
-		var new_team := _random_turner_team(turner_team)
+		var new_team := TurnerTeam.STUDENT if target_slot == BOSS_GAUNTLET_SLOT else _random_turner_team(turner_team)
 		if target_slot == DUO_STAGE_SLOT:
 			new_team = TurnerTeam.DUO
 		elif target_slot == WIZARD_PRANKSTER_DUO_SLOT:
@@ -2010,10 +2144,14 @@ func _update_turner_team_and_pattern() -> bool:
 		if duo_sleepy_awake:
 			duo_sleepy_awake = false
 			duo_normal_turns_remaining = _roll_duo_normal_turns()
-		else:
+		elif sleepy_wake_warning_time <= 0.0:
 			duo_normal_turns_remaining -= 1
 			if duo_normal_turns_remaining <= 0:
-				duo_sleepy_awake = true
+				# Same 1-second "eyes open" warning as standalone SLEEPY (see
+				# _update_sleepy_warning) before the burst actually starts —
+				# without this, sleepy's duo-stage wake read as an instant
+				# unfair speed spike with no telegraph at all.
+				sleepy_wake_warning_time = SLEEPY_WAKE_WARNING_SECONDS
 		# The athlete half keeps running its own normal-2/burst-2 cycle every
 		# turn regardless of whether sleepy's burst is overriding this turn,
 		# so athlete's characteristic pattern stays visible throughout the
@@ -2061,11 +2199,16 @@ func _update_turner_team_and_pattern() -> bool:
 
 
 func _update_sleepy_warning(delta: float) -> void:
-	if turner_team != TurnerTeam.SLEEPY or sleepy_wake_warning_time <= 0.0:
+	if sleepy_wake_warning_time <= 0.0:
+		return
+	if turner_team != TurnerTeam.SLEEPY and turner_team != TurnerTeam.DUO:
 		return
 	sleepy_wake_warning_time = maxf(0.0, sleepy_wake_warning_time - delta)
 	if sleepy_wake_warning_time <= 0.0:
-		sleepy_fast_turns_remaining = 1
+		if turner_team == TurnerTeam.DUO:
+			duo_sleepy_awake = true
+		else:
+			sleepy_fast_turns_remaining = 1
 		message = "지금!"
 		message_color = Color("ff5c65")
 
@@ -2143,10 +2286,11 @@ func _draw_turner(feet: Vector2, faces_left: bool, display_team := -1) -> void:
 		# sleepy, awake only during the sudden-burst turn (see
 		# _update_turner_team_and_pattern) and asleep otherwise.
 		if faces_left:
-			base_texture = sleepy_turner_awake_texture if duo_sleepy_awake else sleepy_turner_asleep_texture
-			base_region = sleepy_turner_awake_used_region if duo_sleepy_awake else sleepy_turner_asleep_used_region
-			mirror_texture = mirrored_sleepy_turner_awake_texture if duo_sleepy_awake else mirrored_sleepy_turner_asleep_texture
-			mirror_region = mirrored_sleepy_turner_awake_used_region if duo_sleepy_awake else mirrored_sleepy_turner_asleep_used_region
+			var duo_sleepy_visibly_awake := duo_sleepy_awake or sleepy_wake_warning_time > 0.0
+			base_texture = sleepy_turner_awake_texture if duo_sleepy_visibly_awake else sleepy_turner_asleep_texture
+			base_region = sleepy_turner_awake_used_region if duo_sleepy_visibly_awake else sleepy_turner_asleep_used_region
+			mirror_texture = mirrored_sleepy_turner_awake_texture if duo_sleepy_visibly_awake else mirrored_sleepy_turner_asleep_texture
+			mirror_region = mirrored_sleepy_turner_awake_used_region if duo_sleepy_visibly_awake else mirrored_sleepy_turner_asleep_used_region
 		else:
 			base_texture = athlete_turner_texture
 			base_region = athlete_turner_used_region
@@ -2195,7 +2339,17 @@ func _draw_turner(feet: Vector2, faces_left: bool, display_team := -1) -> void:
 	# reverts to whatever the plain (student) turner_texture resolved to
 	# above instead of staying boss-skinned forever.
 	var boss_active := score >= BOSS_TURNER_SCORE_THRESHOLD and score < AIR_CHALLENGE_START_SCORE
-	if boss_active and boss_turner_texture != null:
+	# 90..110 is the calm king (pattern still randomizing underneath, same
+	# rules as before the boss showed up); 110..AIR_CHALLENGE_START_SCORE
+	# switches to the angry king once the pattern locks and the double rope
+	# joins in — the angrier look sells the difficulty spike visually.
+	var boss_is_angry := score >= DOUBLE_ROPE_TEST_SCORE_THRESHOLD
+	if boss_active and boss_is_angry and boss_turner_angry_texture != null:
+		base_texture = boss_turner_angry_texture
+		base_region = boss_turner_angry_used_region
+		mirror_texture = mirrored_boss_turner_angry_texture
+		mirror_region = mirrored_boss_turner_angry_used_region
+	elif boss_active and boss_turner_texture != null:
 		base_texture = boss_turner_texture
 		base_region = boss_turner_used_region
 		mirror_texture = mirrored_boss_turner_texture
@@ -2206,7 +2360,7 @@ func _draw_turner(feet: Vector2, faces_left: bool, display_team := -1) -> void:
 		# Match the helper's height to the playable character and preserve the
 		# original aspect ratio so the sprite never looks stretched sideways.
 		var sprite_height := 165.0
-		var is_boss := boss_active and boss_turner_texture != null
+		var is_boss := boss_active and (boss_turner_texture != null or boss_turner_angry_texture != null)
 		if is_boss:
 			sprite_height *= 1.5
 		var sprite_width := sprite_height * active_region.size.x / active_region.size.y
@@ -2441,6 +2595,7 @@ func _close_character_menu() -> void:
 func _open_settings_menu() -> void:
 	settings_menu_open = true
 	settings_message = ""
+	data_reset_confirm_pending = false
 	if nickname_edit == null:
 		nickname_edit = LineEdit.new()
 		nickname_edit.max_length = RopeSaveManager.NICKNAME_MAX_LENGTH
@@ -2783,7 +2938,7 @@ func _on_redeem_code_response(result: int, response_code: int, _headers: PackedS
 		if amount > 0:
 			gems += amount
 			_save_progress()
-			settings_message = "%d루피 지급 완료!" % amount
+			settings_message = "%d루비 지급 완료!" % amount
 		else:
 			settings_message = "코드 확인에 실패했습니다"
 	else:
@@ -2795,6 +2950,11 @@ func _on_redeem_code_response(result: int, response_code: int, _headers: PackedS
 
 
 func _handle_settings_menu_input(position: Vector2) -> void:
+	# Any tap that isn't the second confirming tap on the reset row cancels
+	# a pending confirmation — stray taps elsewhere in the panel should
+	# never leave the "one more tap wipes your data" state armed silently.
+	if data_reset_confirm_pending and not DATA_RESET_ROW_RECT.has_point(position):
+		data_reset_confirm_pending = false
 	if SETTINGS_PANEL_CLOSE_RECT.has_point(position):
 		_close_settings_menu()
 		return
@@ -2822,6 +2982,13 @@ func _handle_settings_menu_input(position: Vector2) -> void:
 			return
 		_submit_redeem_code(code)
 		code_edit.text = ""
+		return
+	if DATA_RESET_ROW_RECT.has_point(position):
+		if data_reset_confirm_pending:
+			_reset_all_data()
+		else:
+			data_reset_confirm_pending = true
+			settings_message = "정말 초기화할까요? 한 번 더 누르면 처음부터 다시 시작합니다"
 		return
 
 
@@ -3121,6 +3288,8 @@ func _draw_hud() -> void:
 		_draw_game_over_panel(font)
 		if character_reveal_active:
 			_draw_character_unlock_reveal(font)
+	if tutorial_pause_active:
+		_draw_tutorial_pause_banner(font)
 
 
 func _game_over_panel_rect() -> Rect2:
@@ -3278,6 +3447,26 @@ func _draw_character_unlock_reveal(font: Font) -> void:
 	draw_string(font, Vector2(card_rect.position.x, card_rect.end.y - 40.0), hint, HORIZONTAL_ALIGNMENT_CENTER, card_rect.size.x, 20, Color(1.0, 1.0, 1.0, hint_alpha))
 
 
+func _draw_tutorial_pause_banner(font: Font) -> void:
+	# The player's actual first run pauses at a few TUTORIAL_CHECKPOINTS
+	# instead of running a separate slideshow — the real character/rope/HUD
+	# stay visible (just frozen, see _process's early return) behind a
+	# translucent band so the explanation reads like a pause on the real
+	# game, not a screen swap. Dismissing this (see _unhandled_input) also
+	# performs that tap's normal game action.
+	if tutorial_checkpoint_index >= TUTORIAL_CHECKPOINTS.size():
+		return
+	var text: String = TUTORIAL_CHECKPOINTS[tutorial_checkpoint_index].text
+	var band := Rect2(0.0, 520.0, DESIGN_SIZE.x, 220.0)
+	draw_rect(band, Color(0.03, 0.04, 0.08, 0.82), true)
+	draw_rect(Rect2(band.position.x, band.position.y, band.size.x, 4.0), Color("ffd23f"))
+	draw_rect(Rect2(band.position.x, band.end.y - 4.0, band.size.x, 4.0), Color("ffd23f"))
+
+	draw_multiline_string(font, Vector2(40.0, band.position.y + 76.0), text, HORIZONTAL_ALIGNMENT_CENTER, band.size.x - 80.0, 26, -1, Color.WHITE)
+	var hint_alpha := 0.55 + 0.35 * sin(Time.get_ticks_msec() * 0.006)
+	draw_string(font, Vector2(band.position.x, band.end.y - 34.0), "화면을 터치해서 계속", HORIZONTAL_ALIGNMENT_CENTER, band.size.x, 20, Color(1.0, 0.85, 0.35, hint_alpha))
+
+
 func _draw_main_menu(font: Font) -> void:
 	_draw_resource_counter(font, Rect2(40.0, 22.0, 300.0, 62.0), coin_icon_texture, coin_icon_used_region, coins, COIN_ICON_OFFSET)
 	_draw_resource_counter(font, Rect2(380.0, 22.0, 300.0, 62.0), ruby_icon_texture, ruby_icon_used_region, gems, RUBY_ICON_OFFSET)
@@ -3346,7 +3535,7 @@ func _draw_shop_main_button(font: Font) -> void:
 	draw_rect(SHOP_BUTTON_RECT.grow(-5.0), Color("ff9ecf"), true)
 	draw_rect(SHOP_BUTTON_RECT.grow(-9.0), Color("8a2e58"), false, 3.0)
 	draw_string(font, Vector2(SHOP_BUTTON_RECT.position.x, SHOP_BUTTON_RECT.position.y + 31.0), "상점", HORIZONTAL_ALIGNMENT_CENTER, SHOP_BUTTON_RECT.size.x, 18, Color("4a1633"))
-	draw_string(font, Vector2(SHOP_BUTTON_RECT.position.x, SHOP_BUTTON_RECT.position.y + 62.0), "루피 충전", HORIZONTAL_ALIGNMENT_CENTER, SHOP_BUTTON_RECT.size.x, 22, Color("4a1633"))
+	draw_string(font, Vector2(SHOP_BUTTON_RECT.position.x, SHOP_BUTTON_RECT.position.y + 62.0), "루비 충전", HORIZONTAL_ALIGNMENT_CENTER, SHOP_BUTTON_RECT.size.x, 22, Color("4a1633"))
 
 
 func _draw_ranking_main_button(font: Font) -> void:
@@ -3582,8 +3771,13 @@ func _draw_settings_menu(font: Font) -> void:
 	draw_rect(CODE_SUBMIT_BUTTON_RECT, Color("ffd23f"), false, 3.0)
 	draw_string(font, Vector2(CODE_SUBMIT_BUTTON_RECT.position.x, CODE_SUBMIT_BUTTON_RECT.position.y + 46.0), "확인", HORIZONTAL_ALIGNMENT_CENTER, CODE_SUBMIT_BUTTON_RECT.size.x, 22, Color("ffd23f"))
 
+	_draw_row_background(DATA_RESET_ROW_RECT)
+	var reset_label := "한 번 더 눌러 확인" if data_reset_confirm_pending else "데이터 초기화"
+	var reset_color := Color("ff6b6b") if data_reset_confirm_pending else Color("ff9f9f")
+	draw_string(font, Vector2(DATA_RESET_ROW_RECT.position.x, DATA_RESET_ROW_RECT.position.y + 46.0), reset_label, HORIZONTAL_ALIGNMENT_CENTER, DATA_RESET_ROW_RECT.size.x, 22, reset_color)
+
 	if not settings_message.is_empty():
-		draw_string(font, Vector2(SETTINGS_PANEL_RECT.position.x, 790.0), settings_message, HORIZONTAL_ALIGNMENT_CENTER, SETTINGS_PANEL_RECT.size.x, 22, Color("ffd166"))
+		draw_multiline_string(font, Vector2(SETTINGS_PANEL_RECT.position.x + 20.0, 830.0), settings_message, HORIZONTAL_ALIGNMENT_CENTER, SETTINGS_PANEL_RECT.size.x - 40.0, 20, -1, Color("ffd166"))
 
 
 func _draw_ranking_period_tabs(font: Font) -> void:

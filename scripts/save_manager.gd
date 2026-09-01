@@ -57,6 +57,7 @@ func default_data() -> Dictionary:
 			"streak": 0,
 			"last_claim_date": "",
 		},
+		"tutorial_seen": false,
 	}
 
 
@@ -93,4 +94,5 @@ func _sanitize(source: Dictionary, defaults: Dictionary) -> Dictionary:
 			"streak": maxi(0, int(attendance_source.get("streak", defaults.attendance.streak))),
 			"last_claim_date": str(attendance_source.get("last_claim_date", defaults.attendance.last_claim_date)),
 		},
+		"tutorial_seen": bool(source.get("tutorial_seen", defaults.tutorial_seen)),
 	}
