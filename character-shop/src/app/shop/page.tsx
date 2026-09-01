@@ -58,7 +58,7 @@ export default async function ShopPage() {
             <span className="text-sm font-semibold">{item.name}</span>
             {item.item_type === "currency" && item.currency_amount && (
               <span className="rounded-full bg-brand-accent/15 px-2 py-0.5 text-[10px] font-semibold text-brand-accent">
-                루피 {item.currency_amount}개
+                루비 {item.currency_amount}개
               </span>
             )}
             <span className="text-xs font-bold text-brand-gold">

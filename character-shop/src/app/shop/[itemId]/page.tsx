@@ -48,7 +48,7 @@ export default async function ItemPurchasePage({
         </div>
         <h1 className="text-lg font-bold">{item.name}</h1>
         {isCurrency && item.currency_amount && (
-          <p className="text-xs text-brand-accent">루피 {item.currency_amount}개 지급</p>
+          <p className="text-xs text-brand-accent">루비 {item.currency_amount}개 지급</p>
         )}
         <p className="text-xl font-extrabold text-brand-gold">
           {item.price.toLocaleString()}원

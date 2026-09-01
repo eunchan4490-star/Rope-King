@@ -8,7 +8,7 @@ const PAY_STEPS = [
   },
   {
     title: "상점에서 원하는 상품 선택",
-    desc: "🛒 루피 구매하러 가기 → 상품을 눌러 상세 화면으로 들어갑니다.",
+    desc: "🛒 루비 구매하러 가기 → 상품을 눌러 상세 화면으로 들어갑니다.",
   },
   {
     title: "입금자명 입력 후 구매 신청하기",
@@ -34,8 +34,8 @@ const REWARD_STEPS = [
     desc: "줄넘킹 게임을 켜고 타이틀 화면의 '설정' 버튼을 누른 뒤, '코드 입력' 칸에 코드를 붙여넣고 확인을 누릅니다.",
   },
   {
-    title: "루피 즉시 지급 완료",
-    desc: "확인을 누르는 즉시 루피가 게임에 지급돼요. 코드는 1회만 사용할 수 있으니 다른 사람에게 알려주지 마세요.",
+    title: "루비 즉시 지급 완료",
+    desc: "확인을 누르는 즉시 루비가 게임에 지급돼요. 코드는 1회만 사용할 수 있으니 다른 사람에게 알려주지 마세요.",
   },
 ];
 
@@ -48,10 +48,10 @@ export default async function HomePage() {
       <section className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-brand-panel via-brand-panel to-black/40 p-6 text-center shadow-lg shadow-black/30">
         <div className="text-4xl">💎</div>
         <h1 className="mt-2 text-2xl font-extrabold tracking-tight text-brand-gold">
-          줄넘킹 루피 상점
+          줄넘킹 루비 상점
         </h1>
         <p className="mt-3 text-sm leading-relaxed text-white/70">
-          앱스토어 결제 없이, 계좌이체로 간편하게 루피를 충전하는
+          앱스토어 결제 없이, 계좌이체로 간편하게 루비를 충전하는
           <br />
           줄넘킹 공식 외부 상점입니다.
         </p>
@@ -63,7 +63,7 @@ export default async function HomePage() {
           href="/shop"
           className="rounded-xl bg-brand-gold px-4 py-4 text-center text-base font-bold text-black shadow-md shadow-brand-gold/20 transition hover:brightness-110"
         >
-          🛒 루피 구매하러 가기
+          🛒 루비 구매하러 가기
         </Link>
         {user ? (
           <Link

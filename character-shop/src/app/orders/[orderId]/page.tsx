@@ -170,7 +170,7 @@ export default async function OrderDetailPage({
             <li>1. 줄넘킹 게임을 실행하세요.</li>
             <li>2. 타이틀 화면에서 '설정' 버튼을 누르세요.</li>
             <li>3. '코드 입력' 칸에 위 코드를 붙여넣으세요.</li>
-            <li>4. 확인을 누르면 {redeemCode.currency_amount}루피가 즉시 지급돼요.</li>
+            <li>4. 확인을 누르면 {redeemCode.currency_amount}루비가 즉시 지급돼요.</li>
           </ol>
           <p className="mt-2 text-xs text-white/40">
             코드는 1회만 사용할 수 있으니 다른 사람에게 알려주지 마세요.

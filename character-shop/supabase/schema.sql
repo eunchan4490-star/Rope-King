@@ -569,10 +569,11 @@ values
   ('skele', '스켈레', 4900, null, false, 'character', null),
   ('witch', '마녀', 3900, null, false, 'character', null),
   ('scientist', '과학자', 3900, null, false, 'character', null),
-  ('gem_100', '100루피', 1000, null, true, 'currency', 100)
+  ('gem_100', '루비 20개', 1000, 'https://rope-king.vercel.app/ruby.png', true, 'currency', 20)
 on conflict (id) do update set
   name = excluded.name,
   price = excluded.price,
+  image_url = excluded.image_url,
   active = excluded.active,
   item_type = excluded.item_type,
   currency_amount = excluded.currency_amount;
