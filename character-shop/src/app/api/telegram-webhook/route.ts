@@ -3,9 +3,10 @@ import { createClient } from "@supabase/supabase-js";
 
 /**
  * Telegram calls this when the admin taps 승인/거절 on a new-order
- * notification (see supabase/schema.sql notify_new_order()). There is no
- * Supabase session here — Telegram, not a logged-in browser, is the
- * caller — so authorization works differently from every other write in
+ * notification (see supabase/schema.sql notify_new_order()), or sends
+ * "/문의" to list recent contact-form submissions (telegram_list_inquiries()).
+ * There is no Supabase session here — Telegram, not a logged-in browser, is
+ * the caller — so authorization works differently from every other write in
  * this app:
  *
  * 1. Telegram itself is verified via the X-Telegram-Bot-Api-Secret-Token
@@ -28,13 +29,57 @@ export async function POST(req: NextRequest) {
   }
 
   const update = await req.json();
+  const botToken = process.env.TELEGRAM_BOT_TOKEN;
+
+  const message = update.message;
+  if (message && typeof message.text === "string" && botToken) {
+    const text = message.text.trim();
+    if (text === "/문의" || text.startsWith("/inquiries")) {
+      const supabase = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+      );
+      const { data, error } = await supabase.rpc("telegram_list_inquiries", {
+        p_secret: process.env.TELEGRAM_WEBHOOK_SECRET,
+        p_limit: 5,
+      });
+
+      let reply: string;
+      if (error) {
+        reply = `조회 실패: ${error.message}`;
+      } else if (!data || data.length === 0) {
+        reply = "아직 문의가 없어요.";
+      } else {
+        type InquiryRow = {
+          created_at: string;
+          message: string;
+          contact_email: string | null;
+        };
+        reply = (data as InquiryRow[])
+          .map((row) => {
+            const date = new Date(row.created_at).toLocaleString("ko-KR");
+            const email = row.contact_email ?? "(이메일 없음)";
+            return `🗓️ ${date}\n${row.message}\n📧 ${email}`;
+          })
+          .join("\n\n———\n\n");
+        reply = `📋 최근 문의 ${data.length}건\n\n${reply}`;
+      }
+
+      await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chat_id: message.chat.id, text: reply }),
+      });
+    }
+    return NextResponse.json({ ok: true });
+  }
+
   const callback = update.callback_query;
   if (!callback || typeof callback.data !== "string") {
     return NextResponse.json({ ok: true });
   }
 
   const [action, orderId] = callback.data.split(":");
-  const botToken = process.env.TELEGRAM_BOT_TOKEN;
 
   let resultText: string;
   if (

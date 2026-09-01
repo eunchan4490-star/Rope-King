@@ -1058,7 +1058,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				get_viewport().set_input_as_handled()
 				return
 			if SHOP_BUTTON_RECT.has_point(design_position):
-				OS.shell_open(SHOP_URL)
+				_open_shop_url()
 				get_viewport().set_input_as_handled()
 				return
 		if coop_mode:
@@ -2013,7 +2013,12 @@ func _base_speed_for_score(current_score: int) -> float:
 	# Team assignment is random past score 10 (see
 	# _update_turner_team_and_pattern), so this keys off the live team
 	# instead of fixed score bands.
-	if turner_team == TurnerTeam.STUDENT:
+	# The boss gauntlet's locked-in basic pattern (110..AIR_CHALLENGE_START_
+	# SCORE) reuses the STUDENT team id for "no gimmick, just the plain
+	# rhythm" — but unlike the real early-game student (score < 10), it must
+	# NOT ramp by the actual (now-huge) score, or the double-rope phase
+	# becomes absurdly fast. Only the genuine early-game student ramps.
+	if turner_team == TurnerTeam.STUDENT and turner_change_slot != BOSS_GAUNTLET_SLOT:
 		return balance.speed_for_score(current_score)
 	return balance.speed_for_score(TURNER_CHANGE_INTERVAL)
 
@@ -2957,6 +2962,21 @@ func _submit_score(final_score: int) -> void:
 	]
 	var payload := JSON.stringify({"nickname": nickname, "score": final_score, "perfect_count": perfect_count})
 	leaderboard_submit_request.request(url, headers, HTTPClient.METHOD_POST, payload)
+
+
+func _open_shop_url() -> void:
+	# OS.shell_open() on the Web export goes through window.open(), which
+	# browsers frequently popup-block once the click has passed through
+	# Godot's input pipeline (it no longer counts as directly inside the
+	# original DOM click handler by the time this runs) — reported as
+	# silently doing nothing, exactly what happened here. Navigating the
+	# current tab via JavaScriptBridge isn't subject to that popup-blocker
+	# check, so use that on Web and keep shell_open (opens the system
+	# browser) everywhere else, e.g. Android.
+	if OS.get_name() == "Web" and JavaScriptBridge:
+		JavaScriptBridge.eval("window.location.href = %s;" % JSON.stringify(SHOP_URL), true)
+	else:
+		OS.shell_open(SHOP_URL)
 
 
 func _submit_redeem_code(code: String) -> void:

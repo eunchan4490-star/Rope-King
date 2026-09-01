@@ -539,6 +539,36 @@ revoke all on function public.telegram_admin_action(uuid, text, text) from publi
 grant execute on function public.telegram_admin_action(uuid, text, text) to anon;
 
 -- -----------------------------------------------------------------------------
+-- telegram_list_inquiries(): lets the Telegram bot show recent inquiries on
+-- request (the "/문의" command in the webhook route), so the admin can
+-- browse past submissions without opening Supabase. Same secret-gated
+-- pattern as telegram_admin_action() — no auth.uid() available here.
+-- -----------------------------------------------------------------------------
+create or replace function public.telegram_list_inquiries(p_secret text, p_limit integer default 5)
+returns setof public.inquiries
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_expected_secret text;
+begin
+  select value into v_expected_secret from public.app_secrets where key = 'telegram_webhook_secret';
+  if v_expected_secret is null or p_secret is null or p_secret <> v_expected_secret then
+    raise exception 'not authorized';
+  end if;
+
+  return query
+    select * from public.inquiries
+    order by created_at desc
+    limit greatest(1, least(coalesce(p_limit, 5), 20));
+end;
+$$;
+
+revoke all on function public.telegram_list_inquiries(text, integer) from public;
+grant execute on function public.telegram_list_inquiries(text, integer) to anon;
+
+-- -----------------------------------------------------------------------------
 -- get_my_owned_items(): convenience RPC for the game client — returns just
 -- the array of item_id strings the caller owns. Equivalent to querying
 -- owned_items directly (RLS already restricts that to your own rows), this
