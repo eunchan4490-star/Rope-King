@@ -81,6 +81,25 @@ export default async function OrderDetailPage({
       </div>
 
       {order.status === "pending" && (
+        <div className="flex flex-col gap-2 rounded-lg border-2 border-brand-danger bg-brand-danger/15 p-4 text-center">
+          <p className="text-lg font-extrabold leading-snug text-brand-danger">
+            ⏰ 지급까지 최대 5시간이
+            <br />
+            걸릴 수 있어요
+          </p>
+          <p className="text-base font-bold leading-snug text-brand-danger">
+            🌙 자정(00:00) ~ 오전 8시에는
+            <br />
+            지급이 불가능해요
+          </p>
+          <p className="text-xs text-white/60">
+            사람이 직접 입금 확인 후 승인하는 방식이라 그래요. 급하지 않게
+            여유를 갖고 기다려주세요!
+          </p>
+        </div>
+      )}
+
+      {order.status === "pending" && (
         <div className="rounded-lg border border-brand-gold/40 bg-brand-gold/10 p-4 text-sm">
           <p className="font-semibold text-brand-gold">💳 아래 계좌로 입금해주세요</p>
           <p className="mt-2 text-xs text-white/60">
@@ -118,8 +137,7 @@ export default async function OrderDetailPage({
           <p className="mt-3 text-xs text-white/60">
             입력하신 입금자명과 실제 입금자명이 같아야 빠르게 확인돼요.
             <br />
-            입금 확인은 관리자가 직접 하기 때문에 승인까지 시간이 걸릴 수
-            있어요 — 이 화면을 나가도 괜찮고, 나중에{" "}
+            이 화면을 나가도 괜찮고, 나중에{" "}
             <b className="text-white/80">주문내역</b>에서 다시 확인할 수
             있어요.
           </p>

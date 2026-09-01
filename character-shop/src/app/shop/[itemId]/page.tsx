@@ -57,6 +57,14 @@ export default async function ItemPurchasePage({
 
       {user ? (
         <>
+          <div className="flex flex-col gap-1 rounded-lg border-2 border-brand-danger bg-brand-danger/15 p-3 text-center">
+            <p className="text-sm font-extrabold text-brand-danger">
+              ⏰ 지급까지 최대 5시간 걸릴 수 있어요
+            </p>
+            <p className="text-sm font-extrabold text-brand-danger">
+              🌙 자정~오전 8시는 지급 불가능해요
+            </p>
+          </div>
           <p className="text-center text-xs text-white/50">
             입금자명을 입력하고 신청하면, 다음 화면에서 입금할 계좌를
             안내해드려요.
