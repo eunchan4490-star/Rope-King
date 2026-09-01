@@ -291,6 +291,10 @@ begin
   -- Inline "승인"/"거절" buttons — tapping one hits the Telegram webhook
   -- (see character-shop/src/app/api/telegram-webhook/route.ts), which calls
   -- telegram_admin_action() below. callback_data just carries "action:id".
+  -- timeout_milliseconds bumped from pg_net's 5000ms default: a real order
+  -- (2026-09-01) was silently lost to a slow TLS handshake to
+  -- api.telegram.org that took ~5s on its own, one order this can't fix
+  -- retroactively but should make far less likely going forward.
   perform net.http_post(
     url := format('https://api.telegram.org/bot%s/sendMessage', v_bot_token),
     headers := '{"Content-Type": "application/json"}'::jsonb,
@@ -305,7 +309,8 @@ begin
           )
         )
       )
-    )
+    ),
+    timeout_milliseconds := 15000
   );
 
   return new;
