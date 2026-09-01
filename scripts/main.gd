@@ -131,19 +131,19 @@ const RUBY_ICON_OFFSET := Vector2(8.0, 12.0)
 const RESOURCE_ICON_SIZE := Vector2(38.0, 38.0)
 const GAME_OVER_PANEL_PATH := "res://assets/ui/panel_frame.png"
 const REVIVE_GEM_COST := 1
-# Shown once, the very first time a new player taps the title screen — this
-# runs the player's actual first game (real rope, real turner, real score),
-# just with the world frozen at a few checkpoints for an explanation instead
-# of a separate slideshow. `at_score` is the score value at which play
-# pauses (0 == before the very first jump, i.e. immediately after the run
-# starts); the tap that dismisses a checkpoint doubles as that tap's normal
-# game input (see _unhandled_input), so dismissing checkpoint 0 is itself
-# the player's first jump attempt.
-const TUTORIAL_CHECKPOINTS: Array[Dictionary] = [
-	{"at_score": 0, "text": "화면을 터치하면 캐릭터가 점프해요.\n터치해서 첫 점프를 해보세요!"},
-	{"at_score": 1, "text": "잘했어요! 줄이 빨간색으로 바뀌는 순간\n터치하면 성공이에요."},
-	{"at_score": 5, "text": "좋아요! 여기부터는 진짜 게임이에요.\n최고 기록에 도전해보세요!"},
-]
+# Shown once, the very first time a new player taps the title screen — a
+# guided tour through the player's actual first game AND the surrounding
+# menus (character/coop/ranking/attendance/nickname), not a separate
+# slideshow. Progress lives in tutorial_stage (1..TUTORIAL_STAGE_COUNT, 0 =
+# inactive/finished); each stage is either a full-freeze explanation (see
+# tutorial_pause_active, _draw_tutorial_pause_banner) or a non-blocking
+# arrow/hint pointing at the next thing to tap (see _draw_tutorial_layer).
+# Advancing happens at the specific spot each stage's action actually
+# occurs (see the "tutorial_stage ==" checks scattered through input/menu
+# handlers) rather than a generic dismiss, since stages 5 onward span
+# different menus entirely.
+const TUTORIAL_STAGE_COUNT := 12
+const TUTORIAL_REWARD_GOLD := 100
 # Godot's built-in ThemeDB.fallback_font has no Hangul glyphs, so every piece
 # of Korean text drawn via draw_string() rendered as tofu boxes until this
 # was added — it just went unnoticed because most Korean text on screen is
@@ -466,7 +466,7 @@ var data_reset_confirm_pending := false
 var tutorial_seen := false
 var tutorial_active := false
 var tutorial_pause_active := false
-var tutorial_checkpoint_index := 0
+var tutorial_stage := 0
 var character_menu_open := false
 var settings_menu_open := false
 var nickname := RopeSaveManager.DEFAULT_NICKNAME
@@ -840,6 +840,14 @@ func _process(delta: float) -> void:
 			accepting_input = false
 			_advance_turner_transition(delta)
 		else:
+			if tutorial_active and tutorial_stage == 2 and _is_jump_cue():
+				# Freeze the instant the rope turns red for the very first
+				# time (before this frame advances it further) instead of at
+				# an arbitrary score — the whole point of this stage is to
+				# catch that exact moment for the explanation.
+				tutorial_pause_active = true
+				queue_redraw()
+				return
 			_update_sleepy_warning(delta)
 			if _update_prankster_fake(delta):
 				queue_redraw()
@@ -869,6 +877,12 @@ func _process(delta: float) -> void:
 				character_reveal_active = true
 				character_reveal_index = 0
 				character_reveal_time = 0.0
+			if tutorial_active and tutorial_stage == 5:
+				# Stage 5 is "waiting for the tour's first death" — skip the
+				# game-over screen entirely and land straight back on the
+				# title so its arrow (pointing at the CHARACTER button) can
+				# show immediately.
+				_return_to_main()
 	if character_reveal_active:
 		character_reveal_time += delta
 	if flash_time > 0.0:
@@ -952,14 +966,22 @@ func _unhandled_input(event: InputEvent) -> void:
 		pointer_position = event.position
 	if pressed:
 		if tutorial_pause_active:
-			# Dismissing a tutorial checkpoint deliberately falls through
-			# instead of returning — the same tap that closes the explanation
-			# also performs whatever it was explaining (e.g. checkpoint 0's
-			# dismiss tap is the player's actual first jump).
+			var dismissed_stage := tutorial_stage
 			tutorial_pause_active = false
-			tutorial_checkpoint_index += 1
-			if tutorial_checkpoint_index >= TUTORIAL_CHECKPOINTS.size():
-				tutorial_active = false
+			tutorial_stage += 1
+			if dismissed_stage == 2:
+				# Stage 2's freeze holds the very instant the rope turns red;
+				# this exact tap is the player's real first jump attempt at
+				# that cue, so — uniquely among stages — it falls through to
+				# the normal jump handling below instead of just resuming.
+				pass
+			else:
+				if dismissed_stage == 11:
+					# Stage 11 (reward message) hands off straight into the
+					# final nickname stage, which lives in the settings menu.
+					_open_settings_menu()
+				get_viewport().set_input_as_handled()
+				return
 		if game_state == GameState.GAME_OVER and character_reveal_active:
 			character_reveal_index += 1
 			character_reveal_time = 0.0
@@ -1013,9 +1035,13 @@ func _unhandled_input(event: InputEvent) -> void:
 				return
 			if CHARACTER_BUTTON_RECT.has_point(design_position):
 				character_menu_open = true
+				if tutorial_active and tutorial_stage == 5:
+					tutorial_stage = 6
 				get_viewport().set_input_as_handled()
 				return
 			if COOP_BUTTON_RECT.has_point(design_position):
+				if tutorial_active and tutorial_stage == 8:
+					tutorial_stage = 9
 				_start_coop_game()
 				get_viewport().set_input_as_handled()
 				return
@@ -1185,9 +1211,6 @@ func _resolve_rope_crossing() -> void:
 			new_best_this_run = true
 			_check_score_unlocks()
 		total_success += 1
-		if tutorial_active and tutorial_checkpoint_index < TUTORIAL_CHECKPOINTS.size() and int(TUTORIAL_CHECKPOINTS[tutorial_checkpoint_index].at_score) == score:
-			tutorial_pause_active = true
-			return
 		if rope_b_enabled and score >= AIR_CHALLENGE_START_SCORE:
 			# Double rope is a boss-only gimmick for now, capped at the same
 			# score the (still disabled — see AIR_CHALLENGE_ENABLED) air
@@ -1274,6 +1297,13 @@ func _resolve_rope_crossing() -> void:
 						message = "운동부&잠꾸러기 등장!  잠꾸러기가 깨면 급발진!"
 					TurnerTeam.WIZARD_PRANKSTER_DUO:
 						message = "마법사&장난꾸러기 등장!  줄이 항상 안 보여요!"
+				if tutorial_active and tutorial_stage == 3:
+					# The tour's very first turner-team change (always score
+					# 10, TURNER_CHANGE_INTERVAL) doubles as its own
+					# checkpoint — freeze on top of the normal entrance
+					# transition with a generic pattern-awareness warning.
+					tutorial_stage = 4
+					tutorial_pause_active = true
 		elif turner_team == TurnerTeam.SLEEPY and sleepy_wake_warning_time > 0.0:
 			message = "번쩍!  1초 뒤 초고속!"
 		elif turner_team == TurnerTeam.ATHLETE and challenge_pattern == 2:
@@ -1363,7 +1393,7 @@ func _start_tutorial_run() -> void:
 	_save_progress()
 	_start_game()
 	tutorial_active = true
-	tutorial_checkpoint_index = 0
+	tutorial_stage = 1
 	tutorial_pause_active = true
 
 
@@ -1381,9 +1411,12 @@ func _start_coop_game() -> void:
 
 
 func _start_run() -> void:
-	# Off by default for every run — _start_tutorial_run() turns these back
-	# on right after calling this, only for the player's very first run.
-	tutorial_active = false
+	# Deliberately does NOT touch tutorial_active/tutorial_stage — the guided
+	# tour spans multiple runs (its coop stage starts a fresh run via
+	# _start_coop_game -> _start_run), so only the per-run pause flag resets
+	# here. tutorial_active is only ever cleared when the tour itself
+	# finishes (see the settings-menu tutorial_stage == TUTORIAL_STAGE_COUNT
+	# checks).
 	tutorial_pause_active = false
 	run_start_best = best_score
 	new_best_this_run = false
@@ -1620,6 +1653,7 @@ func _draw() -> void:
 	if game_state != GameState.TITLE and score >= BOSS_TURNER_SCORE_THRESHOLD and score < AIR_CHALLENGE_START_SCORE:
 		_draw_boss_edge_vignette()
 	_draw_hud()
+	_draw_tutorial_layer()
 
 
 func _draw_coop_divider() -> void:
@@ -2575,6 +2609,8 @@ func _handle_character_card_tap(position: Vector2) -> void:
 		if set_player_character(character_id):
 			menu_notice = "%s 선택" % character_names.get(character_id, character_id)
 			_save_progress()
+			if tutorial_active and tutorial_stage == 6:
+				tutorial_stage = 7
 		return
 	var price := int(character_prices.get(character_id, 0))
 	if price > 0:
@@ -2600,6 +2636,8 @@ func _close_character_menu() -> void:
 	character_scroll_dragging = false
 	if character_list_viewport != null:
 		character_list_viewport.visible = false
+	if tutorial_active and tutorial_stage == 7:
+		tutorial_stage = 8
 
 
 func _open_settings_menu() -> void:
@@ -2632,9 +2670,14 @@ func _close_settings_menu() -> void:
 		nickname_edit.visible = false
 	if code_edit != null:
 		code_edit.visible = false
+	if tutorial_active and tutorial_stage == TUTORIAL_STAGE_COUNT:
+		tutorial_active = false
+		tutorial_stage = 0
 
 
 func _open_ranking_menu() -> void:
+	if tutorial_active and tutorial_stage == 9:
+		tutorial_stage = 10
 	ranking_menu_open = true
 	ranking_scroll_offset = 0.0
 	if nickname_edit != null:
@@ -2737,6 +2780,13 @@ func _draw_ranking_list_contents() -> void:
 
 
 func _open_attendance_menu() -> void:
+	if tutorial_active and tutorial_stage == 10:
+		# Hands off into stage 11's freeze banner (reward message + gold) —
+		# see the tutorial_pause_active check in _draw_tutorial_layer.
+		tutorial_stage = 11
+		tutorial_pause_active = true
+		coins += TUTORIAL_REWARD_GOLD
+		_save_progress()
 	attendance_menu_open = true
 	if nickname_edit != null:
 		nickname_edit.visible = false
@@ -2982,6 +3032,9 @@ func _handle_settings_menu_input(position: Vector2) -> void:
 		nickname_edit.text = nickname
 		settings_message = "닉네임 저장됨"
 		_save_progress()
+		if tutorial_active and tutorial_stage == TUTORIAL_STAGE_COUNT:
+			tutorial_active = false
+			tutorial_stage = 0
 		return
 	if CODE_SUBMIT_BUTTON_RECT.has_point(position):
 		var code := code_edit.text.strip_edges()
@@ -3298,8 +3351,6 @@ func _draw_hud() -> void:
 		_draw_game_over_panel(font)
 		if character_reveal_active:
 			_draw_character_unlock_reveal(font)
-	if tutorial_pause_active:
-		_draw_tutorial_pause_banner(font)
 
 
 func _game_over_panel_rect() -> Rect2:
@@ -3457,16 +3508,59 @@ func _draw_character_unlock_reveal(font: Font) -> void:
 	draw_string(font, Vector2(card_rect.position.x, card_rect.end.y - 40.0), hint, HORIZONTAL_ALIGNMENT_CENTER, card_rect.size.x, 20, Color(1.0, 1.0, 1.0, hint_alpha))
 
 
-func _draw_tutorial_pause_banner(font: Font) -> void:
-	# The player's actual first run pauses at a few TUTORIAL_CHECKPOINTS
-	# instead of running a separate slideshow — the real character/rope/HUD
-	# stay visible (just frozen, see _process's early return) behind a
-	# translucent band so the explanation reads like a pause on the real
-	# game, not a screen swap. Dismissing this (see _unhandled_input) also
-	# performs that tap's normal game action.
-	if tutorial_checkpoint_index >= TUTORIAL_CHECKPOINTS.size():
+func _draw_tutorial_layer() -> void:
+	# Dispatches every visual for the guided first-run tour — see
+	# TUTORIAL_STAGE_COUNT's comment for the overall design. Called
+	# unconditionally at the end of _draw() (not from inside _draw_hud's
+	# branchy TITLE/gameplay split) because stages span both: gameplay
+	# freezes (1,2,4), a gameplay hint (3), menu-open hints/arrows
+	# (6,7,12), and title-screen arrows (5,8,9,10). Stage 11's freeze can
+	# happen with attendance_menu_open still true underneath it.
+	if not tutorial_active:
 		return
-	var text: String = TUTORIAL_CHECKPOINTS[tutorial_checkpoint_index].text
+	var font := _ui_font()
+	match tutorial_stage:
+		1:
+			if tutorial_pause_active:
+				_draw_tutorial_pause_banner(font, "화면을 터치하여 시작하세요!")
+		2:
+			if tutorial_pause_active:
+				_draw_tutorial_pause_banner(font, "줄이 빨간색이 됐어요!\n화면을 터치하여 점프하세요!")
+		3:
+			_draw_tutorial_hint_banner(font, "성공해서 점수 10까지 도달해보세요!")
+		4:
+			if tutorial_pause_active:
+				_draw_tutorial_pause_banner(font, "줄 돌리는 애들마다 돌리는 패턴이 다르니 주의하세요!")
+		5:
+			if game_state == GameState.TITLE and not character_menu_open:
+				_draw_tutorial_arrow_pointer(CHARACTER_BUTTON_RECT, "캐릭터를 눌러 새로 해금된 캐릭터를 확인해보세요!")
+		6:
+			if character_menu_open:
+				_draw_tutorial_hint_banner(font, "잠금 해제된 새 캐릭터를 눌러보세요!")
+		7:
+			if character_menu_open:
+				_draw_tutorial_arrow_pointer(CHARACTER_PANEL_CLOSE_RECT, "X를 눌러 나가보세요!")
+		8:
+			if game_state == GameState.TITLE and not character_menu_open and not ranking_menu_open and not attendance_menu_open and not settings_menu_open:
+				_draw_tutorial_arrow_pointer(COOP_BUTTON_RECT, "협동 모드도 해봐요!")
+		9:
+			if game_state == GameState.TITLE and not character_menu_open and not ranking_menu_open and not attendance_menu_open and not settings_menu_open:
+				_draw_tutorial_arrow_pointer(RANKING_MAIN_BUTTON_RECT, "랭킹도 확인해보세요!")
+		10:
+			if game_state == GameState.TITLE and not character_menu_open and not ranking_menu_open and not attendance_menu_open and not settings_menu_open:
+				_draw_tutorial_arrow_pointer(ATTENDANCE_MAIN_BUTTON_RECT, "출석 체크도 받아보세요!")
+		11:
+			if tutorial_pause_active:
+				_draw_tutorial_pause_banner(font, "열심히 해서 랭킹에 들어보세요!\n(보상으로 %d골드 지급!)" % TUTORIAL_REWARD_GOLD)
+		12:
+			if settings_menu_open:
+				_draw_tutorial_arrow_pointer(NICKNAME_ROW_RECT, "닉네임을 자유롭게 바꿔보세요!")
+
+
+func _draw_tutorial_pause_banner(font: Font, text: String) -> void:
+	# Full freeze (see _process's tutorial_pause_active early-return) — the
+	# real character/rope/HUD stay visible behind a translucent band so the
+	# explanation reads like a pause on the real game, not a screen swap.
 	var band := Rect2(0.0, 520.0, DESIGN_SIZE.x, 220.0)
 	draw_rect(band, Color(0.03, 0.04, 0.08, 0.82), true)
 	draw_rect(Rect2(band.position.x, band.position.y, band.size.x, 4.0), Color("ffd23f"))
@@ -3475,6 +3569,40 @@ func _draw_tutorial_pause_banner(font: Font) -> void:
 	draw_multiline_string(font, Vector2(40.0, band.position.y + 76.0), text, HORIZONTAL_ALIGNMENT_CENTER, band.size.x - 80.0, 26, -1, Color.WHITE)
 	var hint_alpha := 0.55 + 0.35 * sin(Time.get_ticks_msec() * 0.006)
 	draw_string(font, Vector2(band.position.x, band.end.y - 34.0), "화면을 터치해서 계속", HORIZONTAL_ALIGNMENT_CENTER, band.size.x, 20, Color(1.0, 0.85, 0.35, hint_alpha))
+
+
+func _draw_tutorial_hint_banner(font: Font, text: String) -> void:
+	# Small non-blocking reminder — gameplay/menus keep running underneath;
+	# it just disappears on its own once the stage advances.
+	var band := Rect2(20.0, 195.0, DESIGN_SIZE.x - 40.0, 60.0)
+	draw_rect(band, Color(0.03, 0.04, 0.08, 0.78), true)
+	draw_rect(band, Color("ffd23f"), false, 3.0)
+	draw_multiline_string(font, Vector2(band.position.x + 10.0, band.position.y + 38.0), text, HORIZONTAL_ALIGNMENT_CENTER, band.size.x - 20.0, 22, -1, Color.WHITE)
+
+
+func _draw_tutorial_arrow_pointer(target: Rect2, text: String) -> void:
+	# Points at whatever the next tutorial tap should land on. Targets near
+	# the top of the screen (the character panel's X button) get the arrow
+	# below them pointing up, since an arrow above would fall off-screen;
+	# everything else gets the usual arrow-above-pointing-down.
+	var font := _ui_font()
+	var bounce := sin(Time.get_ticks_msec() * 0.006) * 10.0
+	var points_down := target.position.y >= 220.0
+	var tip_y := target.position.y - 14.0 - bounce if points_down else target.end.y + 14.0 + bounce
+	var base_y := tip_y - 34.0 if points_down else tip_y + 34.0
+	var target_center_x := target.get_center().x
+
+	var points := PackedVector2Array()
+	points.append(Vector2(target_center_x, tip_y))
+	points.append(Vector2(target_center_x - 22.0, base_y))
+	points.append(Vector2(target_center_x + 22.0, base_y))
+	draw_colored_polygon(points, Color("ffd23f"))
+	draw_rect(target.grow(6.0), Color("ffd23f"), false, 4.0)
+
+	var text_y := base_y - 30.0 if points_down else base_y + 60.0
+	var band := Rect2(20.0, text_y - 34.0, DESIGN_SIZE.x - 40.0, 56.0)
+	draw_rect(band, Color(0.03, 0.04, 0.08, 0.82), true)
+	draw_multiline_string(font, Vector2(band.position.x + 10.0, text_y), text, HORIZONTAL_ALIGNMENT_CENTER, band.size.x - 20.0, 21, -1, Color.WHITE)
 
 
 func _draw_main_menu(font: Font) -> void:
