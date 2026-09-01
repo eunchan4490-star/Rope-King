@@ -130,12 +130,17 @@ export default async function OrderDetailPage({
               </dd>
             </div>
             <div className="flex items-center justify-between">
-              <dt className="text-white/60">입금자명</dt>
+              <dt className="text-white/60">입금자명(신청하신 이름)</dt>
               <dd>{order.depositor_name}</dd>
             </div>
           </dl>
           <p className="mt-3 text-xs text-white/60">
-            입력하신 입금자명과 실제 입금자명이 같아야 빠르게 확인돼요.
+            <b className="text-white/80">입금자명이 뭔가요?</b> 은행 앱으로
+            돈을 보낼 때 화면에 표시되는{" "}
+            <b className="text-white/80">보내는 사람(나)의 이름</b>이에요.
+            보통 은행 계좌 개설할 때 등록한 실명이 자동으로 나와요 (닉네임
+            아님). 위에 적힌 이름과 실제로 입금할 때 뜨는 이름이 달라도
+            괜찮지만, 확인이 늦어질 수 있으니 가능하면 똑같이 맞춰주세요.
             <br />
             이 화면을 나가도 괜찮고, 나중에{" "}
             <b className="text-white/80">주문내역</b>에서 다시 확인할 수

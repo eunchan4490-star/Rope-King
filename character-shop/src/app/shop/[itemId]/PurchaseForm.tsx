@@ -29,9 +29,15 @@ export default function PurchaseForm({ itemId }: { itemId: string }) {
           name="depositor_name"
           required
           maxLength={40}
-          placeholder="입금하실 분 성함"
+          placeholder="예: 홍길동"
           className="rounded bg-black/30 px-3 py-2 text-white placeholder:text-white/40"
         />
+        <span className="text-xs font-normal text-white/50">
+          송금할 은행 계좌의 <b className="text-white/70">실제 예금주 이름</b>
+          을 입력하세요. 은행 앱으로 이체할 때 상대방(저희) 화면에 뜨는
+          이름과 똑같아야 확인이 가능해요. (보통 은행 앱에 자동으로 표시되는
+          내 이름과 같아요 — 닉네임이나 게임 아이디가 아니에요!)
+        </span>
       </label>
       {state.error && (
         <p className="text-sm text-brand-danger">{state.error}</p>
