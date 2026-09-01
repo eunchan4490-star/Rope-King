@@ -99,6 +99,7 @@ const BOSS_TURNER_SCORE_THRESHOLD := 90
 const MENU_CHARACTER_TEXTURE_PATH := "res://assets/ui/menu_character.png"
 const RANKING_BUTTON_TEXTURE_PATH := "res://assets/ui/ranking_button.png"
 const ATTENDANCE_BUTTON_TEXTURE_PATH := "res://assets/ui/attendance_button.png"
+const SHOP_BUTTON_TEXTURE_PATH := "res://assets/ui/shop_button.png"
 const ATTENDANCE_TRACK_BG_PATH := "res://assets/ui/checkin_track_bg.png"
 const ATTENDANCE_RUBY_ICON_PATH := "res://assets/ui/checkin_ruby_icon.png"
 const ATTENDANCE_COMPLETE_BADGE_PATH := "res://assets/ui/checkin_complete_badge.png"
@@ -263,6 +264,7 @@ const RANKING_ROW_HEIGHT := 60.0
 @export var character_button_texture: Texture2D
 @export var ranking_button_texture: Texture2D
 @export var attendance_button_texture: Texture2D
+@export var shop_button_texture: Texture2D
 @export var attendance_track_bg_texture: Texture2D
 @export var attendance_ruby_icon_texture: Texture2D
 @export var attendance_complete_badge_texture: Texture2D
@@ -513,6 +515,7 @@ var mirrored_boss_turner_used_region := Rect2()
 var character_button_used_region := Rect2()
 var ranking_button_used_region := Rect2()
 var attendance_button_used_region := Rect2()
+var shop_button_used_region := Rect2()
 var attendance_track_bg_used_region := Rect2()
 var attendance_ruby_icon_used_region := Rect2()
 var attendance_complete_badge_used_region := Rect2()
@@ -570,6 +573,8 @@ func _ready() -> void:
 		ranking_button_texture = load(RANKING_BUTTON_TEXTURE_PATH) as Texture2D
 	if attendance_button_texture == null and ResourceLoader.exists(ATTENDANCE_BUTTON_TEXTURE_PATH):
 		attendance_button_texture = load(ATTENDANCE_BUTTON_TEXTURE_PATH) as Texture2D
+	if shop_button_texture == null and ResourceLoader.exists(SHOP_BUTTON_TEXTURE_PATH):
+		shop_button_texture = load(SHOP_BUTTON_TEXTURE_PATH) as Texture2D
 	if attendance_track_bg_texture == null and ResourceLoader.exists(ATTENDANCE_TRACK_BG_PATH):
 		attendance_track_bg_texture = load(ATTENDANCE_TRACK_BG_PATH) as Texture2D
 	if attendance_ruby_icon_texture == null and ResourceLoader.exists(ATTENDANCE_RUBY_ICON_PATH):
@@ -631,6 +636,7 @@ func _ready() -> void:
 	character_button_used_region = _texture_used_region(character_button_texture)
 	ranking_button_used_region = _texture_used_region(ranking_button_texture)
 	attendance_button_used_region = _texture_used_region(attendance_button_texture)
+	shop_button_used_region = _texture_used_region(shop_button_texture)
 	attendance_track_bg_used_region = _texture_used_region(attendance_track_bg_texture)
 	attendance_ruby_icon_used_region = _texture_used_region(attendance_ruby_icon_texture)
 	attendance_complete_badge_used_region = _texture_used_region(attendance_complete_badge_texture)
@@ -3326,6 +3332,16 @@ func _draw_test_start_button(font: Font) -> void:
 
 
 func _draw_shop_main_button(font: Font) -> void:
+	if shop_button_texture != null and shop_button_used_region.size.x > 0.0:
+		# Same aspect-preserving fit as the ranking/attendance buttons — fit
+		# by height and center horizontally instead of stretching sideways.
+		var icon_aspect := shop_button_used_region.size.x / shop_button_used_region.size.y
+		var icon_size := Vector2(SHOP_BUTTON_RECT.size.y * icon_aspect, SHOP_BUTTON_RECT.size.y)
+		if icon_size.x > SHOP_BUTTON_RECT.size.x:
+			icon_size = Vector2(SHOP_BUTTON_RECT.size.x, SHOP_BUTTON_RECT.size.x / icon_aspect)
+		var icon_rect := Rect2(SHOP_BUTTON_RECT.position + (SHOP_BUTTON_RECT.size - icon_size) * 0.5, icon_size)
+		draw_texture_rect_region(shop_button_texture, icon_rect, shop_button_used_region)
+		return
 	draw_rect(SHOP_BUTTON_RECT, Color("3b2119"), true)
 	draw_rect(SHOP_BUTTON_RECT.grow(-5.0), Color("ff9ecf"), true)
 	draw_rect(SHOP_BUTTON_RECT.grow(-9.0), Color("8a2e58"), false, 3.0)
