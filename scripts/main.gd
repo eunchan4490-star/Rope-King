@@ -169,8 +169,10 @@ const MAIN_MENU_BEST_SCORE_NUMBER_RECT := Rect2(375.0, 367.0, 100.0, 18.0)
 const CHARACTER_BUTTON_RECT := Rect2(25.0, 1055.0, 210.0, 195.0)
 const COOP_BUTTON_RECT := Rect2(255.0, 1055.0, 210.0, 195.0)
 const SETTINGS_BUTTON_RECT := Rect2(485.0, 1055.0, 210.0, 195.0)
-const TEST_START_50_RECT := Rect2(555.0, 670.0, 145.0, 82.0)
-const TEST_START_130_RECT := Rect2(555.0, 575.0, 145.0, 82.0)
+# Moved up to sit just above the character/co-op/settings row, freeing the
+# slot below the attendance button (551..658) for SHOP_BUTTON_RECT.
+const TEST_START_130_RECT := Rect2(25.0, 940.0, 320.0, 100.0)
+const TEST_START_50_RECT := Rect2(365.0, 940.0, 320.0, 100.0)
 const GAME_OVER_CLOSE_RECT := Rect2(538.0, 304.0, 78.0, 78.0)
 # Character panel uses its own taller frame (panel_frame_long.png) instead
 # of the shared square one settings/ranking use, so this rect is much taller
@@ -228,6 +230,10 @@ const RANKING_PANEL_CLOSE_RECT := Rect2(596.0, 211.0, 52.0, 52.0)
 const ATTENDANCE_MAIN_BUTTON_RECT := Rect2(531.0, 428.0, 189.0, 107.0)
 const ATTENDANCE_PANEL_RECT := Rect2(30.0, 100.0, 660.0, 785.0)
 const ATTENDANCE_PANEL_CLOSE_RECT := Rect2(596.0, 211.0, 52.0, 52.0)
+# Same size/column as RANKING/ATTENDANCE_MAIN_BUTTON_RECT, stacked directly
+# below attendance with the same 15px gap those two share.
+const SHOP_BUTTON_RECT := Rect2(531.0, 551.0, 189.0, 107.0)
+const SHOP_URL := "https://rope-king.vercel.app/shop"
 const ATTENDANCE_CLAIM_BUTTON_RECT := Rect2(110.0, 560.0, 500.0, 90.0)
 const ATTENDANCE_DAY_REWARDS := [1, 2, 2, 3, 3, 4, 5]
 const RANKING_PERIOD_TAB_RECTS := {
@@ -954,6 +960,10 @@ func _unhandled_input(event: InputEvent) -> void:
 				return
 			if ATTENDANCE_MAIN_BUTTON_RECT.has_point(design_position):
 				_open_attendance_menu()
+				get_viewport().set_input_as_handled()
+				return
+			if SHOP_BUTTON_RECT.has_point(design_position):
+				OS.shell_open(SHOP_URL)
 				get_viewport().set_input_as_handled()
 				return
 		if coop_mode:
@@ -3297,6 +3307,7 @@ func _draw_main_menu(font: Font) -> void:
 	_draw_test_start_button(font)
 	_draw_ranking_main_button(font)
 	_draw_attendance_main_button(font)
+	_draw_shop_main_button(font)
 	if not menu_notice.is_empty():
 		draw_string(font, Vector2(0, 925), menu_notice, HORIZONTAL_ALIGNMENT_CENTER, DESIGN_SIZE.x, 22, Color("ffd166"))
 
@@ -3312,6 +3323,14 @@ func _draw_test_start_button(font: Font) -> void:
 	draw_rect(TEST_START_50_RECT.grow(-9.0), Color("7a4317"), false, 3.0)
 	draw_string(font, Vector2(TEST_START_50_RECT.position.x, TEST_START_50_RECT.position.y + 31.0), "TEST", HORIZONTAL_ALIGNMENT_CENTER, TEST_START_50_RECT.size.x, 18, Color("633913"))
 	draw_string(font, Vector2(TEST_START_50_RECT.position.x, TEST_START_50_RECT.position.y + 62.0), "50 START", HORIZONTAL_ALIGNMENT_CENTER, TEST_START_50_RECT.size.x, 25, Color("3b2119"))
+
+
+func _draw_shop_main_button(font: Font) -> void:
+	draw_rect(SHOP_BUTTON_RECT, Color("3b2119"), true)
+	draw_rect(SHOP_BUTTON_RECT.grow(-5.0), Color("ff9ecf"), true)
+	draw_rect(SHOP_BUTTON_RECT.grow(-9.0), Color("8a2e58"), false, 3.0)
+	draw_string(font, Vector2(SHOP_BUTTON_RECT.position.x, SHOP_BUTTON_RECT.position.y + 31.0), "상점", HORIZONTAL_ALIGNMENT_CENTER, SHOP_BUTTON_RECT.size.x, 18, Color("4a1633"))
+	draw_string(font, Vector2(SHOP_BUTTON_RECT.position.x, SHOP_BUTTON_RECT.position.y + 62.0), "루피 충전", HORIZONTAL_ALIGNMENT_CENTER, SHOP_BUTTON_RECT.size.x, 22, Color("4a1633"))
 
 
 func _draw_ranking_main_button(font: Font) -> void:
