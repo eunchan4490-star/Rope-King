@@ -2344,7 +2344,17 @@ func _draw_turner(feet: Vector2, faces_left: bool, display_team := -1) -> void:
 	# switches to the angry king once the pattern locks and the double rope
 	# joins in — the angrier look sells the difficulty spike visually.
 	var boss_is_angry := score >= DOUBLE_ROPE_TEST_SCORE_THRESHOLD
-	if boss_active and boss_is_angry and boss_turner_angry_texture != null:
+	# During the calm-king half (90..110), the sleepy pattern can still come
+	# up in the random rotation — its wake-warning + fast-burst turn swaps in
+	# a wide-eyed "shocked" king for the duration, then reverts to the calm
+	# king once the burst is over (back to a normal sleeping/slow turn).
+	var boss_is_shocked := not boss_is_angry and turner_team == TurnerTeam.SLEEPY and _sleepy_is_awake()
+	if boss_active and boss_is_shocked and boss_turner_shocked_texture != null:
+		base_texture = boss_turner_shocked_texture
+		base_region = boss_turner_shocked_used_region
+		mirror_texture = mirrored_boss_turner_shocked_texture
+		mirror_region = mirrored_boss_turner_shocked_used_region
+	elif boss_active and boss_is_angry and boss_turner_angry_texture != null:
 		base_texture = boss_turner_angry_texture
 		base_region = boss_turner_angry_used_region
 		mirror_texture = mirrored_boss_turner_angry_texture
@@ -2360,7 +2370,7 @@ func _draw_turner(feet: Vector2, faces_left: bool, display_team := -1) -> void:
 		# Match the helper's height to the playable character and preserve the
 		# original aspect ratio so the sprite never looks stretched sideways.
 		var sprite_height := 165.0
-		var is_boss := boss_active and (boss_turner_texture != null or boss_turner_angry_texture != null)
+		var is_boss := boss_active and (boss_turner_texture != null or boss_turner_angry_texture != null or boss_turner_shocked_texture != null)
 		if is_boss:
 			sprite_height *= 1.5
 		var sprite_width := sprite_height * active_region.size.x / active_region.size.y
