@@ -237,6 +237,74 @@ revoke all on function public.create_order(text, text) from public;
 grant execute on function public.create_order(text, text) to authenticated;
 
 -- -----------------------------------------------------------------------------
+-- app_secrets: small key/value store for things like the Telegram bot token
+-- that must never reach the frontend. RLS is enabled with NO policies at
+-- all, so PostgREST (anon/authenticated) can never read or write this table
+-- no matter what — only SECURITY DEFINER functions owned by the table owner
+-- (which bypasses RLS) can read it, same as every other privileged read in
+-- this schema. Actual secret values are inserted by hand in the SQL editor,
+-- never committed here.
+-- -----------------------------------------------------------------------------
+create table if not exists public.app_secrets (
+  key text primary key,
+  value text not null
+);
+alter table public.app_secrets enable row level security;
+
+-- -----------------------------------------------------------------------------
+-- notify_new_order(): fires after every new order and pings a Telegram bot
+-- so the admin doesn't have to keep checking /admin manually. Silently does
+-- nothing if the bot token/chat id haven't been configured in app_secrets
+-- yet — this must never block order creation. Uses pg_net (fire-and-forget,
+-- async HTTP) so a slow/unreachable Telegram API can't fail the order.
+-- -----------------------------------------------------------------------------
+create extension if not exists pg_net;
+
+create or replace function public.notify_new_order()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_bot_token text;
+  v_chat_id text;
+  v_item_name text;
+  v_text text;
+begin
+  select value into v_bot_token from public.app_secrets where key = 'telegram_bot_token';
+  select value into v_chat_id from public.app_secrets where key = 'telegram_chat_id';
+  if v_bot_token is null or v_chat_id is null then
+    return new;
+  end if;
+
+  select name into v_item_name from public.items where id = new.item_id;
+
+  v_text := format(
+    E'\U0001F6D2 새 주문 접수!\n상품: %s\n금액: %s원\n입금자명: %s\n주문 ID: %s',
+    coalesce(v_item_name, new.item_id),
+    to_char(new.price, 'FM999,999,999'),
+    new.depositor_name,
+    new.id
+  );
+
+  perform net.http_post(
+    url := format('https://api.telegram.org/bot%s/sendMessage', v_bot_token),
+    headers := '{"Content-Type": "application/json"}'::jsonb,
+    body := jsonb_build_object('chat_id', v_chat_id, 'text', v_text)
+  );
+
+  return new;
+end;
+$$;
+
+drop trigger if exists on_order_created_notify on public.orders;
+create trigger on_order_created_notify
+  after insert on public.orders
+  for each row
+  execute function public.notify_new_order();
+
+-- -----------------------------------------------------------------------------
 -- approve_order(): the only way an order can move to 'approved' and grant
 -- ownership. Runs as one transaction (a single PL/pgSQL function call is
 -- already atomic), re-checks is_admin() itself, and is idempotent — calling
