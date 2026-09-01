@@ -1,26 +1,41 @@
 import Link from "next/link";
 import { getCurrentUser } from "@/lib/auth";
 
-const STEPS = [
+const PAY_STEPS = [
   {
     title: "구글 계정으로 로그인",
-    desc: "게임에서 쓰는 것과 같은 구글 계정이면 됩니다.",
+    desc: "이 사이트 우측 상단의 로그인 버튼을 눌러 구글 계정으로 로그인합니다. 게임 계정과 달라도 상관없어요.",
   },
   {
-    title: "상점에서 루피 구매 신청",
-    desc: "원하는 만큼 신청하고 입금자명을 입력해주세요.",
+    title: "상점에서 원하는 상품 선택",
+    desc: "🛒 루피 구매하러 가기 → 상품을 눌러 상세 화면으로 들어갑니다.",
   },
   {
-    title: "안내된 계좌로 입금",
-    desc: "신청 화면에 계좌번호가 바로 표시됩니다.",
+    title: "입금자명 입력 후 구매 신청하기",
+    desc: "실제로 입금하실 분 성함을 정확히 입력하고 '구매 신청하기'를 누릅니다.",
   },
   {
-    title: "입금 확인 후 코드 발급",
-    desc: "확인되면 주문 페이지에 교환 코드가 자동으로 뜹니다.",
+    title: "안내된 계좌로 정확한 금액 입금",
+    desc: "신청 직후 화면에 은행/계좌번호/예금주가 표시됩니다. 계좌번호는 복사 버튼으로 바로 복사해서 은행 앱(토스, 카카오뱅크 등)에 붙여넣고, 표시된 금액과 똑같이 입금해주세요.",
+  },
+];
+
+const REWARD_STEPS = [
+  {
+    title: "관리자가 입금 확인 후 승인",
+    desc: "사람이 직접 입금 내역을 확인하기 때문에 시간이 조금 걸릴 수 있어요. 신청 화면을 나가도 괜찮습니다.",
   },
   {
-    title: "게임에서 코드 입력",
-    desc: "설정 화면의 코드 입력 칸에 넣으면 루피가 바로 지급돼요.",
+    title: "주문내역에서 교환 코드 확인",
+    desc: "승인되면 우측 상단 '주문내역'에서 해당 주문을 열어보세요. 'XXXX-XXXX-XXXX' 형태의 코드가 표시됩니다.",
+  },
+  {
+    title: "게임 실행 → 설정 → 코드 입력",
+    desc: "줄넘킹 게임을 켜고 타이틀 화면의 '설정' 버튼을 누른 뒤, '코드 입력' 칸에 코드를 붙여넣고 확인을 누릅니다.",
+  },
+  {
+    title: "루피 즉시 지급 완료",
+    desc: "확인을 누르는 즉시 루피가 게임에 지급돼요. 코드는 1회만 사용할 수 있으니 다른 사람에게 알려주지 마세요.",
   },
 ];
 
@@ -67,15 +82,37 @@ export default async function HomePage() {
         )}
       </div>
 
-      {/* How it works */}
+      {/* How to pay */}
       <section className="rounded-2xl border border-white/10 bg-brand-panel/60 p-5">
-        <p className="text-sm font-bold text-white">
-          🧭 이렇게 이용하세요
+        <p className="text-sm font-bold text-white">💳 어떻게 결제하나요?</p>
+        <p className="mt-1 text-xs text-white/50">
+          카드 결제가 아니라, 계좌이체로 직접 입금하는 방식이에요.
         </p>
         <ol className="mt-4 flex flex-col gap-4">
-          {STEPS.map((step, index) => (
+          {PAY_STEPS.map((step, index) => (
             <li key={step.title} className="flex items-start gap-3">
               <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand-gold text-xs font-bold text-black">
+                {index + 1}
+              </span>
+              <div>
+                <p className="text-sm font-semibold text-white">{step.title}</p>
+                <p className="text-xs leading-relaxed text-white/60">{step.desc}</p>
+              </div>
+            </li>
+          ))}
+        </ol>
+      </section>
+
+      {/* How to receive the reward */}
+      <section className="rounded-2xl border border-white/10 bg-brand-panel/60 p-5">
+        <p className="text-sm font-bold text-white">🎁 어떻게 보상을 받나요?</p>
+        <p className="mt-1 text-xs text-white/50">
+          입금이 확인되면 1회용 교환 코드가 발급되고, 그 코드를 게임에 직접 입력해서 받아요.
+        </p>
+        <ol className="mt-4 flex flex-col gap-4">
+          {REWARD_STEPS.map((step, index) => (
+            <li key={step.title} className="flex items-start gap-3">
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand-accent text-xs font-bold text-black">
                 {index + 1}
               </span>
               <div>

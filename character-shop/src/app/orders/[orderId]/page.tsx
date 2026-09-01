@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentUser } from "@/lib/auth";
 import type { OrderWithItem, OrderStatus } from "@/lib/types";
+import CopyButton from "@/components/CopyButton";
 
 export const dynamic = "force-dynamic";
 
@@ -81,25 +82,46 @@ export default async function OrderDetailPage({
 
       {order.status === "pending" && (
         <div className="rounded-lg border border-brand-gold/40 bg-brand-gold/10 p-4 text-sm">
-          <p className="font-semibold text-brand-gold">입금 계좌 안내</p>
-          <dl className="mt-2 space-y-1">
-            <div className="flex justify-between">
+          <p className="font-semibold text-brand-gold">💳 아래 계좌로 입금해주세요</p>
+          <p className="mt-2 text-xs text-white/60">
+            은행 앱(토스, 카카오뱅크 등)을 열고 계좌번호를 복사해서 붙여넣은
+            뒤, 아래 금액과 <b className="text-brand-gold">정확히 똑같이</b>{" "}
+            입금해주세요.
+          </p>
+          <dl className="mt-3 space-y-2">
+            <div className="flex items-center justify-between">
               <dt className="text-white/60">은행</dt>
               <dd>{process.env.DEPOSIT_BANK_NAME}</dd>
             </div>
-            <div className="flex justify-between">
+            <div className="flex items-center justify-between">
               <dt className="text-white/60">계좌번호</dt>
-              <dd className="font-mono">{process.env.DEPOSIT_ACCOUNT_NUMBER}</dd>
+              <dd className="flex items-center gap-2">
+                <span className="font-mono">{process.env.DEPOSIT_ACCOUNT_NUMBER}</span>
+                <CopyButton value={process.env.DEPOSIT_ACCOUNT_NUMBER ?? ""} />
+              </dd>
             </div>
-            <div className="flex justify-between">
+            <div className="flex items-center justify-between">
               <dt className="text-white/60">예금주</dt>
               <dd>{process.env.DEPOSIT_ACCOUNT_HOLDER}</dd>
             </div>
+            <div className="flex items-center justify-between border-t border-white/10 pt-2">
+              <dt className="text-white/60">입금 금액</dt>
+              <dd className="text-base font-extrabold text-brand-gold">
+                {order.price.toLocaleString()}원
+              </dd>
+            </div>
+            <div className="flex items-center justify-between">
+              <dt className="text-white/60">입금자명</dt>
+              <dd>{order.depositor_name}</dd>
+            </div>
           </dl>
           <p className="mt-3 text-xs text-white/60">
-            입력하신 입금자명과 실제 입금자명이 같아야 빠르게 확인됩니다.
+            입력하신 입금자명과 실제 입금자명이 같아야 빠르게 확인돼요.
             <br />
-            입금 후 확인까지 시간이 걸릴 수 있습니다.
+            입금 확인은 관리자가 직접 하기 때문에 승인까지 시간이 걸릴 수
+            있어요 — 이 화면을 나가도 괜찮고, 나중에{" "}
+            <b className="text-white/80">주문내역</b>에서 다시 확인할 수
+            있어요.
           </p>
         </div>
       )}
@@ -112,16 +134,23 @@ export default async function OrderDetailPage({
 
       {order.status === "approved" && isCurrencyItem && redeemCode && (
         <div className="rounded-lg border border-brand-accent/40 bg-brand-accent/10 p-4 text-sm">
-          <p className="font-semibold text-brand-accent">지급 완료 — 게임에 코드를 입력하세요</p>
-          <p className="mt-2 text-xs text-white/60">
-            게임 실행 → 설정 → 코드 입력 칸에 아래 코드를 입력하고 확인을
-            누르면 {redeemCode.currency_amount}루피가 즉시 지급됩니다.
+          <p className="font-semibold text-brand-accent">
+            🎁 입금 확인 완료! 아래 코드를 게임에 입력하세요
           </p>
-          <p className="mt-3 rounded bg-black/30 px-3 py-2 text-center font-mono text-lg tracking-widest text-brand-accent">
-            {redeemCode.code}
-          </p>
+          <div className="mt-3 flex items-center justify-center gap-2 rounded bg-black/30 px-3 py-2">
+            <span className="font-mono text-lg tracking-widest text-brand-accent">
+              {redeemCode.code}
+            </span>
+            <CopyButton value={redeemCode.code} />
+          </div>
+          <ol className="mt-3 flex flex-col gap-1 text-xs text-white/60">
+            <li>1. 줄넘킹 게임을 실행하세요.</li>
+            <li>2. 타이틀 화면에서 '설정' 버튼을 누르세요.</li>
+            <li>3. '코드 입력' 칸에 위 코드를 붙여넣으세요.</li>
+            <li>4. 확인을 누르면 {redeemCode.currency_amount}루피가 즉시 지급돼요.</li>
+          </ol>
           <p className="mt-2 text-xs text-white/40">
-            코드는 1회만 사용할 수 있습니다.
+            코드는 1회만 사용할 수 있으니 다른 사람에게 알려주지 마세요.
           </p>
         </div>
       )}
