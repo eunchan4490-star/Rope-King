@@ -53,6 +53,15 @@ create table if not exists public.items (
   created_at timestamptz not null default now()
 );
 
+-- item_type distinguishes one-time characters (grant via owned_items) from
+-- repeatable currency top-ups (grant via a redeem_codes row instead — see
+-- below). currency_amount is only meaningful when item_type = 'currency'.
+alter table public.items
+  add column if not exists item_type text not null default 'character'
+    check (item_type in ('character', 'currency'));
+alter table public.items
+  add column if not exists currency_amount integer;
+
 -- -----------------------------------------------------------------------------
 -- orders: one purchase request per row.
 -- -----------------------------------------------------------------------------
@@ -86,6 +95,27 @@ create table if not exists public.owned_items (
 create index if not exists owned_items_user_id_idx on public.owned_items (user_id);
 
 -- -----------------------------------------------------------------------------
+-- redeem_codes: one row per currency-item purchase approval. code is what
+-- the buyer types into the game's existing "코드 입력" field; redeemed
+-- flips true the first (and only) time the game successfully claims it.
+-- The game has no login system, so redemption happens anonymously — see
+-- redeem_code() below for how that stays safe.
+-- -----------------------------------------------------------------------------
+create table if not exists public.redeem_codes (
+  id uuid primary key default gen_random_uuid(),
+  order_id uuid not null references public.orders (id),
+  user_id uuid not null references auth.users (id) on delete cascade,
+  code text not null unique,
+  currency_amount integer not null check (currency_amount > 0),
+  redeemed boolean not null default false,
+  redeemed_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists redeem_codes_user_id_idx on public.redeem_codes (user_id);
+create index if not exists redeem_codes_order_id_idx on public.redeem_codes (order_id);
+
+-- -----------------------------------------------------------------------------
 -- is_admin(): SECURITY DEFINER so it can read profiles.role even though
 -- profiles' own RLS policy (below) only lets a user read their own row.
 -- Used both by other policies and by the approve/reject functions.
@@ -110,6 +140,7 @@ alter table public.profiles enable row level security;
 alter table public.items enable row level security;
 alter table public.orders enable row level security;
 alter table public.owned_items enable row level security;
+alter table public.redeem_codes enable row level security;
 
 -- profiles: a user can read their own profile; admins can read everyone's
 -- (needed for the admin order list to show who placed each order). Nobody
@@ -148,6 +179,13 @@ create policy orders_select_own_or_admin on public.orders
 -- insert, which runs with elevated privileges regardless of RLS.
 drop policy if exists owned_items_select_own_or_admin on public.owned_items;
 create policy owned_items_select_own_or_admin on public.owned_items
+  for select
+  using (user_id = auth.uid() or public.is_admin());
+
+-- redeem_codes: same shape as owned_items — own rows or admin, no direct
+-- client writes (only approve_order()/redeem_code(), both SECURITY DEFINER).
+drop policy if exists redeem_codes_select_own_or_admin on public.redeem_codes;
+create policy redeem_codes_select_own_or_admin on public.redeem_codes
   for select
   using (user_id = auth.uid() or public.is_admin());
 
@@ -214,6 +252,8 @@ set search_path = public
 as $$
 declare
   v_order public.orders%rowtype;
+  v_item public.items%rowtype;
+  v_code text;
 begin
   if not public.is_admin() then
     raise exception 'not authorized';
@@ -231,14 +271,36 @@ begin
     raise exception 'cannot approve a rejected order';
   end if;
 
+  select * into v_item from public.items where id = v_order.item_id;
+
   update public.orders
     set status = 'approved', approved_at = now()
     where id = p_order_id
     returning * into v_order;
 
-  insert into public.owned_items (user_id, item_id, source, order_id)
-  values (v_order.user_id, v_order.item_id, 'purchase', p_order_id)
-  on conflict (user_id, item_id) do nothing;
+  if v_item.item_type = 'currency' then
+    -- Character items grant via owned_items (below); currency items mint a
+    -- one-time redeem code instead, since owned_items' unique(user_id,
+    -- item_id) would block buying the same top-up twice. Format: 3 groups
+    -- of 4 uppercase alphanumeric chars — easy to type by hand. The
+    -- collision-retry loop is a formality (the codespace is huge) but
+    -- costs nothing to keep.
+    loop
+      v_code := upper(
+        substr(md5(random()::text || clock_timestamp()::text), 1, 4) || '-' ||
+        substr(md5(random()::text || clock_timestamp()::text), 1, 4) || '-' ||
+        substr(md5(random()::text || clock_timestamp()::text), 1, 4)
+      );
+      exit when not exists (select 1 from public.redeem_codes where code = v_code);
+    end loop;
+
+    insert into public.redeem_codes (order_id, user_id, code, currency_amount)
+    values (p_order_id, v_order.user_id, v_code, v_item.currency_amount);
+  else
+    insert into public.owned_items (user_id, item_id, source, order_id)
+    values (v_order.user_id, v_order.item_id, 'purchase', p_order_id)
+    on conflict (user_id, item_id) do nothing;
+  end if;
 
   return v_order;
 end;
@@ -246,6 +308,39 @@ $$;
 
 revoke all on function public.approve_order(uuid) from public;
 grant execute on function public.approve_order(uuid) to authenticated;
+
+-- -----------------------------------------------------------------------------
+-- redeem_code(): called by the GAME CLIENT, not the website. No login
+-- exists in the game, so this is intentionally callable by the anon role —
+-- security rests on the code itself being an unguessable random token (12
+-- alphanumeric chars, astronomically large codespace) plus single-use
+-- (redeemed flag flipped atomically in the same UPDATE that checks it, so
+-- two simultaneous redeem attempts with the same code can't both succeed).
+-- -----------------------------------------------------------------------------
+create or replace function public.redeem_code(p_code text)
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_amount integer;
+begin
+  update public.redeem_codes
+    set redeemed = true, redeemed_at = now()
+    where code = upper(trim(coalesce(p_code, ''))) and redeemed = false
+    returning currency_amount into v_amount;
+
+  if v_amount is null then
+    raise exception 'invalid or already used code';
+  end if;
+
+  return v_amount;
+end;
+$$;
+
+revoke all on function public.redeem_code(text) from public;
+grant execute on function public.redeem_code(text) to anon, authenticated;
 
 -- -----------------------------------------------------------------------------
 -- reject_order(): only affects orders still pending, so an approved order
@@ -302,20 +397,22 @@ revoke all on function public.get_my_owned_items() from public;
 grant execute on function public.get_my_owned_items() to authenticated;
 
 -- -----------------------------------------------------------------------------
--- Seed data: 3 test characters. Safe to re-run (upsert on id).
+-- Seed data: 3 example characters (kept inactive — see GAME_INTEGRATION.md
+-- section 4 for how their id matches assets/characters/<id>/ 1:1) plus the
+-- live currency top-up item. Safe to re-run (upsert on id).
 -- -----------------------------------------------------------------------------
--- id values match the game's assets/characters/<id>/ folder names exactly
--- (skele, witch, scientist) so the game client can use owned item ids
--- directly with zero mapping — see GAME_INTEGRATION.md section 4.
-insert into public.items (id, name, price, image_url, active)
+insert into public.items (id, name, price, image_url, active, item_type, currency_amount)
 values
-  ('skele', '스켈레', 4900, null, true),
-  ('witch', '마녀', 3900, null, true),
-  ('scientist', '과학자', 3900, null, true)
+  ('skele', '스켈레', 4900, null, false, 'character', null),
+  ('witch', '마녀', 3900, null, false, 'character', null),
+  ('scientist', '과학자', 3900, null, false, 'character', null),
+  ('gem_100', '100루피', 1000, null, true, 'currency', 100)
 on conflict (id) do update set
   name = excluded.name,
   price = excluded.price,
-  active = excluded.active;
+  active = excluded.active,
+  item_type = excluded.item_type,
+  currency_amount = excluded.currency_amount;
 
 -- -----------------------------------------------------------------------------
 -- Making a user admin: run this manually after they've logged in at least

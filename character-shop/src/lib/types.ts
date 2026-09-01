@@ -1,9 +1,13 @@
+export type ItemType = "character" | "currency";
+
 export type Item = {
   id: string;
   name: string;
   price: number;
   image_url: string | null;
   active: boolean;
+  item_type: ItemType;
+  currency_amount: number | null;
   created_at: string;
 };
 
@@ -21,5 +25,11 @@ export type Order = {
 };
 
 export type OrderWithItem = Order & {
-  items: Pick<Item, "id" | "name" | "image_url"> | null;
+  items: Pick<Item, "id" | "name" | "image_url" | "item_type"> | null;
+};
+
+export type RedeemCode = {
+  code: string;
+  currency_amount: number;
+  redeemed: boolean;
 };

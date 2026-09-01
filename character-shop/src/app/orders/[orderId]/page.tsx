@@ -28,13 +28,28 @@ export default async function OrderDetailPage({
   // instead of relying solely on the policy silently returning no rows.
   const { data: order } = await supabase
     .from("orders")
-    .select("id, item_id, price, depositor_name, status, created_at, approved_at, items(id, name, image_url)")
+    .select("id, item_id, price, depositor_name, status, created_at, approved_at, items(id, name, image_url, item_type)")
     .eq("id", orderId)
     .eq("user_id", user.id)
     .single<OrderWithItem>();
 
   if (!order) {
     notFound();
+  }
+
+  // Currency purchases don't grant owned_items — approve_order() instead
+  // mints a one-time redeem code the buyer types into the game's "코드
+  // 입력" field. RLS limits this to the caller's own codes regardless of
+  // the order_id filter here.
+  const isCurrencyItem = order.items?.item_type === "currency";
+  let redeemCode: { code: string; currency_amount: number } | null = null;
+  if (order.status === "approved" && isCurrencyItem) {
+    const { data } = await supabase
+      .from("redeem_codes")
+      .select("code, currency_amount")
+      .eq("order_id", order.id)
+      .single();
+    redeemCode = data;
   }
 
   return (
@@ -95,7 +110,23 @@ export default async function OrderDetailPage({
         </p>
       )}
 
-      {order.status === "approved" && (
+      {order.status === "approved" && isCurrencyItem && redeemCode && (
+        <div className="rounded-lg border border-brand-accent/40 bg-brand-accent/10 p-4 text-sm">
+          <p className="font-semibold text-brand-accent">지급 완료 — 게임에 코드를 입력하세요</p>
+          <p className="mt-2 text-xs text-white/60">
+            게임 실행 → 설정 → 코드 입력 칸에 아래 코드를 입력하고 확인을
+            누르면 {redeemCode.currency_amount}루피가 즉시 지급됩니다.
+          </p>
+          <p className="mt-3 rounded bg-black/30 px-3 py-2 text-center font-mono text-lg tracking-widest text-brand-accent">
+            {redeemCode.code}
+          </p>
+          <p className="mt-2 text-xs text-white/40">
+            코드는 1회만 사용할 수 있습니다.
+          </p>
+        </div>
+      )}
+
+      {order.status === "approved" && !isCurrencyItem && (
         <p className="text-sm text-brand-accent">
           지급이 완료되었습니다. 게임에 같은 계정으로 로그인하면 캐릭터를 사용할 수 있습니다.
         </p>
