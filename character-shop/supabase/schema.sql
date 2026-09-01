@@ -579,6 +579,129 @@ on conflict (id) do update set
   currency_amount = excluded.currency_amount;
 
 -- -----------------------------------------------------------------------------
+-- inquiries: the "문의하기" (contact us) form. Anyone can submit — logged in
+-- or not — so this does NOT require auth.uid(); user_id is just recorded
+-- when available for reference. Only admins can read submissions back
+-- through PostgREST (RLS below); the actual notification (Telegram +
+-- optional email) happens in notify_new_inquiry(), same pattern as orders.
+-- -----------------------------------------------------------------------------
+create table if not exists public.inquiries (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references auth.users (id) on delete set null,
+  contact_email text,
+  message text not null,
+  created_at timestamptz not null default now(),
+  handled boolean not null default false
+);
+alter table public.inquiries enable row level security;
+drop policy if exists inquiries_select_admin on public.inquiries;
+create policy inquiries_select_admin on public.inquiries
+  for select using (public.is_admin());
+
+-- submit_inquiry(): the only way a row can land in inquiries. Re-validates
+-- the message server-side (never trusts a client to have already done so)
+-- and stamps user_id from auth.uid() when a session exists, same
+-- never-trust-the-client posture as create_order().
+create or replace function public.submit_inquiry(p_message text, p_contact_email text)
+returns public.inquiries
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_row public.inquiries%rowtype;
+  v_message text;
+  v_contact text;
+begin
+  v_message := trim(coalesce(p_message, ''));
+  if length(v_message) = 0 then
+    raise exception 'message is required';
+  end if;
+  if length(v_message) > 2000 then
+    raise exception 'message is too long';
+  end if;
+
+  v_contact := nullif(trim(coalesce(p_contact_email, '')), '');
+
+  insert into public.inquiries (user_id, contact_email, message)
+  values (auth.uid(), v_contact, v_message)
+  returning * into v_row;
+
+  return v_row;
+end;
+$$;
+
+revoke all on function public.submit_inquiry(text, text) from public;
+grant execute on function public.submit_inquiry(text, text) to anon, authenticated;
+
+-- notify_new_inquiry(): pings the same Telegram bot used for orders (works
+-- immediately, nothing extra to configure) and, if an app_secrets row
+-- 'resend_api_key' has been set, also emails it via Resend's API using
+-- their no-signup-required onboarding@resend.dev sender — to whatever
+-- 'notify_email' is set to in app_secrets. Both are best-effort: a failure
+-- in either must never block the inquiry itself from being saved (the row
+-- in the table is the actual source of truth an admin can always check).
+create or replace function public.notify_new_inquiry()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_bot_token text;
+  v_chat_id text;
+  v_resend_key text;
+  v_notify_email text;
+  v_text text;
+begin
+  v_text := format(
+    E'\U0001F4E9 새 문의가 접수됐어요!\n%s\n\n답장 받을 이메일: %s\n문의 ID: %s',
+    new.message,
+    coalesce(new.contact_email, '(입력 안 함)'),
+    new.id
+  );
+
+  select value into v_bot_token from public.app_secrets where key = 'telegram_bot_token';
+  select value into v_chat_id from public.app_secrets where key = 'telegram_chat_id';
+  if v_bot_token is not null and v_chat_id is not null then
+    perform net.http_post(
+      url := format('https://api.telegram.org/bot%s/sendMessage', v_bot_token),
+      headers := '{"Content-Type": "application/json"}'::jsonb,
+      body := jsonb_build_object('chat_id', v_chat_id, 'text', v_text),
+      timeout_milliseconds := 15000
+    );
+  end if;
+
+  select value into v_resend_key from public.app_secrets where key = 'resend_api_key';
+  select value into v_notify_email from public.app_secrets where key = 'notify_email';
+  if v_resend_key is not null and v_notify_email is not null then
+    perform net.http_post(
+      url := 'https://api.resend.com/emails',
+      headers := jsonb_build_object(
+        'Content-Type', 'application/json',
+        'Authorization', 'Bearer ' || v_resend_key
+      ),
+      body := jsonb_build_object(
+        'from', '줄넘킹 문의 <onboarding@resend.dev>',
+        'to', jsonb_build_array(v_notify_email),
+        'subject', '[줄넘킹] 새 문의가 접수됐어요',
+        'text', v_text
+      ),
+      timeout_milliseconds := 15000
+    );
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists on_inquiry_created_notify on public.inquiries;
+create trigger on_inquiry_created_notify
+  after insert on public.inquiries
+  for each row
+  execute function public.notify_new_inquiry();
+
+-- -----------------------------------------------------------------------------
 -- Making a user admin: run this manually after they've logged in at least
 -- once (so their profiles row exists), replacing the email below.
 --

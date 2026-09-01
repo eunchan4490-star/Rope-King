@@ -149,6 +149,16 @@ export default async function HomePage() {
             칸에 정확히 입력해주세요.
           </p>
         </div>
+        <div className="flex items-start gap-2">
+          <span>💬</span>
+          <p>
+            문제가 있거나 궁금한 점이 있으면{" "}
+            <Link href="/contact" className="font-semibold text-brand-gold underline">
+              문의하기
+            </Link>
+            에서 남겨주세요.
+          </p>
+        </div>
       </section>
     </div>
   );

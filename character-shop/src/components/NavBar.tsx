@@ -22,11 +22,11 @@ export default function NavBar({
 
   return (
     <header className="sticky top-0 z-10 border-b border-white/10 bg-brand-bg/95 backdrop-blur">
-      <nav className="mx-auto flex max-w-lg items-center justify-between px-4 py-3 text-sm">
+      <nav className="mx-auto flex max-w-lg flex-wrap items-center justify-between gap-y-2 px-4 py-3 text-sm">
         <Link href="/" className="font-bold text-brand-gold">
           캐릭터 상점
         </Link>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <Link href="/shop" className="hover:text-brand-gold">
             상점
           </Link>
@@ -35,6 +35,9 @@ export default function NavBar({
               주문내역
             </Link>
           )}
+          <Link href="/contact" className="hover:text-brand-gold">
+            문의
+          </Link>
           {isAdmin && (
             <Link href="/admin" className="hover:text-brand-gold">
               관리자
