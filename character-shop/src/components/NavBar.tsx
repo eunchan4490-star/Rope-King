@@ -41,12 +41,20 @@ export default function NavBar({
             </Link>
           )}
           {email ? (
-            <button
-              onClick={handleLogout}
-              className="rounded bg-white/10 px-2 py-1 text-xs hover:bg-white/20"
-            >
-              로그아웃
-            </button>
+            <>
+              <span
+                title={email}
+                className="max-w-[110px] truncate text-xs text-white/50"
+              >
+                {email}
+              </span>
+              <button
+                onClick={handleLogout}
+                className="shrink-0 rounded bg-white/10 px-2 py-1 text-xs hover:bg-white/20"
+              >
+                로그아웃
+              </button>
+            </>
           ) : (
             <Link
               href="/login"
