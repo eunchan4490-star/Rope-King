@@ -288,10 +288,24 @@ begin
     new.id
   );
 
+  -- Inline "승인"/"거절" buttons — tapping one hits the Telegram webhook
+  -- (see character-shop/src/app/api/telegram-webhook/route.ts), which calls
+  -- telegram_admin_action() below. callback_data just carries "action:id".
   perform net.http_post(
     url := format('https://api.telegram.org/bot%s/sendMessage', v_bot_token),
     headers := '{"Content-Type": "application/json"}'::jsonb,
-    body := jsonb_build_object('chat_id', v_chat_id, 'text', v_text)
+    body := jsonb_build_object(
+      'chat_id', v_chat_id,
+      'text', v_text,
+      'reply_markup', jsonb_build_object(
+        'inline_keyboard', jsonb_build_array(
+          jsonb_build_array(
+            jsonb_build_object('text', '✅ 승인', 'callback_data', 'approve:' || new.id::text),
+            jsonb_build_object('text', '❌ 거절', 'callback_data', 'reject:' || new.id::text)
+          )
+        )
+      )
+    )
   );
 
   return new;
@@ -312,7 +326,14 @@ create trigger on_order_created_notify
 -- unique(user_id, item_id) constraint on owned_items plus ON CONFLICT DO
 -- NOTHING is a second layer against ever double-granting.
 -- -----------------------------------------------------------------------------
-create or replace function public.approve_order(p_order_id uuid)
+-- _approve_order_core() holds the actual approval logic with NO auth check
+-- of its own — it trusts its caller entirely. Only two callers exist:
+-- approve_order() (authenticated + is_admin() check) and
+-- telegram_admin_action() (secret-token check, for the Telegram approve
+-- button). Both are SECURITY DEFINER owned by the same role, so calling
+-- this internal function needs no separate grant. Never grant execute on
+-- this function to anyone directly.
+create or replace function public._approve_order_core(p_order_id uuid)
 returns public.orders
 language plpgsql
 security definer
@@ -323,10 +344,6 @@ declare
   v_item public.items%rowtype;
   v_code text;
 begin
-  if not public.is_admin() then
-    raise exception 'not authorized';
-  end if;
-
   select * into v_order from public.orders where id = p_order_id for update;
   if not found then
     raise exception 'order not found';
@@ -374,6 +391,22 @@ begin
 end;
 $$;
 
+revoke all on function public._approve_order_core(uuid) from public;
+
+create or replace function public.approve_order(p_order_id uuid)
+returns public.orders
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not public.is_admin() then
+    raise exception 'not authorized';
+  end if;
+  return public._approve_order_core(p_order_id);
+end;
+$$;
+
 revoke all on function public.approve_order(uuid) from public;
 grant execute on function public.approve_order(uuid) to authenticated;
 
@@ -414,7 +447,10 @@ grant execute on function public.redeem_code(text) to anon, authenticated;
 -- reject_order(): only affects orders still pending, so an approved order
 -- can never be silently flipped to rejected after the fact.
 -- -----------------------------------------------------------------------------
-create or replace function public.reject_order(p_order_id uuid)
+-- _reject_order_core(): same "no auth check, trusts its caller" split as
+-- _approve_order_core() — only reject_order() and telegram_admin_action()
+-- may call it.
+create or replace function public._reject_order_core(p_order_id uuid)
 returns public.orders
 language plpgsql
 security definer
@@ -423,10 +459,6 @@ as $$
 declare
   v_order public.orders%rowtype;
 begin
-  if not public.is_admin() then
-    raise exception 'not authorized';
-  end if;
-
   update public.orders
     set status = 'rejected'
     where id = p_order_id and status = 'pending'
@@ -440,8 +472,66 @@ begin
 end;
 $$;
 
+revoke all on function public._reject_order_core(uuid) from public;
+
+create or replace function public.reject_order(p_order_id uuid)
+returns public.orders
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not public.is_admin() then
+    raise exception 'not authorized';
+  end if;
+  return public._reject_order_core(p_order_id);
+end;
+$$;
+
 revoke all on function public.reject_order(uuid) from public;
 grant execute on function public.reject_order(uuid) to authenticated;
+
+-- -----------------------------------------------------------------------------
+-- telegram_admin_action(): lets the Telegram bot's "승인"/"거절" inline
+-- buttons approve/reject an order without the admin ever opening the
+-- website. This is NOT gated by auth.uid()/is_admin() — there is no
+-- Supabase session in a Telegram webhook request — so instead it's gated by
+-- a shared secret stored in app_secrets (never readable via PostgREST,
+-- see app_secrets above) that only the Next.js webhook route also knows.
+-- The route itself independently verifies the request came from Telegram
+-- via the X-Telegram-Bot-Api-Secret-Token header before ever calling this,
+-- so this is a second, defense-in-depth check, not the only one.
+-- -----------------------------------------------------------------------------
+create or replace function public.telegram_admin_action(
+  p_order_id uuid,
+  p_action text,
+  p_secret text
+)
+returns public.orders
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_expected_secret text;
+begin
+  select value into v_expected_secret from public.app_secrets where key = 'telegram_webhook_secret';
+  if v_expected_secret is null or p_secret is null or p_secret <> v_expected_secret then
+    raise exception 'not authorized';
+  end if;
+
+  if p_action = 'approve' then
+    return public._approve_order_core(p_order_id);
+  elsif p_action = 'reject' then
+    return public._reject_order_core(p_order_id);
+  else
+    raise exception 'unknown action';
+  end if;
+end;
+$$;
+
+revoke all on function public.telegram_admin_action(uuid, text, text) from public;
+grant execute on function public.telegram_admin_action(uuid, text, text) to anon;
 
 -- -----------------------------------------------------------------------------
 -- get_my_owned_items(): convenience RPC for the game client — returns just
