@@ -7,6 +7,13 @@ enum TurnerTransitionPhase { NONE, TURNER_EXIT, TURNER_ENTRY_COUNTDOWN }
 const SUPABASE_URL := "https://zjluakxiiynlzbfxztrl.supabase.co"
 const SUPABASE_ANON_KEY := "sb_publishable_oFUSCvNA6oyZCHP5vNuqXw_gfYXFD_e"
 const LEADERBOARD_TOP_N := 10
+# Separate Supabase project — the character-shop website (see
+# character-shop/ and GAME_INTEGRATION.md), not the leaderboard one above.
+# Only used for redeem_code(), which is intentionally callable anonymously
+# (no login exists in the game) — see supabase/schema.sql's redeem_code()
+# for why that's safe (unguessable one-time code, atomic single-use flip).
+const SHOP_SUPABASE_URL := "https://htaepwozdnwknhewkals.supabase.co"
+const SHOP_SUPABASE_ANON_KEY := "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh0YWVwd296ZG53a25oZXdrYWxzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgyNTA1ODgsImV4cCI6MjEwMzgyNjU4OH0.9cgueCOcdlrhgRmFgtZ8iy3eJCRZ-GbRc16hbZOW8hA"
 const DESIGN_SIZE := Vector2(720.0, 1280.0)
 const PLAYER_X := 360.0
 const COOP_LEFT_PLAYER_X := 240.0
@@ -54,8 +61,8 @@ const SLEEPY_START_SCORE := 30
 const SLEEPY_MIN_SLOW_TURNS := 1
 const SLEEPY_MAX_SLOW_TURNS := 2
 const SLEEPY_WAKE_WARNING_SECONDS := 1.0
-const SLEEPY_SLOW_MULTIPLIER := 0.462
-const SLEEPY_FAST_MULTIPLIER := 2.4
+const SLEEPY_SLOW_MULTIPLIER := 0.5544 # 0.462 base + 20%
+const SLEEPY_FAST_MULTIPLIER := 3.6 # 2.4 base + 50%
 const PRANKSTER_START_SCORE := 50
 const ROPE_OVERHEAD_ANGLE := PI * 1.5
 const PRANKSTER_STOP_SECONDS := 1.0
@@ -443,6 +450,8 @@ var ranking_entries: Array = []
 var ranking_period_filter := "all"
 var leaderboard_submit_request: HTTPRequest
 var leaderboard_fetch_request: HTTPRequest
+var redeem_code_request: HTTPRequest
+var redeem_code_pending := false
 var character_preview_textures: Dictionary = {}
 var character_preview_regions: Dictionary = {}
 var character_ids: Array[String] = []
@@ -2719,6 +2728,56 @@ func _submit_score(final_score: int) -> void:
 	leaderboard_submit_request.request(url, headers, HTTPClient.METHOD_POST, payload)
 
 
+func _submit_redeem_code(code: String) -> void:
+	# Calls the character-shop's redeem_code() RPC anonymously (see
+	# SHOP_SUPABASE_URL above and supabase/schema.sql) — there's no login in
+	# the game, so this is the entire "am I allowed to claim this" check:
+	# the code itself, generated server-side and single-use.
+	if redeem_code_request == null:
+		redeem_code_request = HTTPRequest.new()
+		add_child(redeem_code_request)
+		redeem_code_request.accept_gzip = false
+		redeem_code_request.request_completed.connect(_on_redeem_code_response)
+	var url := "%s/rest/v1/rpc/redeem_code" % SHOP_SUPABASE_URL
+	var headers := [
+		"apikey: %s" % SHOP_SUPABASE_ANON_KEY,
+		"Content-Type: application/json",
+		"Accept-Encoding: identity",
+	]
+	var payload := JSON.stringify({"p_code": code})
+	var error := redeem_code_request.request(url, headers, HTTPClient.METHOD_POST, payload)
+	if error != OK:
+		settings_message = "네트워크 오류로 코드 확인에 실패했습니다"
+		return
+	redeem_code_pending = true
+	settings_message = "코드 확인 중..."
+
+
+func _on_redeem_code_response(result: int, response_code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
+	redeem_code_pending = false
+	if result != OK:
+		settings_message = "네트워크 오류로 코드 확인에 실패했습니다"
+		return
+	var text := body.get_string_from_utf8()
+	if response_code == 200:
+		# redeem_code() returns a bare integer (not a table), so PostgREST
+		# hands back the raw JSON number as the whole body — e.g. "100".
+		var parsed: Variant = JSON.parse_string(text)
+		var amount := int(parsed) if parsed != null else 0
+		if amount > 0:
+			gems += amount
+			_save_progress()
+			settings_message = "%d루피 지급 완료!" % amount
+		else:
+			settings_message = "코드 확인에 실패했습니다"
+	else:
+		# redeem_code() raises on an invalid/already-used code, which
+		# PostgREST surfaces as a 4xx with an error payload — the exact
+		# wording isn't user-friendly, so show one fixed message instead of
+		# whatever's in the response body.
+		settings_message = "이미 사용됐거나 잘못된 코드입니다"
+
+
 func _handle_settings_menu_input(position: Vector2) -> void:
 	if SETTINGS_PANEL_CLOSE_RECT.has_point(position):
 		_close_settings_menu()
@@ -2739,9 +2798,13 @@ func _handle_settings_menu_input(position: Vector2) -> void:
 		_save_progress()
 		return
 	if CODE_SUBMIT_BUTTON_RECT.has_point(position):
-		# Redeem-code validation and hidden-character rewards are not
-		# implemented yet — this just acknowledges the input for now.
-		settings_message = "코드 확인 준비 중"
+		var code := code_edit.text.strip_edges()
+		if code.is_empty():
+			settings_message = "코드를 입력해주세요"
+			return
+		if redeem_code_pending:
+			return
+		_submit_redeem_code(code)
 		code_edit.text = ""
 		return
 
