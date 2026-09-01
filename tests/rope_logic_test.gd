@@ -29,6 +29,7 @@ func _init() -> void:
 	_test_start_at_fifty(game)
 	_test_start_at_one_thirty(game)
 	_test_start_at_one_hundred_fifty_one(game)
+	_test_boss_double_rope_pacing(game)
 	game.free()
 	if failures.is_empty():
 		print("ROPE LOGIC TESTS PASSED")
@@ -567,27 +568,28 @@ func _test_start_at_one_thirty(game: Node) -> void:
 	_expect(int(game.duo_normal_turns_remaining) >= game.DUO_MIN_NORMAL_TURNS and int(game.duo_normal_turns_remaining) <= game.DUO_MAX_NORMAL_TURNS, "duo stage's next gap fell outside its configured range")
 	game.score = game.DUO_STAGE_END_SCORE
 	game._update_turner_team_and_pattern()
-	_expect(int(game.turner_team) == int(game.TurnerTeam.STUDENT), "duo stage did not fall back to the basic student turner at its end score")
+	_expect(int(game.turner_team) == int(game.TurnerTeam.WIZARD_PRANKSTER_DUO), "duo stage did not hand off directly into the wizard/prankster duo at its end score")
 	game._return_to_main()
 
 
 func _test_start_at_one_hundred_fifty_one(game: Node) -> void:
-	game._start_game_at_score(151)
-	_expect(int(game.game_state) == int(game.GameState.PLAYING), "151-start test did not start gameplay")
-	_expect(int(game.score) == 151, "151-start test used the wrong score")
-	_expect(int(game.turner_team) == int(game.TurnerTeam.WIZARD_PRANKSTER_DUO), "score 151 did not start the wizard/prankster duo stage")
+	game._start_game_at_score(150)
+	_expect(int(game.game_state) == int(game.GameState.PLAYING), "150-start test did not start gameplay")
+	_expect(int(game.score) == 150, "150-start test used the wrong score")
+	_expect(int(game.turner_team) == int(game.TurnerTeam.WIZARD_PRANKSTER_DUO), "score 150 did not start the wizard/prankster duo stage directly (no plain-student gap turn)")
 	_expect(not bool(game.duo2_prankster_triggered), "wizard/prankster duo started with an unfair immediate trick")
 	_expect(is_equal_approx(game.rope_speed, BALANCE.speed_for_score(10)), "wizard/prankster duo did not hold the flat score-10 baseline")
 	game.game_state = 1
 	game.rope_speed = 3.0
 	game.rope_angle = PI
-	# Pin the trick countdown high while checking wizard's own default toggle
-	# runs each turn, the same reasoning _test_start_at_one_thirty uses to
-	# avoid its random gap coincidentally firing early.
+	# The rope is invisible on every turn here, trick or not.
+	_expect(game._wizard_rope_is_ghosted(), "wizard/prankster duo's default turn did not render the rope invisible")
+	# Pin the trick countdown high while checking wizard's own speed variance
+	# still re-rolls on a normal (non-trick) turn, the same reasoning
+	# _test_start_at_one_thirty uses to avoid its random gap coincidentally
+	# firing early.
 	game.duo2_normal_turns_remaining = 1000
-	var hidden_before := bool(game.wizard_rope_hidden)
 	game._update_turner_team_and_pattern()
-	_expect(bool(game.wizard_rope_hidden) != hidden_before, "wizard/prankster duo's default wizard toggle did not run on a normal turn")
 	_expect(not bool(game.duo2_prankster_triggered), "wizard/prankster duo's normal turn incorrectly triggered prankster's trick")
 	game.wizard_speed_multiplier = 1.6
 	_expect(is_equal_approx(game._effective_rope_speed(), 3.0 * 1.6), "wizard/prankster duo's default turn did not use wizard's own speed multiplier")
@@ -616,6 +618,46 @@ func _test_start_at_one_hundred_fifty_one(game: Node) -> void:
 	game.score = 1000
 	game._update_turner_team_and_pattern()
 	_expect(int(game.turner_team) == int(game.TurnerTeam.WIZARD_PRANKSTER_DUO), "wizard/prankster duo did not hold at a much higher score")
+	game._return_to_main()
+
+
+func _test_boss_double_rope_pacing(game: Node) -> void:
+	game._reset_turner_run()
+	if game.feedback == null:
+		game.feedback = RopeFeedbackManager.new()
+		game.add_child(game.feedback)
+	game.game_state = 1
+	game.score = game.DOUBLE_ROPE_TEST_SCORE_THRESHOLD - 1
+	game.rope_speed = BALANCE.base_rope_speed
+	game.is_jumping = true
+	game.jump_height = -BALANCE.required_jump_height - 1.0
+	game.jump_started_in_cue = false
+	game.turner_transition_active = false
+	game._resolve_rope_crossing()
+	_expect(int(game.score) == game.DOUBLE_ROPE_TEST_SCORE_THRESHOLD, "boss double-rope intro turn landed on the wrong score")
+	_expect(not bool(game.rope_b_enabled), "boss double-rope stage started with double rope immediately instead of a single-rope intro turn")
+	_expect(bool(game.boss_double_rope_intro_shown), "boss double-rope intro flag never got set")
+	_expect(bool(game.turner_transition_active), "boss double-rope intro turn did not pause with a warning")
+	game.turner_transition_active = false
+	# Simulate many turns past the intro and confirm double rope never
+	# appears on two consecutive turns, staying at most every other turn —
+	# stay well inside the [threshold, AIR_CHALLENGE_START_SCORE) window so
+	# this doesn't run past where the boss double-rope stage itself ends.
+	var consecutive_double := 0
+	var max_consecutive_double := 0
+	var saw_double := false
+	for i in range(15):
+		game.is_jumping = true
+		game.jump_height = -BALANCE.required_jump_height - 1.0
+		game._resolve_rope_crossing()
+		if bool(game.rope_b_enabled):
+			saw_double = true
+			consecutive_double += 1
+			max_consecutive_double = maxi(max_consecutive_double, consecutive_double)
+		else:
+			consecutive_double = 0
+	_expect(saw_double, "boss double-rope never turned on across many simulated turns")
+	_expect(max_consecutive_double <= 1, "boss double-rope appeared on two consecutive turns")
 	game._return_to_main()
 
 

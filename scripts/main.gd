@@ -331,16 +331,16 @@ var duo_athlete_burst_turns_remaining := 0
 # would otherwise be doing this turn (speed + visual) — sleepy always takes
 # priority over athlete's own cycle.
 var duo_sleepy_awake := false
-# Second duo stage: from WIZARD_PRANKSTER_DUO_START_SCORE (151) onward, the
-# left turner is always wizard and the right is always prankster (see
-# _draw_turner) — the rope defaults to wizard's own pattern (periodic hide +
-# speed variance) every turn, and every so often the rope's pattern for a
-# single turn switches to prankster's stop/reverse fake instead, with the
-# rope also rendered invisible for that one turn (reusing wizard's own
-# ghosting so it reads as "the wizard vanishes the trick rope" rather than a
-# separate visual). WIZARD_PRANKSTER_DUO_SLOT is a sentinel distinct from
-# DUO_STAGE_SLOT and every gauntlet slot number, same purpose as that one.
-const WIZARD_PRANKSTER_DUO_START_SCORE := 151
+# Second duo stage: from WIZARD_PRANKSTER_DUO_START_SCORE (150, right where
+# the athlete/sleepy duo ends — no plain-student gap turn in between) onward,
+# the left turner is always wizard and the right is always prankster (see
+# _draw_turner). The rope is invisible on every turn (see
+# _wizard_rope_is_ghosted) — wizard's own speed variance still applies by
+# default, and every so often the turn's pattern switches to prankster's
+# stop/reverse fake instead, still under the same permanently invisible rope.
+# WIZARD_PRANKSTER_DUO_SLOT is a sentinel distinct from DUO_STAGE_SLOT and
+# every gauntlet slot number, same purpose as that one.
+const WIZARD_PRANKSTER_DUO_START_SCORE := 150
 const WIZARD_PRANKSTER_DUO_SLOT := 100001
 const WIZARD_PRANKSTER_DUO_MIN_NORMAL_TURNS := 2
 const WIZARD_PRANKSTER_DUO_MAX_NORMAL_TURNS := 5
@@ -350,6 +350,14 @@ var duo2_normal_turns_remaining := 0
 # also accept this team) and the rope's forced invisibility.
 var duo2_prankster_triggered := false
 var rope_b_enabled := false
+# The turn score first reaches DOUBLE_ROPE_TEST_SCORE_THRESHOLD stays a
+# single rope so the player gets one normal turn to read the stage change
+# before ropes start doubling — this tracks whether that intro turn has
+# already happened this run. After it, double rope appears at most every
+# other turn (never two in a row) — see boss_double_rope_was_double_last_turn
+# and the per-turn toggle in _resolve_rope_crossing.
+var boss_double_rope_intro_shown := false
+var boss_double_rope_was_double_last_turn := false
 var rope_b_angle := PI
 var jump_height := 0.0
 var jump_velocity := 0.0
@@ -1094,21 +1102,37 @@ func _resolve_rope_crossing() -> void:
 			# rope with the basic student turner/pattern instead of leaving
 			# the boss gimmick running forever.
 			rope_b_enabled = false
-		if DOUBLE_ROPE_TEST_ENABLED and not rope_b_enabled and score >= DOUBLE_ROPE_TEST_SCORE_THRESHOLD and score < AIR_CHALLENGE_START_SCORE:
-			rope_speed = _base_speed_for_score(score)
-			rope_b_enabled = true
-			# Same exit+countdown pause and red "경고!" warning as the boss's
-			# initial pattern-random entry at BOSS_TURNER_SCORE_THRESHOLD —
-			# adding a second rope mid-run is a big enough rule change to
-			# deserve the same heads-up instead of appearing instantly.
-			_start_turner_transition(turner_team, true)
-			rope_b_angle = fposmod(PI + ROPE_B_PHASE_OFFSET, TAU)
-			message = "보스 등장! 줄 2개를 동시에 넘어라!"
-			message_color = Color("ff6b6b")
-			flash_time = 0.22
-			jump_started_in_cue = false
-			feedback.play_success(score)
-			return
+		if DOUBLE_ROPE_TEST_ENABLED and score >= DOUBLE_ROPE_TEST_SCORE_THRESHOLD and score < AIR_CHALLENGE_START_SCORE:
+			if not boss_double_rope_intro_shown:
+				# The very first turn past the threshold stays a single rope
+				# — starting the second rope immediately was too big a jump
+				# in difficulty. This one turn just announces what's coming;
+				# the actual toggle starts on the turn after.
+				boss_double_rope_intro_shown = true
+				boss_double_rope_was_double_last_turn = false
+				rope_b_enabled = false
+				rope_speed = _base_speed_for_score(score)
+				# Same exit+countdown pause and red "경고!" warning as the boss's
+				# initial pattern-random entry at BOSS_TURNER_SCORE_THRESHOLD —
+				# adding a second rope mid-run is a big enough rule change to
+				# deserve the same heads-up instead of appearing instantly.
+				_start_turner_transition(turner_team, true)
+				message = "보스 등장! 곧 줄이 2개가 됩니다!"
+				message_color = Color("ff6b6b")
+				flash_time = 0.22
+				jump_started_in_cue = false
+				feedback.play_success(score)
+				return
+			# Every turn after the intro: double rope appears at most every
+			# other turn — never twice in a row — so the player isn't forced
+			# to track two ropes on literally every single jump.
+			if boss_double_rope_was_double_last_turn:
+				rope_b_enabled = false
+			else:
+				rope_b_enabled = randf() < 0.5
+			boss_double_rope_was_double_last_turn = rope_b_enabled
+			if rope_b_enabled:
+				rope_b_angle = fposmod(rope_angle + ROPE_B_PHASE_OFFSET, TAU)
 		if AIR_CHALLENGE_ENABLED and _should_start_air_challenge():
 			_start_air_challenge()
 			feedback.play_success(score)
@@ -1153,7 +1177,7 @@ func _resolve_rope_crossing() -> void:
 					TurnerTeam.DUO:
 						message = "운동부&잠꾸러기 등장!  잠꾸러기가 깨면 급발진!"
 					TurnerTeam.WIZARD_PRANKSTER_DUO:
-						message = "마법사&장난꾸러기 등장!  가끔 줄이 사라지며 멈칫해요!"
+						message = "마법사&장난꾸러기 등장!  줄이 항상 안 보여요!"
 		elif turner_team == TurnerTeam.SLEEPY and sleepy_wake_warning_time > 0.0:
 			message = "번쩍!  1초 뒤 초고속!"
 		elif turner_team == TurnerTeam.ATHLETE and challenge_pattern == 2:
@@ -1643,7 +1667,10 @@ func _draw_rope_curve(curve_angle: float, rope_color: Color, highlight_color: Co
 
 func _wizard_rope_is_ghosted() -> bool:
 	if turner_team == TurnerTeam.WIZARD_PRANKSTER_DUO:
-		return duo2_prankster_triggered and not _is_jump_cue()
+		# Always invisible here, whether or not prankster's trick has
+		# triggered this turn — unlike standalone WIZARD, which only hides
+		# the rope on alternating turns (wizard_rope_hidden).
+		return not _is_jump_cue()
 	return turner_team == TurnerTeam.WIZARD and wizard_rope_hidden and not _is_jump_cue()
 
 
@@ -1829,6 +1856,8 @@ func _reset_turner_run() -> void:
 	duo_sleepy_awake = false
 	duo2_normal_turns_remaining = 0
 	duo2_prankster_triggered = false
+	boss_double_rope_intro_shown = false
+	boss_double_rope_was_double_last_turn = false
 	turner_transition_active = false
 	turner_transition_time = 0.0
 	turner_transition_phase = TurnerTransitionPhase.NONE
@@ -1853,13 +1882,10 @@ func _turner_slot_for_score(current_score: int) -> int:
 	if current_score < TURNER_CHANGE_INTERVAL:
 		return 0
 	if current_score >= WIZARD_PRANKSTER_DUO_START_SCORE:
+		# WIZARD_PRANKSTER_DUO_START_SCORE == DUO_STAGE_END_SCORE — this duo
+		# picks up on the exact turn the athlete/sleepy duo ends, with no
+		# plain-student gap turn in between.
 		return WIZARD_PRANKSTER_DUO_SLOT
-	if current_score >= DUO_STAGE_END_SCORE:
-		# Between the athlete/sleepy duo ending and the wizard/prankster duo
-		# starting at WIZARD_PRANKSTER_DUO_START_SCORE, slot 0 is the same
-		# "reset to plain student, no fanfare" branch the pre-score-10 grace
-		# period uses (see _update_turner_team_and_pattern).
-		return 0
 	if current_score >= AIR_CHALLENGE_START_SCORE:
 		return DUO_STAGE_SLOT
 	if current_score < BOSS_TURNER_SCORE_THRESHOLD:
@@ -1900,7 +1926,6 @@ func _init_turner_team_state(team: TurnerTeam) -> void:
 			duo_athlete_burst_turns_remaining = 0
 			duo_sleepy_awake = false
 		TurnerTeam.WIZARD_PRANKSTER_DUO:
-			wizard_rope_hidden = false
 			wizard_speed_multiplier = 1.0
 			duo2_normal_turns_remaining = _roll_duo2_normal_turns()
 			duo2_prankster_triggered = false
@@ -1980,19 +2005,18 @@ func _update_turner_team_and_pattern() -> bool:
 				duo_athlete_burst_turns_remaining = ATHLETE_MAX_BURST_TURNS
 		return false
 	if turner_team == TurnerTeam.WIZARD_PRANKSTER_DUO:
-		# Wizard's own hide/speed-variance toggle runs every turn by
-		# default. When the countdown below hits zero, this turn's
-		# pattern switches to prankster's stop/reverse fake instead (see
-		# _update_prankster_fake, extended to also accept this team) and
-		# the rope renders invisible for it (_wizard_rope_is_ghosted) --
-		# duo2_prankster_triggered is cleared and the gap re-rolled once
-		# that fake finishes, not here.
+		# The rope is invisible on every turn here (_wizard_rope_is_ghosted),
+		# so there's no visibility toggle to run — only wizard's speed
+		# variance re-rolls by default. When the countdown below hits zero,
+		# this turn's pattern switches to prankster's stop/reverse fake
+		# instead (see _update_prankster_fake, extended to also accept this
+		# team) — duo2_prankster_triggered is cleared and the gap re-rolled
+		# once that fake finishes, not here.
 		duo2_normal_turns_remaining -= 1
 		if duo2_normal_turns_remaining <= 0:
 			duo2_prankster_triggered = true
 			prankster_fake_pending = true
 		else:
-			wizard_rope_hidden = not wizard_rope_hidden
 			wizard_speed_multiplier = randf_range(balance.wizard_speed_min_multiplier, balance.wizard_speed_max_multiplier)
 		return false
 
@@ -3063,8 +3087,12 @@ func _revive_with_gem() -> void:
 	accepting_input = true
 	# Drop back to a single plain rope on revive — resuming straight into a
 	# double-rope boss beat or a mid-transition state the player never saw
-	# coming would just be an unfair second death.
+	# coming would just be an unfair second death. Re-showing the boss
+	# double-rope intro turn (if that stage is still active) gives the same
+	# one-turn grace period a fresh entry into it would.
 	rope_b_enabled = false
+	boss_double_rope_intro_shown = false
+	boss_double_rope_was_double_last_turn = false
 	rope_angle = PI
 	turner_transition_active = false
 	turner_transition_phase = TurnerTransitionPhase.NONE
