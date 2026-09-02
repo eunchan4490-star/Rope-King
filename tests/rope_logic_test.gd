@@ -688,13 +688,32 @@ func _test_space_zone(game: Node) -> void:
 	_expect(int(game.turner_team) == int(game.TurnerTeam.STUDENT), "space zone did not use the plain default turner")
 	_expect(int(game.turner_change_slot) == game.SPACE_SLOT, "space zone did not land in its own slot")
 	_expect(is_equal_approx(game.rope_speed, BALANCE.speed_for_score(game.TURNER_CHANGE_INTERVAL)), "space zone did not hold the flat score-10 baseline")
+	_expect(bool(game.rope_b_enabled), "space zone did not turn on its second rope")
+	_expect(is_equal_approx(game.rope_b_angle, fposmod(game.rope_angle + game.ROPE_B_PHASE_OFFSET, TAU)), "space zone's second rope did not start half a turn out of phase")
 
 	game.is_jumping = true
 	game.jump_height = -BALANCE.required_jump_height - 1.0
 	game.space_flight_crossing_done = false
+	game.space_flight_crossing_b_done = false
 	game._resolve_rope_crossing()
 	_expect(int(game.score) == game.SPACE_SCORE_THRESHOLD + 1, "a well-timed jump's own crossing did not register a successful clear")
 	_expect(bool(game.space_flight_crossing_done), "space zone did not mark this flight's crossing as resolved")
+	_expect(not bool(game.space_flight_crossing_b_done), "second rope was marked resolved before its own crossing happened")
+	# The overhead rope needs real height to clear — an ordinary
+	# ground-clearance height (barely off the floor) must NOT be enough, or
+	# the whole point of forcing a double jump here is lost.
+	_expect(game.jump_height > -game.SPACE_OVERHEAD_CLEAR_HEIGHT, "test setup's jump_height unexpectedly already clears the overhead rope")
+	game.jump_height = -game.SPACE_OVERHEAD_CLEAR_HEIGHT - 1.0
+	game._resolve_rope_b_crossing()
+	_expect(bool(game.space_flight_crossing_b_done), "space zone did not mark this flight's second-rope crossing as resolved")
+	# A follow-up crossing after a later score bump should re-disable the
+	# BOSS gauntlet's own double rope, but never the space zone's — see the
+	# score < SPACE_SCORE_THRESHOLD guard added alongside it.
+	game.score = game.SPACE_SCORE_THRESHOLD + 1
+	game.is_jumping = true
+	game.jump_height = -BALANCE.required_jump_height - 1.0
+	game._resolve_rope_crossing()
+	_expect(bool(game.rope_b_enabled), "a later crossing in the space zone turned its second rope back off")
 
 	game.score = game.DOUBLE_JUMP_SCORE_THRESHOLD
 	game.is_jumping = true
@@ -715,6 +734,10 @@ func _test_space_zone(game: Node) -> void:
 	game.comet_rush_turns_remaining = 1
 	game.comet_rush_active = false
 	game.rope_speed = 3.0
+	# Isolate the comet multiplier from the space zone's own second rope —
+	# rope_b_enabled being true (as it genuinely is throughout 170+) would
+	# also apply DOUBLE_ROPE_SPEED_MULTIPLIER/damping on top of it here.
+	game.rope_b_enabled = false
 	game._update_turner_team_and_pattern()
 	_expect(bool(game.comet_rush_active), "comet rush never turned on once its countdown reached zero")
 	_expect(is_equal_approx(game._effective_rope_speed(), 3.0 * game.COMET_RUSH_MULTIPLIER), "comet rush did not apply its speed multiplier")
@@ -739,6 +762,43 @@ func _test_space_zone(game: Node) -> void:
 	# the nudge's fair gap is measured one frame later than it was set.
 	var seconds_until_crossing: float = fposmod(game.ROPE_CROSSING_ANGLE - game.rope_angle, TAU) / game.rope_speed
 	_expect(seconds_until_crossing >= BALANCE.jump_cue_seconds - 0.05, "landing right next to the crossing angle did not get a fair cue gap")
+
+	# Full integration pass: with both ropes live, actually step real time
+	# through several turns (well-timed jumps against rope A's cue) and
+	# confirm score keeps climbing — this is exactly the scenario that a
+	# too-eager freeze (blocking either rope's own crossing, or never
+	# clearing once both are done) would silently deadlock. Deliberately
+	# capped below COMET_RUSH_SCORE_THRESHOLD: a comet-rush speed spike can
+	# legitimately beat this naive "jump at rope A's earliest cue" bot even
+	# with correct freeze logic (it doesn't react to rope B specifically),
+	# same as it can beat an inattentive real player — that's difficulty,
+	# not a deadlock, and isn't what this pass is checking.
+	game._start_game_at_score(game.SPACE_SCORE_THRESHOLD)
+	game.game_state = 1
+	var start_score := int(game.score)
+	var target_score: int = mini(start_score + 20, game.COMET_RUSH_SCORE_THRESHOLD - 5)
+	var turns := 0
+	while int(game.score) < target_score and turns < 200:
+		turns += 1
+		var cue_guard := 0
+		while not game._is_jump_cue() and cue_guard < 20000:
+			game._process(1.0 / 60.0)
+			cue_guard += 1
+		_expect(cue_guard < 20000, "space zone integration pass: rope A never reached a cue window on turn %d" % turns)
+		game.attempt_jump()
+		# The overhead rope (see SPACE_OVERHEAD_CLEAR_HEIGHT) needs real
+		# height a single jump alone mostly can't reach — a bot that never
+		# double-jumps isn't testing this pass's actual claim (that the
+		# space zone is completable with both ropes live), just re-testing
+		# the earlier no-double-jump comet-rush difficulty case again.
+		game._process(0.1)
+		game.attempt_jump()
+		var land_guard := 0
+		while bool(game.is_jumping) and land_guard < 20000:
+			game._process(1.0 / 60.0)
+			land_guard += 1
+		_expect(land_guard < 20000, "space zone integration pass: player never landed on turn %d" % turns)
+	_expect(int(game.score) >= target_score, "space zone integration pass stalled at score %d after %d turns with both ropes live" % [int(game.score), turns])
 	game._return_to_main()
 
 

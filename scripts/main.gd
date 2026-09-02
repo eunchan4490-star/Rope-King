@@ -348,6 +348,12 @@ const AIR_CHALLENGE_JUMP_VELOCITY := -1350.0
 # velocity, weaker pull down = a floatier, higher jump).
 const SPACE_SCORE_THRESHOLD := 170
 const SPACE_GRAVITY_MULTIPLIER := 0.55
+# The space zone's second rope isn't a ground-level double-dutch rope like
+# the boss's — it's installed up high, only cleared by getting genuinely
+# high in the air (see _resolve_rope_b_crossing), which a single jump alone
+# mostly can't reach — that's the whole point of the double jump here.
+const SPACE_OVERHEAD_ROPE_Y_OFFSET := -190.0
+const SPACE_OVERHEAD_CLEAR_HEIGHT := 280.0
 const AIR_CHALLENGE_TAP_TOLERANCE := 72.0
 const AIR_CHALLENGE_LANDING_PAUSE := 1.0
 const AIR_ROPE_HEIGHTS := [-235.0, -410.0, -555.0]
@@ -400,7 +406,7 @@ const SPACE_SLOT := 100002
 # 210+: a second, smaller jump can be triggered mid-air (once per jump) —
 # distinct from every other team's rope-timing gimmicks since it changes
 # the PLAYER's own move instead of the rope's pattern.
-const DOUBLE_JUMP_SCORE_THRESHOLD := 210
+const DOUBLE_JUMP_SCORE_THRESHOLD := SPACE_SCORE_THRESHOLD
 const DOUBLE_JUMP_VELOCITY := -620.0
 var used_double_jump := false
 # See _process's space-freeze check and _resolve_rope_crossing — tracks
@@ -408,6 +414,12 @@ var used_double_jump := false
 # freeze only ever suppresses a second, unintended pass late in a long
 # low-gravity float instead of blocking the real crossing check.
 var space_flight_crossing_done := false
+# A second rope (see rope_b_enabled/rope_b_angle, phase-offset by
+# ROPE_B_PHASE_OFFSET) runs the whole space zone — this is the same flag
+# as space_flight_crossing_done, just for that second rope, so the freeze
+# only kicks in once BOTH ropes have actually had their crossing checked
+# this flight, not whichever happens to resolve first.
+var space_flight_crossing_b_done := false
 # 230+: every few turns, one turn's rope speed spikes hard with a warning
 # beforehand — same "everything else in the space zone is the plain fixed
 # baseline, but this one thing changes" shape as SLEEPY's wake-up, just
@@ -894,16 +906,19 @@ func _process(delta: float) -> void:
 			accepting_input = false
 			_advance_turner_transition(delta)
 		else:
-			if score >= SPACE_SCORE_THRESHOLD and is_jumping and space_flight_crossing_done:
+			var space_ropes_resolved_this_flight := space_flight_crossing_done and (not rope_b_enabled or space_flight_crossing_b_done)
+			if score >= SPACE_SCORE_THRESHOLD and is_jumping and space_ropes_resolved_this_flight:
 				# Lower gravity (see SPACE_GRAVITY_MULTIPLIER) means a much
 				# longer time airborne — a second full rope pass could easily
 				# sneak in before landing. This freeze only kicks in AFTER
-				# the crossing this jump was actually timed for has already
-				# been resolved (see _resolve_rope_crossing) — freezing from
-				# the moment the jump starts instead would stop the rope
-				# from ever reaching the crossing angle at all while
-				# airborne, which is exactly when a real hit/success is
-				# supposed to be decided, silently breaking scoring here.
+				# the crossing(s) this jump was actually timed for have
+				# already been resolved (see _resolve_rope_crossing and
+				# _resolve_rope_b_crossing — the space zone runs a second
+				# rope too, see rope_b_enabled) — freezing from the moment
+				# the jump starts instead would stop the rope(s) from ever
+				# reaching their crossing angle at all while airborne, which
+				# is exactly when a real hit/success is supposed to be
+				# decided, silently breaking scoring/the second rope here.
 				queue_redraw()
 				return
 			if tutorial_active and tutorial_stage == 2 and _is_jump_cue():
@@ -1183,6 +1198,7 @@ func attempt_jump() -> void:
 	jump_velocity = -820.0
 	used_double_jump = false
 	space_flight_crossing_done = false
+	space_flight_crossing_b_done = false
 
 
 func _start_air_challenge() -> void:
@@ -1305,13 +1321,14 @@ func _resolve_rope_crossing() -> void:
 			new_best_this_run = true
 			_check_score_unlocks()
 		total_success += 1
-		if rope_b_enabled and score >= AIR_CHALLENGE_START_SCORE:
-			# Double rope is a boss-only gimmick for now, capped at the same
-			# score the (still disabled — see AIR_CHALLENGE_ENABLED) air
-			# challenge would otherwise start. Past this point there's no
-			# real content designed yet, so it drops back to a plain single
-			# rope with the basic student turner/pattern instead of leaving
-			# the boss gimmick running forever.
+		if rope_b_enabled and score >= AIR_CHALLENGE_START_SCORE and score < SPACE_SCORE_THRESHOLD:
+			# Double rope is a boss-only gimmick between the two thresholds,
+			# capped at the same score the (still disabled — see
+			# AIR_CHALLENGE_ENABLED) air challenge would otherwise start —
+			# it drops back to a plain single rope there instead of running
+			# forever. The space zone (SPACE_SCORE_THRESHOLD) deliberately
+			# re-enables its own second rope right after, so this must not
+			# also switch that one back off.
 			rope_b_enabled = false
 		if DOUBLE_ROPE_TEST_ENABLED and score >= DOUBLE_ROPE_TEST_SCORE_THRESHOLD and score < AIR_CHALLENGE_START_SCORE:
 			if not boss_double_rope_intro_shown:
@@ -1425,9 +1442,26 @@ func _resolve_rope_crossing() -> void:
 
 
 func _resolve_rope_b_crossing() -> void:
+	# A pass while grounded is a no-op, not a miss — this rope only exists
+	# to threaten an actual jump attempt (clear it or don't), same as the
+	# main rope requires you to actually be jumping to be judged at all
+	# (_player_clears_rope_at_crossing's own is_jumping check). Without this
+	# guard, the space zone's slow fixed baseline gives such a long grounded
+	# gap between jumps that rope_b's own half-turn phase offset (see
+	# ROPE_B_PHASE_OFFSET) reliably completes and "hits" the player while
+	# they're simply standing there waiting for the main rope's next cue —
+	# an unavoidable, un-timeable death with no real interaction at all.
+	if not is_jumping:
+		return
+	space_flight_crossing_b_done = true
 	# The boss double-dutch rope never awards score on its own — it's an
-	# extra fail condition layered on top of the main rope's rhythm.
-	if not _player_clears_rope_at_crossing():
+	# extra fail condition layered on top of the main rope's rhythm. In the
+	# space zone this same rope is the overhead one instead (see
+	# SPACE_OVERHEAD_ROPE_Y_OFFSET), so clearing it means being genuinely
+	# high up — the ordinary ground-rope clearance height wouldn't require
+	# the double jump at all.
+	var cleared := jump_height <= -SPACE_OVERHEAD_CLEAR_HEIGHT if turner_change_slot == SPACE_SLOT else _player_clears_rope_at_crossing()
+	if not cleared:
 		rope_b_angle = ROPE_CROSSING_ANGLE
 		_trigger_rope_miss()
 
@@ -1564,6 +1598,8 @@ func _start_game_at_score(start_score: int) -> void:
 	elif turner_change_slot == SPACE_SLOT:
 		turner_team = TurnerTeam.STUDENT
 		_init_turner_team_state(turner_team)
+		rope_b_enabled = true
+		rope_b_angle = fposmod(rope_angle + ROPE_B_PHASE_OFFSET, TAU)
 	elif turner_change_slot > 0:
 		turner_team = _random_turner_team(TurnerTeam.STUDENT)
 		_init_turner_team_state(turner_team)
@@ -1960,19 +1996,26 @@ func _draw_rope_layer(draw_behind: bool) -> void:
 		var show_rope_b_cue := _is_rope_b_jump_cue()
 		var rope_b_color := Color("ff334f") if show_rope_b_cue else Color("35d0ff")
 		var rope_b_highlight := Color("ff9a8d") if show_rope_b_cue else Color("bdf3ff")
-		_draw_rope_curve(rope_b_angle, rope_b_color, rope_b_highlight, outline_color, shadow_color)
+		# In the space zone this isn't a second ground-level rope — it's an
+		# overhead one, drawn well above the normal rope so it visibly reads
+		# as "up high" (see SPACE_OVERHEAD_ROPE_Y_OFFSET / the double-jump
+		# clearance check in _resolve_rope_b_crossing).
+		var rope_b_vertical_offset := SPACE_OVERHEAD_ROPE_Y_OFFSET if turner_change_slot == SPACE_SLOT else 0.0
+		_draw_rope_curve(rope_b_angle, rope_b_color, rope_b_highlight, outline_color, shadow_color, 0.0, rope_b_vertical_offset)
 
 
-func _draw_rope_curve(curve_angle: float, rope_color: Color, highlight_color: Color, outline_color: Color, shadow_color: Color, lateral_offset := 0.0) -> void:
-	var midpoint_y := _rope_midpoint_y(curve_angle)
+func _draw_rope_curve(curve_angle: float, rope_color: Color, highlight_color: Color, outline_color: Color, shadow_color: Color, lateral_offset := 0.0, vertical_offset := 0.0) -> void:
+	var midpoint_y := _rope_midpoint_y(curve_angle) + vertical_offset
 	var left_hand := _active_left_hand()
 	var right_hand := _active_right_hand()
+	var left_hand_y := left_hand.y + vertical_offset
+	var right_hand_y := right_hand.y + vertical_offset
 	var pixel_points := PackedVector2Array()
 	for i in range(97):
 		var t := float(i) / 96.0
 		var x := lerpf(left_hand.x, right_hand.x, t) + 4.0 * t * (1.0 - t) * lateral_offset
 		# 4t(1-t) is zero at both hands and one at the middle.
-		var y := lerpf(left_hand.y, right_hand.y, t) + 4.0 * t * (1.0 - t) * (midpoint_y - left_hand.y)
+		var y := lerpf(left_hand_y, right_hand_y, t) + 4.0 * t * (1.0 - t) * (midpoint_y - left_hand_y)
 		var pixel_point := Vector2(
 			roundf(x / ROPE_PIXEL_GRID) * ROPE_PIXEL_GRID,
 			roundf(y / ROPE_PIXEL_GRID) * ROPE_PIXEL_GRID
@@ -2193,6 +2236,7 @@ func _reset_turner_run() -> void:
 	comet_rush_active = false
 	used_double_jump = false
 	space_flight_crossing_done = false
+	space_flight_crossing_b_done = false
 	boss_double_rope_intro_shown = false
 	boss_double_rope_was_double_last_turn = false
 	turner_transition_active = false
@@ -2298,6 +2342,13 @@ func _update_turner_team_and_pattern() -> bool:
 			new_team = TurnerTeam.WIZARD_PRANKSTER_DUO
 		turner_team = new_team
 		_init_turner_team_state(new_team)
+		if target_slot == SPACE_SLOT:
+			# A second, rotating rope (reusing the boss gauntlet's own
+			# rope_b) runs for the whole space zone — see the freeze check
+			# in _process and space_flight_crossing_b_done for how it stays
+			# fair alongside the low-gravity float.
+			rope_b_enabled = true
+			rope_b_angle = fposmod(rope_angle + ROPE_B_PHASE_OFFSET, TAU)
 		return true
 	if turner_team == TurnerTeam.STUDENT:
 		if turner_change_slot == SPACE_SLOT and score >= COMET_RUSH_SCORE_THRESHOLD:
