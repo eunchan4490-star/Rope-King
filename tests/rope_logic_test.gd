@@ -30,6 +30,7 @@ func _init() -> void:
 	_test_start_at_one_thirty(game)
 	_test_start_at_one_hundred_fifty_one(game)
 	_test_boss_double_rope_pacing(game)
+	_test_space_zone(game)
 	game.free()
 	if failures.is_empty():
 		print("ROPE LOGIC TESTS PASSED")
@@ -617,10 +618,12 @@ func _test_start_at_one_hundred_fifty_one(game: Node) -> void:
 	game._update_prankster_fake(maxf(game.PRANKSTER_STOP_SECONDS, game.PRANKSTER_REVERSE_SECONDS))
 	_expect(not bool(game.duo2_prankster_triggered), "wizard/prankster duo's trick did not clear after the fake finished")
 	_expect(int(game.duo2_normal_turns_remaining) >= game.WIZARD_PRANKSTER_DUO_MIN_NORMAL_TURNS and int(game.duo2_normal_turns_remaining) <= game.WIZARD_PRANKSTER_DUO_MAX_NORMAL_TURNS, "wizard/prankster duo's next gap fell outside its configured range")
-	# No further stage is designed past this one — it should hold indefinitely.
+	# The space zone (SPACE_SCORE_THRESHOLD, 170) takes over past this duo —
+	# see _test_space_zone below for its own dedicated coverage.
 	game.score = 1000
 	game._update_turner_team_and_pattern()
-	_expect(int(game.turner_team) == int(game.TurnerTeam.WIZARD_PRANKSTER_DUO), "wizard/prankster duo did not hold at a much higher score")
+	_expect(int(game.turner_team) == int(game.TurnerTeam.STUDENT), "space zone did not take over from the wizard/prankster duo at a much higher score")
+	_expect(int(game.turner_change_slot) == game.SPACE_SLOT, "a much higher score did not land in the space zone's slot")
 	game._return_to_main()
 
 
@@ -661,6 +664,81 @@ func _test_boss_double_rope_pacing(game: Node) -> void:
 			consecutive_double = 0
 	_expect(saw_double, "boss double-rope never turned on across many simulated turns")
 	_expect(max_consecutive_double <= 1, "boss double-rope appeared on two consecutive turns")
+	game._return_to_main()
+
+
+func _test_space_zone(game: Node) -> void:
+	# 170+: plain default turner, fixed score-10 baseline speed (same "no
+	# gimmick" treatment as the boss gauntlet's basic phase), plus three
+	# gimmicks unique to this stretch: the rope freezes for the REST of a
+	# flight only after that flight's own crossing has resolved (freezing
+	# from jump-start would silently stop the real crossing from ever being
+	# checked at all — this caught exactly that bug during manual testing),
+	# a once-per-flight double jump from DOUBLE_JUMP_SCORE_THRESHOLD, and a
+	# periodic "comet rush" speed spike from COMET_RUSH_SCORE_THRESHOLD.
+	game._reset_turner_run()
+	if game.feedback == null:
+		game.feedback = RopeFeedbackManager.new()
+		game.add_child(game.feedback)
+	game.game_state = 1
+	game.coop_mode = false
+	game.air_challenge_active = false
+	game.turner_transition_active = false
+	game._start_game_at_score(game.SPACE_SCORE_THRESHOLD)
+	_expect(int(game.turner_team) == int(game.TurnerTeam.STUDENT), "space zone did not use the plain default turner")
+	_expect(int(game.turner_change_slot) == game.SPACE_SLOT, "space zone did not land in its own slot")
+	_expect(is_equal_approx(game.rope_speed, BALANCE.speed_for_score(game.TURNER_CHANGE_INTERVAL)), "space zone did not hold the flat score-10 baseline")
+
+	game.is_jumping = true
+	game.jump_height = -BALANCE.required_jump_height - 1.0
+	game.space_flight_crossing_done = false
+	game._resolve_rope_crossing()
+	_expect(int(game.score) == game.SPACE_SCORE_THRESHOLD + 1, "a well-timed jump's own crossing did not register a successful clear")
+	_expect(bool(game.space_flight_crossing_done), "space zone did not mark this flight's crossing as resolved")
+
+	game.score = game.DOUBLE_JUMP_SCORE_THRESHOLD
+	game.is_jumping = true
+	game.used_double_jump = false
+	game.accepting_input = false
+	game.jump_velocity = -100.0
+	game.attempt_jump()
+	_expect(bool(game.used_double_jump), "double jump did not trigger once score reached DOUBLE_JUMP_SCORE_THRESHOLD")
+	_expect(is_equal_approx(game.jump_velocity, game.DOUBLE_JUMP_VELOCITY), "double jump did not apply DOUBLE_JUMP_VELOCITY")
+	game.jump_velocity = -50.0
+	game.attempt_jump()
+	_expect(not is_equal_approx(game.jump_velocity, game.DOUBLE_JUMP_VELOCITY), "double jump fired a second time in the same flight")
+
+	game.is_jumping = false
+	game.score = game.COMET_RUSH_SCORE_THRESHOLD
+	game.turner_team = game.TurnerTeam.STUDENT
+	game.turner_change_slot = game.SPACE_SLOT
+	game.comet_rush_turns_remaining = 1
+	game.comet_rush_active = false
+	game.rope_speed = 3.0
+	game._update_turner_team_and_pattern()
+	_expect(bool(game.comet_rush_active), "comet rush never turned on once its countdown reached zero")
+	_expect(is_equal_approx(game._effective_rope_speed(), 3.0 * game.COMET_RUSH_MULTIPLIER), "comet rush did not apply its speed multiplier")
+	game._update_turner_team_and_pattern()
+	_expect(not bool(game.comet_rush_active), "comet rush lasted more than a single turn")
+
+	# Landing safety: an unsafe frozen angle must be nudged to a fair gap,
+	# not reset to a fixed spot every time — an earlier version did that
+	# unconditionally, which let spamming jump dodge the rope forever since
+	# no crossing could ever actually occur.
+	game.score = game.SPACE_SCORE_THRESHOLD
+	game.rope_angle = game.ROPE_CROSSING_ANGLE - 0.01
+	game.rope_speed = 3.0
+	game.is_jumping = true
+	game.jump_height = -1.0
+	game.jump_velocity = 2000.0
+	game._process(1.0 / 60.0)
+	_expect(not bool(game.is_jumping), "landing-safety test setup did not actually land this frame")
+	# A small tolerance below jump_cue_seconds is expected here, not a bug:
+	# the same _process() call that lands also immediately resumes rope
+	# movement for the rest of that frame (is_jumping just went false), so
+	# the nudge's fair gap is measured one frame later than it was set.
+	var seconds_until_crossing: float = fposmod(game.ROPE_CROSSING_ANGLE - game.rope_angle, TAU) / game.rope_speed
+	_expect(seconds_until_crossing >= BALANCE.jump_cue_seconds - 0.05, "landing right next to the crossing angle did not get a fair cue gap")
 	game._return_to_main()
 
 

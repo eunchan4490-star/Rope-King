@@ -190,7 +190,7 @@ const SETTINGS_BUTTON_RECT := Rect2(485.0, 1055.0, 210.0, 195.0)
 # Moved up to sit just above the character/co-op/settings row, freeing the
 # slot below the attendance button (551..658) for SHOP_BUTTON_RECT.
 const TEST_START_130_RECT := Rect2(25.0, 940.0, 320.0, 100.0)
-const TEST_START_50_RECT := Rect2(365.0, 940.0, 320.0, 100.0)
+const TEST_START_170_RECT := Rect2(365.0, 940.0, 320.0, 100.0)
 const GAME_OVER_CLOSE_RECT := Rect2(538.0, 304.0, 78.0, 78.0)
 # Character panel uses its own taller frame (panel_frame_long.png) instead
 # of the shared square one settings/ranking use, so this rect is much taller
@@ -343,6 +343,11 @@ const AIR_CHALLENGE_START_SCORE := 130
 const AIR_CHALLENGE_INTERVAL := 5
 const AIR_CHALLENGE_GRAVITY := 1500.0
 const AIR_CHALLENGE_JUMP_VELOCITY := -1350.0
+# Rough first pass at a "went to space" late-game reskin — no new assets
+# yet, just a starfield background swap and lighter gravity (same launch
+# velocity, weaker pull down = a floatier, higher jump).
+const SPACE_SCORE_THRESHOLD := 170
+const SPACE_GRAVITY_MULTIPLIER := 0.55
 const AIR_CHALLENGE_TAP_TOLERANCE := 72.0
 const AIR_CHALLENGE_LANDING_PAUSE := 1.0
 const AIR_ROPE_HEIGHTS := [-235.0, -410.0, -555.0]
@@ -385,6 +390,33 @@ const WIZARD_PRANKSTER_DUO_START_SCORE := 150
 const WIZARD_PRANKSTER_DUO_SLOT := 100001
 const WIZARD_PRANKSTER_DUO_MIN_NORMAL_TURNS := 2
 const WIZARD_PRANKSTER_DUO_MAX_NORMAL_TURNS := 5
+# Space stage (SPACE_SCORE_THRESHOLD, 170): plain default turner + fixed
+# score-10 baseline speed, same "no gimmick" treatment as BOSS_GAUNTLET_SLOT
+# — see _turner_slot_for_score/_update_turner_team_and_pattern/
+# _base_speed_for_score. The rope-freeze-while-airborne rule lives in
+# _process instead, since it's about the player's jump state, not the
+# turner's pattern.
+const SPACE_SLOT := 100002
+# 210+: a second, smaller jump can be triggered mid-air (once per jump) —
+# distinct from every other team's rope-timing gimmicks since it changes
+# the PLAYER's own move instead of the rope's pattern.
+const DOUBLE_JUMP_SCORE_THRESHOLD := 210
+const DOUBLE_JUMP_VELOCITY := -620.0
+var used_double_jump := false
+# See _process's space-freeze check and _resolve_rope_crossing — tracks
+# whether THIS jump's own crossing has already been decided, so the
+# freeze only ever suppresses a second, unintended pass late in a long
+# low-gravity float instead of blocking the real crossing check.
+var space_flight_crossing_done := false
+# 230+: every few turns, one turn's rope speed spikes hard with a warning
+# beforehand — same "everything else in the space zone is the plain fixed
+# baseline, but this one thing changes" shape as SLEEPY's wake-up, just
+# turn-counted like ATHLETE's burst instead of time-counted.
+const COMET_RUSH_SCORE_THRESHOLD := 230
+const COMET_RUSH_INTERVAL := 4
+const COMET_RUSH_MULTIPLIER := 2.0
+var comet_rush_turns_remaining := COMET_RUSH_INTERVAL
+var comet_rush_active := false
 var duo2_normal_turns_remaining := 0
 # True only during the one turn prankster's fake overrides wizard's own
 # pattern — drives both the fake motion (_update_prankster_fake, gated to
@@ -822,14 +854,29 @@ func _process(delta: float) -> void:
 			_advance_air_challenge(delta)
 		elif is_jumping:
 			jump_animation_time += delta
-			jump_velocity += 1900.0 * delta
+			var gravity_multiplier := SPACE_GRAVITY_MULTIPLIER if score >= SPACE_SCORE_THRESHOLD else 1.0
+			jump_velocity += 1900.0 * gravity_multiplier * delta
 			jump_height += jump_velocity * delta
 			if jump_height >= 0.0:
 				jump_height = 0.0
 				jump_velocity = 0.0
 				jump_animation_time = 0.0
 				is_jumping = false
+				used_double_jump = false
 				accepting_input = not turner_transition_active
+				if score >= SPACE_SCORE_THRESHOLD:
+					# The rope sat frozen wherever it happened to be when this
+					# jump started (see the SPACE_SCORE_THRESHOLD freeze
+					# below) — resuming from that exact spot could land it
+					# right on the crossing angle with zero warning. Only
+					# nudge it back to the start of a fair cue window when
+					# landing would otherwise be unsafe — an unconditional
+					# reset to a fixed safe angle on every single landing let
+					# spamming jump forever dodge the rope for free, since no
+					# crossing could ever actually occur.
+					var seconds_until_crossing := fposmod(ROPE_CROSSING_ANGLE - rope_angle, TAU) / maxf(rope_speed, 0.01)
+					if seconds_until_crossing < balance.jump_cue_seconds:
+						rope_angle = fposmod(ROPE_CROSSING_ANGLE - rope_speed * balance.jump_cue_seconds, TAU)
 		if air_challenge_landing_time > 0.0:
 			air_challenge_landing_time = maxf(0.0, air_challenge_landing_time - delta)
 			accepting_input = false
@@ -847,6 +894,18 @@ func _process(delta: float) -> void:
 			accepting_input = false
 			_advance_turner_transition(delta)
 		else:
+			if score >= SPACE_SCORE_THRESHOLD and is_jumping and space_flight_crossing_done:
+				# Lower gravity (see SPACE_GRAVITY_MULTIPLIER) means a much
+				# longer time airborne — a second full rope pass could easily
+				# sneak in before landing. This freeze only kicks in AFTER
+				# the crossing this jump was actually timed for has already
+				# been resolved (see _resolve_rope_crossing) — freezing from
+				# the moment the jump starts instead would stop the rope
+				# from ever reaching the crossing angle at all while
+				# airborne, which is exactly when a real hit/success is
+				# supposed to be decided, silently breaking scoring here.
+				queue_redraw()
+				return
 			if tutorial_active and tutorial_stage == 2 and _is_jump_cue():
 				# Freeze the instant the rope turns red for the very first
 				# time (before this frame advances it further) instead of at
@@ -1041,8 +1100,8 @@ func _unhandled_input(event: InputEvent) -> void:
 				_handle_settings_menu_input(design_position)
 				get_viewport().set_input_as_handled()
 				return
-			if TEST_START_50_RECT.has_point(design_position):
-				_start_game_at_score(50)
+			if TEST_START_170_RECT.has_point(design_position):
+				_start_game_at_score(170)
 				get_viewport().set_input_as_handled()
 				return
 			if TEST_START_130_RECT.has_point(design_position):
@@ -1104,13 +1163,26 @@ func attempt_jump() -> void:
 	if air_challenge_active:
 		_attempt_air_rope_tap()
 		return
-	if not accepting_input or is_jumping:
+	if is_jumping:
+		# accepting_input is deliberately NOT checked here — it's false for
+		# the whole flight (it always has been, to block spamming a second
+		# normal jump), but the space zone's double jump needs to land a
+		# tap precisely while that's true, so it has to sit ahead of that
+		# gate instead of behind it like every other jump path.
+		if score >= DOUBLE_JUMP_SCORE_THRESHOLD and not coop_mode and not used_double_jump:
+			used_double_jump = true
+			jump_velocity = DOUBLE_JUMP_VELOCITY
+			jump_animation_time = 0.0
+		return
+	if not accepting_input:
 		return
 	accepting_input = false
 	is_jumping = true
 	jump_animation_time = 0.0
 	jump_started_in_cue = _is_jump_cue()
 	jump_velocity = -820.0
+	used_double_jump = false
+	space_flight_crossing_done = false
 
 
 func _start_air_challenge() -> void:
@@ -1216,6 +1288,12 @@ func _advance_coop_jumps(delta: float) -> void:
 
 
 func _resolve_rope_crossing() -> void:
+	if is_jumping:
+		# Marks THIS flight's real crossing as decided — see the space-zone
+		# freeze check in _process, which must never suppress this call
+		# itself, only a second pass later in the same (long, low-gravity)
+		# flight.
+		space_flight_crossing_done = true
 	# Success is decided when the visible rope actually reaches the player's feet.
 	if _player_clears_rope_at_crossing():
 		if _is_perfect_crossing():
@@ -1333,6 +1411,9 @@ func _resolve_rope_crossing() -> void:
 		elif turner_team == TurnerTeam.WIZARD_PRANKSTER_DUO and duo2_prankster_triggered:
 			message = "장난꾸러기 줄속임!"
 			message_color = Color("ffd84a")
+		elif turner_team == TurnerTeam.STUDENT and comet_rush_active:
+			message = "혜성이 지나가요!"
+			message_color = Color("ff6b6b")
 		else:
 			message = "좋아요!  +1"
 		flash_time = 0.22
@@ -1479,6 +1560,9 @@ func _start_game_at_score(start_score: int) -> void:
 		_init_turner_team_state(turner_team)
 	elif turner_change_slot == WIZARD_PRANKSTER_DUO_SLOT:
 		turner_team = TurnerTeam.WIZARD_PRANKSTER_DUO
+		_init_turner_team_state(turner_team)
+	elif turner_change_slot == SPACE_SLOT:
+		turner_team = TurnerTeam.STUDENT
 		_init_turner_team_state(turner_team)
 	elif turner_change_slot > 0:
 		turner_team = _random_turner_team(TurnerTeam.STUDENT)
@@ -1759,6 +1843,9 @@ func _draw_perfect_overlay() -> void:
 
 
 func _draw_background() -> void:
+	if game_state != GameState.TITLE and score >= SPACE_SCORE_THRESHOLD:
+		_draw_space_background()
+		return
 	if background_texture != null:
 		_draw_cover_texture(background_texture, Rect2(Vector2.ZERO, DESIGN_SIZE))
 		if flash_time > 0.0:
@@ -1779,7 +1866,41 @@ func _draw_background() -> void:
 		draw_rect(Rect2(Vector2.ZERO, DESIGN_SIZE), Color(1, 1, 1, flash_time * 0.32))
 
 
+func _draw_space_background() -> void:
+	# Rough first pass, no dedicated art yet — dark sky, a fixed (not
+	# randomized-per-frame) starfield via a deterministic formula so stars
+	# don't jitter every redraw, and a distant planet standing in for the
+	# sun. See _draw_space_ground for the matching ground swap.
+	draw_rect(Rect2(Vector2.ZERO, DESIGN_SIZE), Color("060818"))
+	for i in range(55):
+		var star_x := fmod(float(i) * 137.5, DESIGN_SIZE.x)
+		var star_y := fmod(float(i) * 71.3 + 40.0, 650.0)
+		var star_alpha: float = 0.35 + 0.5 * absf(sin(float(i) * 12.9))
+		var star_radius: float = 1.5 + 1.5 * absf(sin(float(i) * 4.7))
+		draw_circle(Vector2(star_x, star_y), star_radius, Color(1.0, 1.0, 1.0, star_alpha))
+	draw_circle(Vector2(580.0, 170.0), 58.0, Color("ff9f6b"))
+	draw_circle(Vector2(580.0, 170.0), 58.0, Color(0.1, 0.05, 0.15, 0.35))
+	draw_arc(Vector2(580.0, 170.0), 74.0, -0.5, 0.5, 24, Color("ffd7b0"), 6.0, true)
+	if flash_time > 0.0:
+		draw_rect(Rect2(Vector2.ZERO, DESIGN_SIZE), Color(1, 1, 1, flash_time * 0.32))
+
+
+func _draw_space_ground() -> void:
+	# Plain grey moon-surface stand-in — the daytime ground (grass/pavement,
+	# or the background_texture image which bakes ground into the same
+	# picture as the sky) would look completely out of place under a dark
+	# starfield.
+	draw_rect(Rect2(0.0, 650.0, DESIGN_SIZE.x, 630.0), Color("3a3a45"))
+	for i in range(10):
+		var crater_x := fmod(float(i) * 211.0 + 40.0, DESIGN_SIZE.x)
+		var crater_y := 700.0 + fmod(float(i) * 97.0, 500.0)
+		draw_circle(Vector2(crater_x, crater_y), 14.0 + 6.0 * absf(sin(float(i) * 3.1)), Color("2c2c36"))
+
+
 func _draw_ground() -> void:
+	if game_state != GameState.TITLE and score >= SPACE_SCORE_THRESHOLD:
+		_draw_space_ground()
+		return
 	if background_texture != null:
 		return
 	draw_rect(Rect2(0, 650, 720, 630), Color("75c86b"))
@@ -1980,6 +2101,8 @@ func _effective_rope_speed() -> float:
 
 
 func _effective_rope_speed_raw() -> float:
+	if turner_team == TurnerTeam.STUDENT and comet_rush_active:
+		return rope_speed if _is_jump_cue() else rope_speed * COMET_RUSH_MULTIPLIER
 	if turner_team == TurnerTeam.SLEEPY:
 		if sleepy_fast_turns_remaining > 0:
 			return rope_speed if _is_jump_cue() else rope_speed * SLEEPY_FAST_MULTIPLIER
@@ -2039,7 +2162,7 @@ func _base_speed_for_score(current_score: int) -> float:
 	# rhythm" — but unlike the real early-game student (score < 10), it must
 	# NOT ramp by the actual (now-huge) score, or the double-rope phase
 	# becomes absurdly fast. Only the genuine early-game student ramps.
-	if turner_team == TurnerTeam.STUDENT and turner_change_slot != BOSS_GAUNTLET_SLOT:
+	if turner_team == TurnerTeam.STUDENT and turner_change_slot != BOSS_GAUNTLET_SLOT and turner_change_slot != SPACE_SLOT:
 		return balance.speed_for_score(current_score)
 	return balance.speed_for_score(TURNER_CHANGE_INTERVAL)
 
@@ -2066,6 +2189,10 @@ func _reset_turner_run() -> void:
 	duo_sleepy_awake = false
 	duo2_normal_turns_remaining = 0
 	duo2_prankster_triggered = false
+	comet_rush_turns_remaining = COMET_RUSH_INTERVAL
+	comet_rush_active = false
+	used_double_jump = false
+	space_flight_crossing_done = false
 	boss_double_rope_intro_shown = false
 	boss_double_rope_was_double_last_turn = false
 	turner_transition_active = false
@@ -2091,6 +2218,8 @@ func _turner_slot_for_score(current_score: int) -> int:
 	# value doesn't matter as long as it's monotonic and distinct per stretch.
 	if current_score < TURNER_CHANGE_INTERVAL:
 		return 0
+	if current_score >= SPACE_SCORE_THRESHOLD:
+		return SPACE_SLOT
 	if current_score >= WIZARD_PRANKSTER_DUO_START_SCORE:
 		# WIZARD_PRANKSTER_DUO_START_SCORE == DUO_STAGE_END_SCORE — this duo
 		# picks up on the exact turn the athlete/sleepy duo ends, with no
@@ -2162,7 +2291,7 @@ func _update_turner_team_and_pattern() -> bool:
 		if target_slot <= 0:
 			turner_team = TurnerTeam.STUDENT
 			return false
-		var new_team := TurnerTeam.STUDENT if target_slot == BOSS_GAUNTLET_SLOT else _random_turner_team(turner_team)
+		var new_team := TurnerTeam.STUDENT if (target_slot == BOSS_GAUNTLET_SLOT or target_slot == SPACE_SLOT) else _random_turner_team(turner_team)
 		if target_slot == DUO_STAGE_SLOT:
 			new_team = TurnerTeam.DUO
 		elif target_slot == WIZARD_PRANKSTER_DUO_SLOT:
@@ -2171,6 +2300,14 @@ func _update_turner_team_and_pattern() -> bool:
 		_init_turner_team_state(new_team)
 		return true
 	if turner_team == TurnerTeam.STUDENT:
+		if turner_change_slot == SPACE_SLOT and score >= COMET_RUSH_SCORE_THRESHOLD:
+			if comet_rush_active:
+				comet_rush_active = false
+				comet_rush_turns_remaining = COMET_RUSH_INTERVAL
+			else:
+				comet_rush_turns_remaining -= 1
+				if comet_rush_turns_remaining <= 0:
+					comet_rush_active = true
 		return false
 	if turner_team == TurnerTeam.SLEEPY:
 		if sleepy_fast_turns_remaining > 0:
@@ -3736,11 +3873,11 @@ func _draw_test_start_button(font: Font) -> void:
 	draw_rect(TEST_START_130_RECT.grow(-9.0), Color("24705b"), false, 3.0)
 	draw_string(font, Vector2(TEST_START_130_RECT.position.x, TEST_START_130_RECT.position.y + 31.0), "DUO TEST", HORIZONTAL_ALIGNMENT_CENTER, TEST_START_130_RECT.size.x, 16, Color("245446"))
 	draw_string(font, Vector2(TEST_START_130_RECT.position.x, TEST_START_130_RECT.position.y + 62.0), "130 START", HORIZONTAL_ALIGNMENT_CENTER, TEST_START_130_RECT.size.x, 23, Color("173f35"))
-	draw_rect(TEST_START_50_RECT, Color("3b2119"), true)
-	draw_rect(TEST_START_50_RECT.grow(-5.0), Color("ffd23f"), true)
-	draw_rect(TEST_START_50_RECT.grow(-9.0), Color("7a4317"), false, 3.0)
-	draw_string(font, Vector2(TEST_START_50_RECT.position.x, TEST_START_50_RECT.position.y + 31.0), "TEST", HORIZONTAL_ALIGNMENT_CENTER, TEST_START_50_RECT.size.x, 18, Color("633913"))
-	draw_string(font, Vector2(TEST_START_50_RECT.position.x, TEST_START_50_RECT.position.y + 62.0), "50 START", HORIZONTAL_ALIGNMENT_CENTER, TEST_START_50_RECT.size.x, 25, Color("3b2119"))
+	draw_rect(TEST_START_170_RECT, Color("3b2119"), true)
+	draw_rect(TEST_START_170_RECT.grow(-5.0), Color("ffd23f"), true)
+	draw_rect(TEST_START_170_RECT.grow(-9.0), Color("7a4317"), false, 3.0)
+	draw_string(font, Vector2(TEST_START_170_RECT.position.x, TEST_START_170_RECT.position.y + 31.0), "SPACE TEST", HORIZONTAL_ALIGNMENT_CENTER, TEST_START_170_RECT.size.x, 16, Color("633913"))
+	draw_string(font, Vector2(TEST_START_170_RECT.position.x, TEST_START_170_RECT.position.y + 62.0), "170 START", HORIZONTAL_ALIGNMENT_CENTER, TEST_START_170_RECT.size.x, 23, Color("3b2119"))
 
 
 func _draw_shop_main_button(font: Font) -> void:
