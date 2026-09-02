@@ -241,6 +241,12 @@ const NICKNAME_FIELD_RECT := Rect2(235.0, 560.0, 245.0, 70.0)
 const NICKNAME_SAVE_BUTTON_RECT := Rect2(490.0, 560.0, 120.0, 70.0)
 const CODE_ROW_RECT := Rect2(105.0, 650.0, 505.0, 70.0)
 const DATA_RESET_ROW_RECT := Rect2(105.0, 735.0, 505.0, 70.0)
+# Tutorial stage 12's own small popup — deliberately separate from the full
+# settings panel so it doesn't compete with whatever else was open (e.g.
+# the attendance panel stage 10/11 just opened) for the same screen.
+const TUTORIAL_NICKNAME_PANEL_RECT := Rect2(60.0, 480.0, 600.0, 300.0)
+const TUTORIAL_NICKNAME_FIELD_RECT := Rect2(100.0, 640.0, 380.0, 70.0)
+const TUTORIAL_NICKNAME_SAVE_RECT := Rect2(495.0, 640.0, 125.0, 70.0)
 const CODE_FIELD_RECT := Rect2(235.0, 650.0, 245.0, 70.0)
 const CODE_SUBMIT_BUTTON_RECT := Rect2(490.0, 650.0, 120.0, 70.0)
 const RANKING_MAIN_BUTTON_RECT := Rect2(531.0, 306.0, 189.0, 107.0)
@@ -467,6 +473,7 @@ var tutorial_seen := false
 var tutorial_active := false
 var tutorial_pause_active := false
 var tutorial_stage := 0
+var tutorial_nickname_prompt_active := false
 var character_menu_open := false
 var settings_menu_open := false
 var nickname := RopeSaveManager.DEFAULT_NICKNAME
@@ -977,11 +984,20 @@ func _unhandled_input(event: InputEvent) -> void:
 				pass
 			else:
 				if dismissed_stage == 11:
-					# Stage 11 (reward message) hands off straight into the
-					# final nickname stage, which lives in the settings menu.
-					_open_settings_menu()
+					# Stage 11 (reward message) hands off straight into a
+					# small dedicated nickname prompt — not the full settings
+					# panel, which was still showing the attendance panel
+					# open behind it and drawing both at once.
+					attendance_menu_open = false
+					_show_tutorial_nickname_prompt()
 				get_viewport().set_input_as_handled()
 				return
+		if tutorial_nickname_prompt_active and pointer_position.x >= 0.0:
+			var nickname_prompt_position := _screen_to_design(pointer_position)
+			if TUTORIAL_NICKNAME_SAVE_RECT.has_point(nickname_prompt_position):
+				_confirm_tutorial_nickname()
+			get_viewport().set_input_as_handled()
+			return
 		if game_state == GameState.GAME_OVER and character_reveal_active:
 			character_reveal_index += 1
 			character_reveal_time = 0.0
@@ -1393,8 +1409,13 @@ func _start_tutorial_run() -> void:
 	_save_progress()
 	_start_game()
 	tutorial_active = true
-	tutorial_stage = 1
-	tutorial_pause_active = true
+	# Stage 1 ("tap to start") is now shown on the title screen itself
+	# before this tap even happens (see the tutorial_seen check in
+	# _draw_main_menu) — this very tap already fulfilled it, so the tour
+	# starts directly at stage 2 instead of freezing again to ask for a
+	# second, redundant tap.
+	tutorial_stage = 2
+	tutorial_pause_active = false
 
 
 func _start_game() -> void:
@@ -2645,6 +2666,29 @@ func _close_character_menu() -> void:
 		tutorial_stage = 8
 
 
+func _show_tutorial_nickname_prompt() -> void:
+	tutorial_nickname_prompt_active = true
+	if nickname_edit == null:
+		nickname_edit = LineEdit.new()
+		nickname_edit.max_length = RopeSaveManager.NICKNAME_MAX_LENGTH
+		nickname_edit.add_theme_font_override("font", _ui_font())
+		add_child(nickname_edit)
+	nickname_edit.text = nickname
+	nickname_edit.size = _design_to_screen_rect(TUTORIAL_NICKNAME_FIELD_RECT).size
+	nickname_edit.position = _design_to_screen_rect(TUTORIAL_NICKNAME_FIELD_RECT).position
+	nickname_edit.visible = true
+
+
+func _confirm_tutorial_nickname() -> void:
+	var new_nickname := nickname_edit.text.strip_edges()
+	nickname = new_nickname if not new_nickname.is_empty() else RopeSaveManager.DEFAULT_NICKNAME
+	_save_progress()
+	nickname_edit.visible = false
+	tutorial_nickname_prompt_active = false
+	tutorial_active = false
+	tutorial_stage = 0
+
+
 func _open_settings_menu() -> void:
 	settings_menu_open = true
 	settings_message = ""
@@ -3573,8 +3617,8 @@ func _draw_tutorial_layer() -> void:
 			if tutorial_pause_active:
 				_draw_tutorial_pause_banner(font, "열심히 해서 랭킹에 들어보세요!\n(보상으로 %d골드 지급!)" % TUTORIAL_REWARD_GOLD)
 		12:
-			if settings_menu_open:
-				_draw_tutorial_arrow_pointer(NICKNAME_ROW_RECT, "닉네임을 자유롭게 바꿔보세요!")
+			if tutorial_nickname_prompt_active:
+				_draw_tutorial_nickname_panel(font)
 
 
 func _draw_tutorial_pause_banner(font: Font, text: String) -> void:
@@ -3625,6 +3669,21 @@ func _draw_tutorial_arrow_pointer(target: Rect2, text: String) -> void:
 	draw_multiline_string(font, Vector2(band.position.x + 10.0, text_y), text, HORIZONTAL_ALIGNMENT_CENTER, band.size.x - 20.0, 21, -1, Color.WHITE)
 
 
+func _draw_tutorial_nickname_panel(font: Font) -> void:
+	# Tutorial stage 12's dedicated last step — a small standalone popup
+	# (not the full settings panel) so it never competes for the screen
+	# with whatever menu the previous stage had open.
+	draw_rect(Rect2(Vector2.ZERO, DESIGN_SIZE), Color(0.03, 0.04, 0.08, 0.82), true)
+	draw_rect(TUTORIAL_NICKNAME_PANEL_RECT, Color(0.09, 0.07, 0.04, 0.97), true)
+	draw_rect(TUTORIAL_NICKNAME_PANEL_RECT, Color("ffd23f"), false, 5.0)
+	draw_string(font, Vector2(TUTORIAL_NICKNAME_PANEL_RECT.position.x, TUTORIAL_NICKNAME_PANEL_RECT.position.y + 70.0), "마지막이에요!", HORIZONTAL_ALIGNMENT_CENTER, TUTORIAL_NICKNAME_PANEL_RECT.size.x, 28, Color("ffd23f"))
+	draw_multiline_string(font, Vector2(TUTORIAL_NICKNAME_PANEL_RECT.position.x + 20.0, TUTORIAL_NICKNAME_PANEL_RECT.position.y + 120.0), "닉네임을 자유롭게 정해보세요!", HORIZONTAL_ALIGNMENT_CENTER, TUTORIAL_NICKNAME_PANEL_RECT.size.x - 40.0, 24, -1, Color.WHITE)
+	_draw_row_background(TUTORIAL_NICKNAME_FIELD_RECT)
+	draw_rect(TUTORIAL_NICKNAME_SAVE_RECT, Color("3b2119"), true)
+	draw_rect(TUTORIAL_NICKNAME_SAVE_RECT, Color("ffd23f"), false, 3.0)
+	draw_string(font, Vector2(TUTORIAL_NICKNAME_SAVE_RECT.position.x, TUTORIAL_NICKNAME_SAVE_RECT.position.y + 46.0), "저장", HORIZONTAL_ALIGNMENT_CENTER, TUTORIAL_NICKNAME_SAVE_RECT.size.x, 24, Color("ffd23f"))
+
+
 func _draw_main_menu(font: Font) -> void:
 	_draw_resource_counter(font, Rect2(40.0, 22.0, 300.0, 62.0), coin_icon_texture, coin_icon_used_region, coins, COIN_ICON_OFFSET)
 	_draw_resource_counter(font, Rect2(380.0, 22.0, 300.0, 62.0), ruby_icon_texture, ruby_icon_used_region, gems, RUBY_ICON_OFFSET)
@@ -3653,6 +3712,12 @@ func _draw_main_menu(font: Font) -> void:
 		_draw_rotated_texture_region(tap_prompt_texture, prompt_rect, tap_prompt_used_region, 0.0, Color(1.0, 1.0, 1.0, prompt_alpha))
 	else:
 		draw_string(font, Vector2(prompt_rect.position.x, 980.0), "TAP TO START", HORIZONTAL_ALIGNMENT_CENTER, prompt_rect.size.x, 30, Color(1.0, 1.0, 1.0, prompt_alpha))
+	if not tutorial_seen:
+		# The guided first-run tour used to only reveal itself after a
+		# player's first (otherwise unexplained) blind tap — now the very
+		# first thing shown on a fresh install is this explicit prompt,
+		# and that tap itself starts the tour (see _start_tutorial_run).
+		draw_string(font, Vector2(0.0, 1020.0), "화면을 터치하여 시작하세요!", HORIZONTAL_ALIGNMENT_CENTER, DESIGN_SIZE.x, 26, Color(1.0, 0.85, 0.35, prompt_alpha))
 
 	_draw_menu_asset_or_fallback(character_button_texture, character_button_used_region, font, CHARACTER_BUTTON_RECT, "CHARACTER", "캐릭터", Color("ef8f6b"))
 	_draw_menu_asset_or_fallback(coop_button_texture, coop_button_used_region, font, COOP_BUTTON_RECT, "CO-OP", "협동 모드", Color("65b7f3"))
