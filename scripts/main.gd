@@ -409,17 +409,6 @@ const SPACE_SLOT := 100002
 const DOUBLE_JUMP_SCORE_THRESHOLD := SPACE_SCORE_THRESHOLD
 const DOUBLE_JUMP_VELOCITY := -620.0
 var used_double_jump := false
-# See _process's space-freeze check and _resolve_rope_crossing — tracks
-# whether THIS jump's own crossing has already been decided, so the
-# freeze only ever suppresses a second, unintended pass late in a long
-# low-gravity float instead of blocking the real crossing check.
-var space_flight_crossing_done := false
-# A second rope (see rope_b_enabled/rope_b_angle, phase-offset by
-# ROPE_B_PHASE_OFFSET) runs the whole space zone — this is the same flag
-# as space_flight_crossing_done, just for that second rope, so the freeze
-# only kicks in once BOTH ropes have actually had their crossing checked
-# this flight, not whichever happens to resolve first.
-var space_flight_crossing_b_done := false
 # 230+: every few turns, one turn's rope speed spikes hard with a warning
 # beforehand — same "everything else in the space zone is the plain fixed
 # baseline, but this one thing changes" shape as SLEEPY's wake-up, just
@@ -906,21 +895,13 @@ func _process(delta: float) -> void:
 			accepting_input = false
 			_advance_turner_transition(delta)
 		else:
-			var space_ropes_resolved_this_flight := space_flight_crossing_done and (not rope_b_enabled or space_flight_crossing_b_done)
-			if score >= SPACE_SCORE_THRESHOLD and is_jumping and space_ropes_resolved_this_flight:
-				# Lower gravity (see SPACE_GRAVITY_MULTIPLIER) means a much
-				# longer time airborne — a second full rope pass could easily
-				# sneak in before landing. This freeze only kicks in AFTER
-				# the crossing(s) this jump was actually timed for have
-				# already been resolved (see _resolve_rope_crossing and
-				# _resolve_rope_b_crossing — the space zone runs a second
-				# rope too, see rope_b_enabled) — freezing from the moment
-				# the jump starts instead would stop the rope(s) from ever
-				# reaching their crossing angle at all while airborne, which
-				# is exactly when a real hit/success is supposed to be
-				# decided, silently breaking scoring/the second rope here.
-				queue_redraw()
-				return
+			# The ropes deliberately do NOT pause while airborne here — with
+			# SPACE_GRAVITY_MULTIPLIER's long float time, staying live means
+			# a single jump can genuinely face more than one pass of either
+			# rope, which is the actual difficulty of this zone. (An earlier
+			# version froze both ropes once their first crossing resolved —
+			# that made a well-timed jump nearly unloseable, since nothing
+			# could touch you again until you chose to land.)
 			if tutorial_active and tutorial_stage == 2 and _is_jump_cue():
 				# Freeze the instant the rope turns red for the very first
 				# time (before this frame advances it further) instead of at
@@ -1197,8 +1178,6 @@ func attempt_jump() -> void:
 	jump_started_in_cue = _is_jump_cue()
 	jump_velocity = -820.0
 	used_double_jump = false
-	space_flight_crossing_done = false
-	space_flight_crossing_b_done = false
 
 
 func _start_air_challenge() -> void:
@@ -1304,12 +1283,6 @@ func _advance_coop_jumps(delta: float) -> void:
 
 
 func _resolve_rope_crossing() -> void:
-	if is_jumping:
-		# Marks THIS flight's real crossing as decided — see the space-zone
-		# freeze check in _process, which must never suppress this call
-		# itself, only a second pass later in the same (long, low-gravity)
-		# flight.
-		space_flight_crossing_done = true
 	# Success is decided when the visible rope actually reaches the player's feet.
 	if _player_clears_rope_at_crossing():
 		if _is_perfect_crossing():
@@ -1453,7 +1426,6 @@ func _resolve_rope_b_crossing() -> void:
 	# an unavoidable, un-timeable death with no real interaction at all.
 	if not is_jumping:
 		return
-	space_flight_crossing_b_done = true
 	# The boss double-dutch rope never awards score on its own — it's an
 	# extra fail condition layered on top of the main rope's rhythm. In the
 	# space zone this same rope is the overhead one instead (see
@@ -2235,8 +2207,6 @@ func _reset_turner_run() -> void:
 	comet_rush_turns_remaining = COMET_RUSH_INTERVAL
 	comet_rush_active = false
 	used_double_jump = false
-	space_flight_crossing_done = false
-	space_flight_crossing_b_done = false
 	boss_double_rope_intro_shown = false
 	boss_double_rope_was_double_last_turn = false
 	turner_transition_active = false
@@ -2343,10 +2313,11 @@ func _update_turner_team_and_pattern() -> bool:
 		turner_team = new_team
 		_init_turner_team_state(new_team)
 		if target_slot == SPACE_SLOT:
-			# A second, rotating rope (reusing the boss gauntlet's own
-			# rope_b) runs for the whole space zone — see the freeze check
-			# in _process and space_flight_crossing_b_done for how it stays
-			# fair alongside the low-gravity float.
+			# An overhead rope (reusing the boss gauntlet's own rope_b, see
+			# _resolve_rope_b_crossing/SPACE_OVERHEAD_CLEAR_HEIGHT) runs for
+			# the whole space zone, on top of the ground rope — neither one
+			# pauses while airborne, so a long low-gravity float can
+			# genuinely face more than one pass of either.
 			rope_b_enabled = true
 			rope_b_angle = fposmod(rope_angle + ROPE_B_PHASE_OFFSET, TAU)
 		return true

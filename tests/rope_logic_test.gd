@@ -670,12 +670,12 @@ func _test_boss_double_rope_pacing(game: Node) -> void:
 func _test_space_zone(game: Node) -> void:
 	# 170+: plain default turner, fixed score-10 baseline speed (same "no
 	# gimmick" treatment as the boss gauntlet's basic phase), plus three
-	# gimmicks unique to this stretch: the rope freezes for the REST of a
-	# flight only after that flight's own crossing has resolved (freezing
-	# from jump-start would silently stop the real crossing from ever being
-	# checked at all — this caught exactly that bug during manual testing),
-	# a once-per-flight double jump from DOUBLE_JUMP_SCORE_THRESHOLD, and a
-	# periodic "comet rush" speed spike from COMET_RUSH_SCORE_THRESHOLD.
+	# gimmicks unique to this stretch: an overhead second rope (see
+	# SPACE_OVERHEAD_CLEAR_HEIGHT) that — like the ground rope — keeps
+	# running the whole time you're airborne rather than pausing, a
+	# once-per-flight double jump from DOUBLE_JUMP_SCORE_THRESHOLD (needed
+	# to actually clear that overhead rope), and a periodic "comet rush"
+	# speed spike from COMET_RUSH_SCORE_THRESHOLD.
 	game._reset_turner_run()
 	if game.feedback == null:
 		game.feedback = RopeFeedbackManager.new()
@@ -693,19 +693,15 @@ func _test_space_zone(game: Node) -> void:
 
 	game.is_jumping = true
 	game.jump_height = -BALANCE.required_jump_height - 1.0
-	game.space_flight_crossing_done = false
-	game.space_flight_crossing_b_done = false
 	game._resolve_rope_crossing()
 	_expect(int(game.score) == game.SPACE_SCORE_THRESHOLD + 1, "a well-timed jump's own crossing did not register a successful clear")
-	_expect(bool(game.space_flight_crossing_done), "space zone did not mark this flight's crossing as resolved")
-	_expect(not bool(game.space_flight_crossing_b_done), "second rope was marked resolved before its own crossing happened")
 	# The overhead rope needs real height to clear — an ordinary
 	# ground-clearance height (barely off the floor) must NOT be enough, or
 	# the whole point of forcing a double jump here is lost.
 	_expect(game.jump_height > -game.SPACE_OVERHEAD_CLEAR_HEIGHT, "test setup's jump_height unexpectedly already clears the overhead rope")
 	game.jump_height = -game.SPACE_OVERHEAD_CLEAR_HEIGHT - 1.0
 	game._resolve_rope_b_crossing()
-	_expect(bool(game.space_flight_crossing_b_done), "space zone did not mark this flight's second-rope crossing as resolved")
+	_expect(int(game.score) == game.SPACE_SCORE_THRESHOLD + 1, "clearing the overhead rope incorrectly changed score (it should never award points on its own)")
 	# A follow-up crossing after a later score bump should re-disable the
 	# BOSS gauntlet's own double rope, but never the space zone's — see the
 	# score < SPACE_SCORE_THRESHOLD guard added alongside it.
