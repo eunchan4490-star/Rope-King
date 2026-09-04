@@ -89,6 +89,7 @@ const LEFT_TURNER_ENTRY_FEET := Vector2(-120.0, TURNER_GROUND_Y)
 const RIGHT_TURNER_ENTRY_FEET := Vector2(840.0, TURNER_GROUND_Y)
 const CHARACTER_ASSET_ROOT := "res://assets/characters"
 const DEFAULT_BACKGROUND_PATH := "res://assets/backgrounds/neighborhood.png"
+const SPACE_BACKGROUND_PATH := "res://assets/backgrounds/space.png"
 const BGM_MUSIC_PATH := "res://assets/audio/bgm.mp3"
 const DEFAULT_TURNER_PATH := "res://assets/turners/bowl_cut_student.png"
 const ATHLETE_TURNER_PATH := "res://assets/turners/athlete_student.png"
@@ -276,6 +277,7 @@ const RANKING_ROW_HEIGHT := 60.0
 @export var player_sprite_ground_offset := Vector2.ZERO
 @export_group("Background")
 @export var background_texture: Texture2D
+@export var space_background_texture: Texture2D
 @export_group("Rope Turner")
 @export var turner_texture: Texture2D
 @export var athlete_turner_texture: Texture2D
@@ -637,6 +639,8 @@ func _ready() -> void:
 	_load_character_visuals(selected_character_id)
 	if background_texture == null and ResourceLoader.exists(DEFAULT_BACKGROUND_PATH):
 		background_texture = load(DEFAULT_BACKGROUND_PATH) as Texture2D
+	if space_background_texture == null and ResourceLoader.exists(SPACE_BACKGROUND_PATH):
+		space_background_texture = load(SPACE_BACKGROUND_PATH) as Texture2D
 	_prepare_turner_visuals()
 	if character_button_texture == null and ResourceLoader.exists(MENU_CHARACTER_TEXTURE_PATH):
 		character_button_texture = load(MENU_CHARACTER_TEXTURE_PATH) as Texture2D
@@ -1875,7 +1879,12 @@ func _draw_background() -> void:
 
 
 func _draw_space_background() -> void:
-	# Rough first pass, no dedicated art yet — dark sky, a fixed (not
+	if space_background_texture != null:
+		_draw_cover_texture(space_background_texture, Rect2(Vector2.ZERO, DESIGN_SIZE))
+		if flash_time > 0.0:
+			draw_rect(Rect2(Vector2.ZERO, DESIGN_SIZE), Color(1, 1, 1, flash_time * 0.32))
+		return
+	# Fallback when the dedicated art is missing — dark sky, a fixed (not
 	# randomized-per-frame) starfield via a deterministic formula so stars
 	# don't jitter every redraw, and a distant planet standing in for the
 	# sun. See _draw_space_ground for the matching ground swap.
@@ -1894,6 +1903,10 @@ func _draw_space_background() -> void:
 
 
 func _draw_space_ground() -> void:
+	if space_background_texture != null:
+		# Ground is baked into the same image as the sky (same pattern as
+		# background_texture for the daytime stage) — nothing left to draw.
+		return
 	# Plain grey moon-surface stand-in — the daytime ground (grass/pavement,
 	# or the background_texture image which bakes ground into the same
 	# picture as the sky) would look completely out of place under a dark
